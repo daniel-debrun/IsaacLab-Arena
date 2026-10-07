@@ -15,6 +15,7 @@ from isaaclab_arena.evaluation.arena_experiment_result import (
     ARENA_EXPERIMENT_TIMINGS_FILENAME,
 )
 from isaaclab_arena.evaluation.arena_run import RunStatus
+from isaaclab_arena.evaluation.experiment_timings import aggregate_experiment_timings
 from isaaclab_arena.visualization.report import RunExecutionReport
 from osmo.scripts.build_experiment_output import (
     EXPERIMENT_RUNNER_RESULT_FILE_NAME,
@@ -67,14 +68,17 @@ def _timing_record(name: str, count: int, total_ms: float) -> dict[str, object]:
 
 def _write_run_timings(
     experiment_runner_output_directory: Path,
+    run_name: str,
     timing_records: list[dict[str, object]],
 ) -> None:
-    """Write the timings the Experiment Runner leaves beside its Run output directory."""
-    experiment_runner_output_directory.mkdir(parents=True, exist_ok=True)
-    (experiment_runner_output_directory / ARENA_EXPERIMENT_TIMINGS_FILENAME).write_text(
+    """Write the Experiment timings file the Experiment Runner leaves beside its Run output directory."""
+    run_output_directory = experiment_runner_output_directory / run_name
+    run_output_directory.mkdir(parents=True, exist_ok=True)
+    (run_output_directory / ARENA_EXPERIMENT_TIMINGS_FILENAME).write_text(
         json.dumps(timing_records) + "\n",
         encoding="utf-8",
     )
+    aggregate_experiment_timings(experiment_runner_output_directory, [run_name])
 
 
 def _write_experiment_runner_result(
@@ -179,7 +183,7 @@ def test_rejects_completed_experiment_runner_output_without_the_requested_run(tm
 def test_collects_run_outputs_without_building_report(tmp_path):
     experiment_runner_output_directory = tmp_path / "experiment-runner-0-output"
     _write_run_output(experiment_runner_output_directory / "first", "first", True)
-    _write_run_timings(experiment_runner_output_directory, [_timing_record("step", 1, 10.0)])
+    _write_run_timings(experiment_runner_output_directory, "first", [_timing_record("step", 1, 10.0)])
     first_run_metadata = _run_metadata("first-environment", "pi05")
     _write_experiment_runner_result(
         experiment_runner_output_directory,
@@ -235,10 +239,12 @@ def test_builds_experiment_output_from_separate_experiment_runner_outputs(tmp_pa
     _write_run_output(second_run_output_directory, "second", False)
     _write_run_timings(
         first_experiment_runner_output_directory,
+        "first",
         [_timing_record("step", 1, 10.0), _timing_record("step/policy_inference", 1, 4.0)],
     )
     _write_run_timings(
         second_experiment_runner_output_directory,
+        "second",
         [_timing_record("step", 3, 30.0)],
     )
     _write_experiment_runner_result(
@@ -314,8 +320,8 @@ def test_reports_failed_runner_without_its_partial_artifacts(tmp_path):
     failed_runner_output_directory = tmp_path / "failed-runner-output"
     _write_run_output(completed_runner_output_directory / "completed-run", "completed-run", True)
     _write_run_output(failed_runner_output_directory / "failed-run", "failed-run", False)
-    _write_run_timings(completed_runner_output_directory, [_timing_record("step", 1, 10.0)])
-    _write_run_timings(failed_runner_output_directory, [_timing_record("step", 1, 99.0)])
+    _write_run_timings(completed_runner_output_directory, "completed-run", [_timing_record("step", 1, 10.0)])
+    _write_run_timings(failed_runner_output_directory, "failed-run", [_timing_record("step", 1, 99.0)])
     _write_experiment_runner_result(
         completed_runner_output_directory,
         RunStatus.COMPLETED,

@@ -22,7 +22,7 @@ from pathlib import Path
 
 from isaaclab_arena.evaluation.arena_experiment_result import ARENA_EXPERIMENT_TIMINGS_FILENAME, ArenaExperimentResult
 from isaaclab_arena.evaluation.arena_run import RunStatus
-from isaaclab_arena.evaluation.experiment_timings import aggregate_experiment_timings
+from isaaclab_arena.evaluation.experiment_timings import aggregate_experiment_timings, read_experiment_run_records
 from isaaclab_arena.visualization.report import RunExecutionReport, build_report
 
 EXPERIMENT_RUNNER_RESULT_FILE_NAME = "experiment_runner_result.json"
@@ -148,14 +148,16 @@ def collect_run_outputs_into_experiment_output(
             experiment_runner_result_path,
             destination_run_output_directory / EXPERIMENT_RUNNER_RESULT_FILE_NAME,
         )
-        # The runner writes its timings beside the Run directory, so copy them in alongside the episode results.
+        # The runner writes its Experiment timings beside the Run directory. Keep only the Run's own records
+        # here, which is the per-Run format aggregate_experiment_timings reads.
         source_run_timings_path = experiment_runner_output_directory / ARENA_EXPERIMENT_TIMINGS_FILENAME
         assert (
             source_run_timings_path.is_file()
         ), f"Completed Run '{run_name}' is missing its timings file: '{source_run_timings_path}'"
-        shutil.copy2(
-            source_run_timings_path,
-            destination_run_output_directory / ARENA_EXPERIMENT_TIMINGS_FILENAME,
+        run_timing_records = read_experiment_run_records(source_run_timings_path)
+        (destination_run_output_directory / ARENA_EXPERIMENT_TIMINGS_FILENAME).write_text(
+            json.dumps(run_timing_records, allow_nan=False, indent=2) + "\n",
+            encoding="utf-8",
         )
     return (
         sorted(run_execution_reports, key=lambda run_execution_report: run_execution_report.run_name),

@@ -55,3 +55,19 @@ def aggregate_experiment_timings(experiment_output_directory: Path, run_names: I
         encoding="utf-8",
     )
     return experiment_timings_path
+
+
+def read_experiment_run_records(experiment_timings_path: Path) -> list[dict[str, object]]:
+    """Read the per-Run timer records from an Experiment timings file written by aggregate_experiment_timings.
+
+    Args:
+        experiment_timings_path: Experiment timings file holding "totals" and "runs".
+
+    Returns:
+        Every Run's timer records, each carrying its "run_name".
+    """
+    experiment_timings = json.loads(experiment_timings_path.read_text(encoding="utf-8"))
+    assert (
+        isinstance(experiment_timings, dict) and "runs" in experiment_timings
+    ), f"Experiment timings file must be a JSON object with a 'runs' field: '{experiment_timings_path}'"
+    return experiment_timings["runs"]
