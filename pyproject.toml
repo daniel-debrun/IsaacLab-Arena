@@ -234,6 +234,13 @@ namespaces = false
 [tool.setuptools.package-data]
 "*" = ["**/*.yaml", "**/*.yml", "**/*.json", "**/*.jsonl", "**/*.html"]
 
+"isaaclab_arena_environments" = [
+    "pc_upgrade/assets/*.usda",
+    "pc_upgrade/assets/*.png",
+    "pc_upgrade/assets/*.svg",
+    "pc_upgrade/assets/*.md",
+]
+
 [tool.setuptools.exclude-package-data]
 "*" = ["tests/test_data/**", "test_data/**"]
 

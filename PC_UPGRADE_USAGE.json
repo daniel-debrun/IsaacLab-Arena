@@ -1,0 +1,40 @@
+{
+  "task_started_utc": "2026-10-07T12:40:38.750000+00:00",
+  "snapshot_utc": "2026-10-07T13:25:50.113327+00:00",
+  "elapsed_seconds": 2711,
+  "agents": {
+    "primary": {
+      "as_of": "2026-10-07T13:25:49.893Z",
+      "input_tokens": 13028590,
+      "cached_input_tokens": 12820480,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 58984,
+      "reasoning_output_tokens": 17568,
+      "total_tokens": 13087574,
+      "uncached_input_tokens": 208110
+    },
+    "reviewer": {
+      "as_of": "2026-10-07T13:05:48.523Z",
+      "input_tokens": 459338,
+      "cached_input_tokens": 410112,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 2131,
+      "reasoning_output_tokens": 776,
+      "total_tokens": 461469,
+      "uncached_input_tokens": 49226
+    }
+  },
+  "combined": {
+    "input_tokens": 13487928,
+    "cached_input_tokens": 13230592,
+    "uncached_input_tokens": 257336,
+    "output_tokens": 61115,
+    "reasoning_output_tokens": 18344,
+    "total_tokens": 13549043
+  },
+  "notes": [
+    "Input includes repeatedly processed conversation context; cached input is a subset of input.",
+    "Reasoning output is a subset of output, not additional tokens.",
+    "Counters are telemetry snapshots, not a billing estimate; final reporting tokens may postdate this snapshot."
+  ]
+}

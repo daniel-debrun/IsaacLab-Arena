@@ -610,3 +610,44 @@ See Also
 - :doc:`../concepts/environment/index` — the Scene / Embodiment / Task building blocks used by every environment listed here.
 - :doc:`../quickstart/arena_env` — walkthrough of the ``pick_and_place_maple_table`` environment.
 - :doc:`../arena_in_your_repo/index` — how to register your own ``ExampleEnvironmentBase`` subclass alongside the built-in ones.
+
+PC Upgrade
+----------
+
+pc_upgrade
+^^^^^^^^^^
+
+**Task ID:** ``pc_upgrade``
+
+**Class:** ``PCUpgradeEnvironment`` (``isaaclab_arena_environments/pc_upgrade_environment.py``)
+
+**Task Description:** Open the PC service panel, select and install the NVIDIA
+GeForce RTX 5090 in its horizontal riser carrier, close the panel, then recycle
+the fictional VORTEX VX 880 and CINDER C700 cards. Completion requires ordered
+pickups, settled insertion, hand clearance and whole-card bin containment.
+
+.. list-table::
+   :widths: 30 70
+   :header-rows: 1
+
+   * - Property
+     - Value
+   * - **Embodiment**
+     - Franka with relative pose and gripper control
+   * - **Scene**
+     - Service bench, hinged PC, three GPU cards and electronics recycling bin
+   * - **Task Class**
+     - ``PCUpgradeTask`` with six ordered stages and a 300-second budget
+   * - **CLI Args**
+     - ``--episode_length_s``, ``--teleop_device``, ``--enable_cameras``
+   * - **Assets**
+     - Local procedural USD assets; existing Isaac Lab Franka
+
+The runnable example and detailed task contract are in
+``isaaclab_arena_examples/pc_upgrade/README.md``. Its deterministic demonstration
+writes assisted object trajectories and validates the complete task; it does not
+claim autonomous robot manipulation success. Mimic generation is not configured.
+
+.. code-block:: bash
+
+   python isaaclab_arena_examples/pc_upgrade/demo.py --capture

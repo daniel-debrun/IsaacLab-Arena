@@ -1,0 +1,320 @@
+#usda 1.0
+(
+    defaultPrim = "Asset"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "Asset"
+{
+    def "Materials"
+    {
+        def Material "steel"
+        {
+            token outputs:surface.connect = </Asset/Materials/steel/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.28, 0.31, 0.35)
+                float inputs:metallic = 0.85
+                float inputs:roughness = 0.26
+                token outputs:surface
+            }
+        }
+
+        def Material "black"
+        {
+            token outputs:surface.connect = </Asset/Materials/black/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.018, 0.023, 0.029)
+                float inputs:metallic = 0.55
+                float inputs:roughness = 0.3
+                token outputs:surface
+            }
+        }
+
+        def Material "rubber"
+        {
+            token outputs:surface.connect = </Asset/Materials/rubber/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.008, 0.012, 0.016)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.8
+                token outputs:surface
+            }
+        }
+
+        def Material "silver"
+        {
+            token outputs:surface.connect = </Asset/Materials/silver/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.6, 0.65, 0.7)
+                float inputs:metallic = 0.95
+                float inputs:roughness = 0.2
+                token outputs:surface
+            }
+        }
+
+        def Material "pcb"
+        {
+            token outputs:surface.connect = </Asset/Materials/pcb/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.015, 0.055, 0.035)
+                float inputs:metallic = 0.15
+                float inputs:roughness = 0.55
+                token outputs:surface
+            }
+        }
+
+        def Material "gold"
+        {
+            token outputs:surface.connect = </Asset/Materials/gold/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.48, 0.12)
+                float inputs:metallic = 0.9
+                float inputs:roughness = 0.23
+                token outputs:surface
+            }
+        }
+
+        def Material "green"
+        {
+            token outputs:surface.connect = </Asset/Materials/green/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.3, 0.65, 0.005)
+                float inputs:metallic = 0.3
+                float inputs:roughness = 0.3
+                token outputs:surface
+            }
+        }
+
+        def Material "red"
+        {
+            token outputs:surface.connect = </Asset/Materials/red/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.6, 0.075, 0.025)
+                float inputs:metallic = 0.4
+                float inputs:roughness = 0.3
+                token outputs:surface
+            }
+        }
+
+        def Material "blue"
+        {
+            token outputs:surface.connect = </Asset/Materials/blue/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.035, 0.23, 0.65)
+                float inputs:metallic = 0.4
+                float inputs:roughness = 0.3
+                token outputs:surface
+            }
+        }
+
+        def Material "wood"
+        {
+            token outputs:surface.connect = </Asset/Materials/wood/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.3, 0.2, 0.105)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.6
+                token outputs:surface
+            }
+        }
+
+        def Material "mat"
+        {
+            token outputs:surface.connect = </Asset/Materials/mat/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.035, 0.075, 0.08)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.88
+                token outputs:surface
+            }
+        }
+    }
+
+    def Cube "Floor" (
+        prepend apiSchemas = ["MaterialBindingAPI", "PhysicsCollisionAPI"]
+    )
+    {
+        rel material:binding = </Asset/Materials/blue>
+        double size = 1
+        float3 xformOp:scale = (0.426, 0.346, 0.01)
+        double3 xformOp:translate = (0, 0, 0.005)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+
+    def Cube "End0" (
+        prepend apiSchemas = ["MaterialBindingAPI", "PhysicsCollisionAPI"]
+    )
+    {
+        rel material:binding = </Asset/Materials/blue>
+        double size = 1
+        float3 xformOp:scale = (0.008, 0.346, 0.3)
+        double3 xformOp:translate = (-0.209, 0, 0.15)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+
+    def Cube "End1" (
+        prepend apiSchemas = ["MaterialBindingAPI", "PhysicsCollisionAPI"]
+    )
+    {
+        rel material:binding = </Asset/Materials/blue>
+        double size = 1
+        float3 xformOp:scale = (0.008, 0.346, 0.3)
+        double3 xformOp:translate = (0.209, 0, 0.15)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+
+    def Cube "Side0" (
+        prepend apiSchemas = ["MaterialBindingAPI", "PhysicsCollisionAPI"]
+    )
+    {
+        rel material:binding = </Asset/Materials/blue>
+        double size = 1
+        float3 xformOp:scale = (0.426, 0.008, 0.3)
+        double3 xformOp:translate = (0, -0.169, 0.15)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+
+    def Cube "Side1" (
+        prepend apiSchemas = ["MaterialBindingAPI", "PhysicsCollisionAPI"]
+    )
+    {
+        rel material:binding = </Asset/Materials/blue>
+        double size = 1
+        float3 xformOp:scale = (0.426, 0.008, 0.3)
+        double3 xformOp:translate = (0, 0.169, 0.15)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+
+    def Cube "RimX0" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Asset/Materials/black>
+        double size = 1
+        float3 xformOp:scale = (0.019, 0.364, 0.018)
+        double3 xformOp:translate = (-0.214, 0, 0.299)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+
+    def Cube "RimX1" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Asset/Materials/black>
+        double size = 1
+        float3 xformOp:scale = (0.019, 0.364, 0.018)
+        double3 xformOp:translate = (0.214, 0, 0.299)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+
+    def Cube "RimY0" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Asset/Materials/black>
+        double size = 1
+        float3 xformOp:scale = (0.438, 0.018, 0.018)
+        double3 xformOp:translate = (0, -0.174, 0.299)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+
+    def Cube "RimY1" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Asset/Materials/black>
+        double size = 1
+        float3 xformOp:scale = (0.438, 0.018, 0.018)
+        double3 xformOp:translate = (0, 0.174, 0.299)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+
+    def Cube "LabelLip" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Asset/Materials/black>
+        double size = 1
+        float3 xformOp:scale = (0.3, 0.07, 0.008)
+        double3 xformOp:translate = (0, -0.19, 0.293)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+
+    def Mesh "Label" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 1
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        rel material:binding = </Asset/LabelMaterial>
+        point3f[] points = [(-0.14, -0.222, 0.298), (0.14, -0.222, 0.298), (0.14, -0.158, 0.298), (-0.14, -0.158, 0.298)]
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+        uniform token subdivisionScheme = "none"
+    }
+
+    def Material "LabelMaterial"
+    {
+        token outputs:surface.connect = </Asset/LabelMaterial/Shader.outputs:surface>
+
+        def Shader "Shader"
+        {
+            uniform token info:id = "UsdPreviewSurface"
+            color3f inputs:diffuseColor.connect = </Asset/LabelMaterial/Texture.outputs:rgb>
+            float inputs:roughness = 0.5
+            token outputs:surface
+        }
+
+        def Shader "UV"
+        {
+            uniform token info:id = "UsdPrimvarReader_float2"
+            token inputs:varname = "st"
+            float2 outputs:result
+        }
+
+        def Shader "Texture"
+        {
+            uniform token info:id = "UsdUVTexture"
+            asset inputs:file = @recycle_label.png@
+            token inputs:sourceColorSpace = "sRGB"
+            float2 inputs:st.connect = </Asset/LabelMaterial/UV.outputs:result>
+            color3f outputs:rgb
+        }
+    }
+}
