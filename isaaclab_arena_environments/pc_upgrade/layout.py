@@ -6,11 +6,13 @@
 """Scene dimensions in metres, in the local environment frame E."""
 
 TABLE_Z = 0.75
-PC_POSITION = (0.62, 0.20, TABLE_Z)
-SLOT_IN_PC = (0.0, -0.025, 0.115)
-BIN_POSITION = (0.22, 0.40, TABLE_Z)
+PC_POSITION = (0.74, 0.36, TABLE_Z)
+SLOT_IN_PC = (-0.060, 0.045, 0.205)
+# Fan face points down; the gold edge connector points toward the motherboard (+Y).
+SLOT_QUATERNION = (1.0, 0.0, 0.0, 0.0)
+BIN_POSITION = (0.20, 0.40, TABLE_Z)
 CARD_POSITIONS = {
-    "rtx_5090": (0.42, -0.25, TABLE_Z + 0.025),
-    "vortex_vx880": (0.15, -0.49, TABLE_Z + 0.025),
-    "cinder_c700": (0.52, -0.49, TABLE_Z + 0.025),
+    "rtx_5090": (0.48, -0.32, TABLE_Z + 0.025),
+    "vortex_vx880": (0.15, -0.53, TABLE_Z + 0.025),
+    "cinder_c700": (0.53, -0.53, TABLE_Z + 0.025),
 }

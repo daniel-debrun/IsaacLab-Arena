@@ -622,9 +622,9 @@ pc_upgrade
 **Class:** ``PCUpgradeEnvironment`` (``isaaclab_arena_environments/pc_upgrade_environment.py``)
 
 **Task Description:** Open the PC service panel, select and install the NVIDIA
-GeForce RTX 5090 in its horizontal riser carrier, close the panel, then recycle
+GeForce RTX 5090 in the upright tower's motherboard PCIe socket, close the panel, then recycle
 the fictional VORTEX VX 880 and CINDER C700 cards. Completion requires ordered
-pickups, settled insertion, hand clearance and whole-card bin containment.
+pickups, aligned side entry, settled insertion, hand clearance and whole-card bin containment.
 
 .. list-table::
    :widths: 30 70
@@ -645,7 +645,7 @@ pickups, settled insertion, hand clearance and whole-card bin containment.
 
 The runnable example and detailed task contract are in
 ``isaaclab_arena_examples/pc_upgrade/README.md``. Its deterministic demonstration
-writes assisted object trajectories and validates the complete task; it does not
+uses smooth virtual-grasp forces and validates the complete task; it does not
 claim autonomous robot manipulation success. Mimic generation is not configured.
 
 .. code-block:: bash

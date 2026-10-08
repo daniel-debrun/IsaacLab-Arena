@@ -20,7 +20,7 @@ from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
 from isaaclab_arena.tasks.task_base import TaskBase
 from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
 from isaaclab_arena_environments.pc_upgrade.geometry import contained_card, hand_clear_of_card, seated_card, settled
-from isaaclab_arena_environments.pc_upgrade.layout import BIN_POSITION, SLOT_IN_PC, TABLE_Z
+from isaaclab_arena_environments.pc_upgrade.layout import BIN_POSITION, SLOT_IN_PC, SLOT_QUATERNION, TABLE_Z
 
 
 def panel_open(env):
@@ -48,21 +48,39 @@ def lifted(env):
     """Require the RTX card to clear the bench with the panel open."""
     height = env.scene["rtx_5090"].data.root_pos_w[:, 2] - env.scene.env_origins[:, 2]
     position = env.scene["rtx_5090"].data.root_pos_w - env.scene["pc_chassis"].data.root_pos_w
-    outside_pc = (position[:, 0].abs() > 0.20) | (position[:, 1].abs() > 0.18)
+    outside_pc = (position[:, 0].abs() > 0.23) | (position[:, 1].abs() > 0.14)
     return panel_open(env) & outside_pc & (height > TABLE_Z + 0.10)
+
+
+def socket_pose(env):
+    """Return the card pose relative to the motherboard socket, in metres and xyzw."""
+    pc = env.scene["pc_chassis"].data
+    gpu = env.scene["rtx_5090"].data
+    # P, S and G denote the PC, socket and graphics-card frames.
+    t_P_G, q_P_G = subtract_frame_transforms(pc.root_pos_w[:], pc.root_quat_w[:], gpu.root_pos_w[:], gpu.root_quat_w[:])
+    t_P_S = t_P_G.new_tensor(SLOT_IN_PC).expand_as(t_P_G)
+    q_P_S = q_P_G.new_tensor(SLOT_QUATERNION).expand_as(q_P_G)
+    return subtract_frame_transforms(t_P_S, q_P_S, t_P_G, q_P_G)
+
+
+def insertion_approach(env):
+    """Observe an aligned card outside the side opening before entering the socket."""
+    t_S_G, q_S_G = socket_pose(env)
+    # Socket frame S rotates 180 degrees about X: its +Y points out of the case.
+    aligned = q_S_G[:, 3].abs() > 0.9962
+    in_front = (t_S_G[:, 1] > 0.12) & (t_S_G[:, 1] < 0.25)
+    on_axis = (t_S_G[:, 0].abs() < 0.012) & (t_S_G[:, 2].abs() < 0.012)
+    return panel_open(env) & aligned & in_front & on_axis
 
 
 def installed(env):
     """Require the correct card to be aligned, stationary, and clear of the hand."""
-    pc = env.scene["pc_chassis"].data
     gpu = env.scene["rtx_5090"].data
-    # P is the PC chassis frame; G is the graphics-card frame.
-    t_P_G, q_P_G = subtract_frame_transforms(pc.root_pos_w[:], pc.root_quat_w[:], gpu.root_pos_w[:], gpu.root_quat_w[:])
-    t_S_G = t_P_G - t_P_G.new_tensor(SLOT_IN_PC)
+    t_S_G, q_S_G = socket_pose(env)
     hand = env.scene["ee_frame"].data.target_pos_w[:, 0]
     t_G_H = quat_apply_inverse(gpu.root_quat_w[:], hand - gpu.root_pos_w)
     hand_clear = hand_clear_of_card(t_G_H)
-    return seated_card(t_S_G, q_P_G, gpu.root_vel_w) & hand_clear
+    return seated_card(t_S_G, q_S_G, gpu.root_vel_w) & hand_clear
 
 
 def ready_to_recycle(env, name):
@@ -108,6 +126,7 @@ def reset_panel(env, env_ids):
     pc = env.scene["pc_chassis"]
     position = torch.zeros_like(pc.data.joint_pos[env_ids])
     pc.write_joint_state_to_sim(position, torch.zeros_like(position), env_ids=env_ids)
+    pc.set_joint_position_target(position, env_ids=env_ids)
 
 
 def object_state(env):
@@ -144,8 +163,8 @@ class PCUpgradeTask(TaskBase):
     def __init__(self, episode_length_s=300.0):
         super().__init__(
             episode_length_s,
-            "Open the PC chassis, pick up the NVIDIA GeForce RTX 5090, install it in the service carrier, close the"
-            " chassis, then put the VORTEX VX 880 and CINDER C700 cards in the electronics recycling bin.",
+            "Open the PC chassis, pick up the NVIDIA GeForce RTX 5090, insert it into the motherboard PCIe slot, close"
+            " the chassis, then put the VORTEX VX 880 and CINDER C700 cards in the electronics recycling bin.",
         )
 
     def get_scene_cfg(self):
@@ -171,6 +190,8 @@ class PCUpgradeTask(TaskBase):
             sequence = [TrueForConsecutiveStepsCfg(predicate, steps)]
             if index == 1:
                 sequence.insert(0, partial(at_bench, name="rtx_5090"))
+            if index == 2:
+                sequence.insert(0, TrueForConsecutiveStepsCfg(insertion_approach, 3))
             if index >= 4:
                 card_name = "vortex_vx880" if index == 4 else "cinder_c700"
                 sequence.insert(0, TrueForConsecutiveStepsCfg(partial(ready_to_recycle, name=card_name), 3))
@@ -190,4 +211,4 @@ class PCUpgradeTask(TaskBase):
         return [SuccessRateMetric(), SubtaskSuccessRateMetric()]
 
     def get_viewer_cfg(self):
-        return ViewerCfg(eye=(1.65, -1.75, 2.25), lookat=(0.40, 0.0, 0.80), resolution=(1440, 1080))
+        return ViewerCfg(eye=(1.65, -1.70, 1.95), lookat=(0.43, 0.03, 0.96), resolution=(1440, 1080))

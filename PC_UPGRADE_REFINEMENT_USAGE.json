@@ -1,0 +1,54 @@
+{
+  "started_utc": "2026-10-08T12:25:50.831Z",
+  "snapshot_utc": "2026-10-08T13:05:45.840063+00:00",
+  "elapsed_seconds": 2395,
+  "scope": "Current refinement turn only; primary usage delta plus asset, motion and review agents.",
+  "agents": {
+    "primary": {
+      "input_tokens": 11785810,
+      "cached_input_tokens": 11624704,
+      "output_tokens": 37509,
+      "reasoning_output_tokens": 14751,
+      "total_tokens": 11823319,
+      "uncached_input_tokens": 161106
+    },
+    "review_refinement": {
+      "input_tokens": 492939,
+      "cached_input_tokens": 446976,
+      "output_tokens": 2291,
+      "reasoning_output_tokens": 696,
+      "total_tokens": 495230,
+      "uncached_input_tokens": 45963
+    },
+    "smooth_demo": {
+      "input_tokens": 7593126,
+      "cached_input_tokens": 7473408,
+      "output_tokens": 26800,
+      "reasoning_output_tokens": 7525,
+      "total_tokens": 7619926,
+      "uncached_input_tokens": 119718
+    },
+    "refine_assets": {
+      "input_tokens": 952518,
+      "cached_input_tokens": 908672,
+      "output_tokens": 15144,
+      "reasoning_output_tokens": 1645,
+      "total_tokens": 967662,
+      "uncached_input_tokens": 43846
+    }
+  },
+  "combined": {
+    "input_tokens": 20824393,
+    "cached_input_tokens": 20453760,
+    "output_tokens": 81744,
+    "reasoning_output_tokens": 24617,
+    "total_tokens": 20906137,
+    "uncached_input_tokens": 370633
+  },
+  "notes": [
+    "Input includes repeatedly processed context; cached input is a subset of input.",
+    "Reasoning is a subset of output. Counters are telemetry, not a billing estimate.",
+    "Elapsed wall time includes tools/simulation; excludes the overnight gap before this turn.",
+    "Final response and commit bookkeeping may postdate this snapshot."
+  ]
+}

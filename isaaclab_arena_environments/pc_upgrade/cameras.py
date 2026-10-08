@@ -14,8 +14,8 @@ from isaaclab.utils.math import create_rotation_matrix_from_view, quat_from_matr
 
 from isaaclab_arena.embodiments.franka.franka import FrankaCameraCfg
 
-EYE = (1.45, -1.5, 2.1)
-TARGET = (0.40, 0.0, 0.80)
+EYE = (1.55, -1.6, 1.90)
+TARGET = (0.43, 0.03, 0.96)
 
 
 @configclass

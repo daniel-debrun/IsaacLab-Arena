@@ -50,11 +50,28 @@ class PCUpgradeEnvironment(ArenaEnvironmentFactory[PCUpgradeEnvironmentCfg]):
             object_type = ObjectType.RIGID if name in CARD_POSITIONS else ObjectType.BASE
             if name == "pc_chassis":
                 object_type = ObjectType.ARTICULATION
+            spawn_addon = {}
+            if name == "pc_chassis":
+                spawn_addon["collision_props"] = sim_utils.CollisionPropertiesCfg(contact_offset=0.001, rest_offset=0.0)
+            if name in CARD_POSITIONS:
+                # Millimetre contact margins fit the connector channel; bounded
+                # depenetration prevents large impulses at the thin supports.
+                spawn_addon = {
+                    "rigid_props": sim_utils.RigidBodyPropertiesCfg(
+                        solver_position_iteration_count=12,
+                        solver_velocity_iteration_count=4,
+                        max_depenetration_velocity=0.5,
+                        linear_damping=0.02,
+                        angular_damping=0.05,
+                    ),
+                    "collision_props": sim_utils.CollisionPropertiesCfg(contact_offset=0.001, rest_offset=0.0),
+                }
             obj = Object(
                 name=name,
                 usd_path=str(directory / f"{name}.usda"),
                 object_type=object_type,
                 initial_pose=Pose(position_xyz=position),
+                spawn_cfg_addon=spawn_addon,
             )
             if name == "pc_chassis":
                 obj.object_cfg.actuators = {
@@ -92,12 +109,23 @@ class PCUpgradeEnvironment(ArenaEnvironmentFactory[PCUpgradeEnvironmentCfg]):
                 initial_pose=Pose(position_xyz=(0.4, 0.0, 2.7)),
             )
         )
+        assets.append(
+            Object(
+                name="front_fill_light",
+                object_type=ObjectType.BASE,
+                spawner_cfg=sim_utils.DiskLightCfg(intensity=700.0, radius=0.65, color=(0.88, 0.94, 1.0)),
+                initial_pose=Pose(
+                    position_xyz=(0.65, -0.90, 1.90),
+                    rotation_xyzw=(0.461748613, 0.0, 0.0, 0.887010833),
+                ),
+            )
+        )
         robot = FrankaIKEmbodiment(enable_cameras=cfg.enable_cameras)
         if cfg.enable_cameras:
             from isaaclab_arena_environments.pc_upgrade.cameras import PCUpgradeCameraCfg
 
             robot.camera_config = PCUpgradeCameraCfg()
-        robot.set_initial_pose(Pose(position_xyz=(-0.10, 0.0, 0.75)))
+        robot.set_initial_pose(Pose(position_xyz=(0.0, 0.0, 0.75)))
         robot.set_initial_joint_pose([0.0, -0.6, 0.0, -2.4, 0.0, 1.8, 0.7854, 0.04, 0.04])
         # Reproducible setup for teleoperation and scripted controller development.
         robot.event_config.randomize_franka_joint_state.params["std"] = 0.0

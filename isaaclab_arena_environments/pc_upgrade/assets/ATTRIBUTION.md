@@ -15,5 +15,6 @@ https://www.nvidia.com/en-au/geforce/graphics-cards/50-series/rtx-5090/
 The model is representative geometry, not a mechanical or thermal replica.
 
 VORTEX VX 880 and CINDER C700 are fictional labels used only in this scene.
-The service carrier represents a horizontal PCIe riser installation; connector
-latching, power wiring, and screw fastening are outside the task.
+The tower represents a vertical motherboard with a horizontal GPU inserted into
+a side-facing PCIe socket. Its rear bracket ledge and anti-sag arm support the
+card. Connector latching, power wiring and screw fastening are outside the task.

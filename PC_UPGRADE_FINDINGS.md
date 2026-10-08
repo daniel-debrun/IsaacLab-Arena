@@ -3,6 +3,12 @@
 Current worktree: `/home/dtingdahl/develop/IsaacLab-Arena/.worktrees/pc-upgrade`.
 Branch: `dtingdahl/feature/pc-upgrade-task`.
 
+The current refinement uses an upright tower and motherboard PCIe insertion,
+distinct dual-fan/triple-fan/blower GPUs, a rounded recycling bin, and
+physics-rate assisted motion. The original version is preserved in commit
+`588f1ca241`; the early sections below are its historical findings. See the
+2026-10-08 refinement section for the new design and validation.
+
 ## Objective and design
 
 Build a runnable Arena scene with a service bench, hinged PC chassis, visibly branded
@@ -158,3 +164,91 @@ so the image's editable install cannot resolve `isaaclab`. Confirmed with
 the existing parent container imports `AppLauncher` correctly, while PYTHONPATH
 selects Arena from the nested feature worktree. Updated the README with explicit
 host/container steps. This route needs no rebuild or dependency installation.
+
+## Refinement pass — 2026-10-08
+
+Baseline preserved in signed-off commit `588f1ca241`, with all staged host
+pre-commit hooks passing. This commit reproduces the original service-carrier
+scene and its saved validation. The refinement remains in the same isolated
+worktree and will be a separate commit.
+
+Design: upright tower, vertical motherboard, real side-facing PCIe socket,
+horizontal card insertion, rear-hinged side panel with visible hardware.
+Rotate the selected card 180 degrees about its long axis before insertion so
+its connector faces the motherboard and its cooling fans face down. Preserve
+the six ordered stages and require an aligned approach outside the socket
+before crediting insertion. Distinct cooler designs differentiate the three
+GPUs. A tapered hollow bin with rim, handles and recycling graphics replaces
+the plain rectangular container. Move bench instructions to a clear front strip.
+
+Jitter investigation: baseline writes poses and zero velocity at 15 Hz while
+physics runs at 120 Hz. Gravity acts during the eight intervening substeps.
+Measure this sawtooth motion, then validate a demo-only physics-rate controller
+with continuous forces and smooth trajectories. The ordinary robot-action
+environment must not acquire hidden assistance.
+
+Validation planned: geometry/order/partial-reset regressions, quantitative
+motion checks, full two-environment task and reset, rendered asset/scene
+inspection, host commit hooks. Runtime is the existing parent-checkout
+container; no shared dependency or Docker configuration changes.
+
+### Refinement investigation and checks
+
+- Preserved the original version with a signed-off commit after all host hooks
+  passed; no changes to the parent checkout were included.
+- Measured the original controller's gravity sag: 21.885 mm every 66.67 ms,
+  followed by a pose reset. Replaced state writes with a demo-only action term
+  applying bounded gravity-compensated forces/torques every 1/120 s. Trajectories
+  start and stop with zero velocity and acceleration. Card collisions stay active.
+- Added a demo-only smooth position drive for the hinged panel; ordinary policy
+  environments retain the passive damped hinge and seven robot action dimensions.
+- Seven task/geometry tests passed. New regression was observed failing before
+  the socket orientation and approach-history checks were implemented.
+- Independent review found partial-reset assistance leaking across clones.
+  Fixed with per-environment active masks and indexed wrench clearing. Two
+  focused motion tests passed, including an actual airborne grasp and panel hold
+  retained in clone one while clone zero resets, followed by physical release.
+  Reviewer checked the fix and found no remaining issue within that scope.
+- First insertion attempt tilted at coplanar support contact. A USD collision
+  audit exposed zero lead-in clearance. Lowered bracket tops 2 mm and widened
+  the simplified socket collision channel to 7 mm around its 3 mm tongue.
+  The card now slides freely then settles 2 mm onto the socket/supports.
+- Force-based control exposed two paths crossing obstacles that pose writes had
+  obscured. Move/rotate the RTX in front of the open door before approaching the
+  socket. Carry discarded cards above the robot/tower and lower over the bin.
+- Initial renders verified unobstructed table instructions. Corrected heatsink
+  fins crossing fan faces. Added a single-blower CINDER cooler, subtle oak grain,
+  board traces and ICs, magnetic-catch visuals, and per-card material names.
+
+- Full two-environment regression passed in 192.46 s: both environments completed
+  all six stages, retained the installed GPU and closed panel, recycled both mock
+  cards, and reset. Exactly two terminal episode records. Saved under the example's
+  `validation/` directory. Worst free-space tracking error 0.08037 mm; maximum
+  angular tracking error 0.000866 rad. Largest physics-step displacement 3.855 mm
+  corresponds to commanded motion (peak speed 0.463 m/s), not residual jitter.
+- Built wheel and inspected its contents: all 16 local asset files (six USD,
+  eight PNG, SVG and attribution) and the new controller are included.
+
+- Final polished rendered rollout passed with strict 2 mm free-space tracking and
+  0.01 rad orientation bounds, success `[true]`, reset verified, exactly one
+  terminal episode, and no renderer errors in its log. Fresh previews include
+  closed/open tower, all three coolers, empty socket and installed GPU close-ups.
+  Headless capture now renders snapshots explicitly; GUI runs retain normal
+  viewport rendering. Added soft frontal fill lighting for interior detail.
+- All required host pre-commit hooks pass. Ten focused pytest tests passed across
+  geometry/order (7), motion/partial reset (2), and full two-environment
+  subprocess integration (1). This is not the entire Arena test suite.
+- The demo remains explicitly assisted by virtual forces, not a verified
+  autonomous robot policy. Manufacturing tolerances, electrical connections,
+  cable attachment and mechanical connector latching are outside this model.
+
+### Refinement time and token accounting
+
+Started 2026-10-08T12:25:50.831Z; snapshot 2026-10-08T13:05:45.840063+00:00.
+Elapsed wall time: 39.9 minutes, including simulation, tools and review.
+Combined output: 81,744 tokens; uncached input: 370,633;
+cached input: 20,453,760. Input counts include repeated context.
+This pass excludes the overnight gap and previous work. The original usage
+snapshot remains in `PC_UPGRADE_USAGE.json`; this pass is recorded separately in
+`PC_UPGRADE_REFINEMENT_USAGE.json`. Counters are telemetry snapshots, not billing
+estimates, and exclude final bookkeeping after the snapshot.
