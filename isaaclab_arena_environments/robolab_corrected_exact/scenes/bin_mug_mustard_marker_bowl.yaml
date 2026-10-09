@@ -1,0 +1,75 @@
+embodiment:
+  id: droid
+  registry_name: droid_abs_joint_pos
+  params: {}
+background:
+  id: table_oak_robolab
+  registry_name: table_oak_robolab
+  params: {}
+objects:
+- id: bowl
+  registry_name: bowl_ycb_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.36508646607398987
+    - -0.039747919887304306
+    - 0.03235117346048355
+    rotation_xyzw:
+    - -0.0003851651563309133
+    - -0.000453057000413537
+    - -6.336405931506306e-05
+    - 0.9999998211860657
+- id: grey_bin
+  registry_name: grey_bin_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.5183119177818298
+    - 0.28813639283180237
+    - 0.005000021308660507
+    rotation_xyzw:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+- id: mustard
+  registry_name: mustard_ycb_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.5899062156677246
+    - 3.2778101740404963e-05
+    - 0.10049230605363846
+    rotation_xyzw:
+    - -0.00017768083489499986
+    - -0.0009601446217857301
+    - 1.5031322618597187e-05
+    - 0.9999995231628418
+- id: dry_erase_marker
+  registry_name: dry_erase_marker_ycb_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.3804348111152649
+    - -0.26023679971694946
+    - 0.014079865999519825
+    rotation_xyzw:
+    - -0.0008057834929786623
+    - 0.04130299389362335
+    - 1.1625165825535078e-05
+    - 0.9991463422775269
+- id: mug
+  registry_name: mug_ycb_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.509149968624115
+    - -0.1837698072195053
+    - 0.04555189609527588
+    rotation_xyzw:
+    - -0.000329566712025553
+    - -0.001579277333803475
+    - 0.00014096660015638918
+    - 0.9999986886978149
+relations: []
