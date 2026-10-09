@@ -78,6 +78,10 @@ def _mesh_box(name: str, extents: tuple[float, float, float], position: tuple[fl
 
 def _make_usd_background():
     """Background stub for USD mesh extraction tests."""
+    from types import SimpleNamespace
+
+    import isaaclab.sim as sim_utils
+
     from isaaclab_arena.assets.background import Background
     from isaaclab_arena.assets.object_type import ObjectType
     from isaaclab_arena.utils.pose import Pose
@@ -86,6 +90,9 @@ def _make_usd_background():
     background.name = "kitchen"
     background.usd_path = "/tmp/kitchen.usda"
     background.scale = (1.0, 1.0, 1.0)
+    background.object_cfg = SimpleNamespace(
+        spawn=sim_utils.UsdFileCfg(usd_path=background.usd_path, scale=background.scale)
+    )
     background.object_type = ObjectType.BASE
     background.collision_mode = None
     background.initial_pose = Pose.identity()
@@ -153,6 +160,9 @@ def test_background_collision_objects_reject_failed_whole_background(monkeypatch
 
 def test_warp_mesh_cache_caches_unsupported_usd_geometry(monkeypatch):
     """Unsupported USD geometry degrades to cached meshless collision."""
+    from types import SimpleNamespace
+
+    import isaaclab.sim as sim_utils
     import pytest
 
     from isaaclab_arena.assets.object import Object
@@ -164,6 +174,7 @@ def test_warp_mesh_cache_caches_unsupported_usd_geometry(monkeypatch):
     obj.name = "kitchen"
     obj.usd_path = "/tmp/kitchen.usd"
     obj.scale = [1.0, 1.0, 1.0]
+    obj.object_cfg = SimpleNamespace(spawn=sim_utils.UsdFileCfg(usd_path=obj.usd_path, scale=tuple(obj.scale)))
     obj.object_type = ObjectType.BASE
     obj.repair_collision_mesh_non_watertight = True
     calls = {"count": 0}
@@ -184,6 +195,10 @@ def test_warp_mesh_cache_caches_unsupported_usd_geometry(monkeypatch):
 
 def test_warp_mesh_cache_keys_exclusions(monkeypatch):
     """Different anchor exclusions cannot reuse a stale whole-background mesh."""
+    from types import SimpleNamespace
+
+    import isaaclab.sim as sim_utils
+
     from isaaclab_arena.assets.object import Object
     from isaaclab_arena.assets.object_type import ObjectType
     from isaaclab_arena.relations.warp_mesh_manager import WarpMeshAndSphereCache
@@ -192,6 +207,7 @@ def test_warp_mesh_cache_keys_exclusions(monkeypatch):
     obj.name = "kitchen"
     obj.usd_path = "/tmp/kitchen.usda"
     obj.scale = (1.0, 1.0, 1.0)
+    obj.object_cfg = SimpleNamespace(spawn=sim_utils.UsdFileCfg(usd_path=obj.usd_path, scale=tuple(obj.scale)))
     obj.object_type = ObjectType.BASE
     obj.repair_collision_mesh_non_watertight = False
     calls = []
@@ -208,6 +224,53 @@ def test_warp_mesh_cache_keys_exclusions(monkeypatch):
     manager.get_collision_mesh(obj, excluded_prim_paths=["/Kitchen/floor"])
 
     assert calls == [("/Kitchen/counter",), ("/Kitchen/floor",)]
+
+
+def test_warp_mesh_cache_follows_spawn_cfg(tmp_path, monkeypatch):
+    """Mesh extraction and Warp cache keys use the live spawn config, not the declared USD path."""
+    from types import SimpleNamespace
+
+    import isaaclab.sim as sim_utils
+    import pytest
+
+    from isaaclab_arena.assets.object import Object
+    from isaaclab_arena.assets.object_type import ObjectType
+    from isaaclab_arena.relations.warp_mesh_manager import WarpMeshAndSphereCache
+
+    extents_by_path = {"/tmp/small.usda": 1.0, "/tmp/big.usda": 2.0}
+
+    def fake_extract(usd_path, scale, excluded_prim_paths=()):
+        extent = extents_by_path[usd_path]
+        return _mesh_box("mesh", (extent, extent, extent), (0.0, 0.0, 0.0)).get_collision_mesh()
+
+    monkeypatch.setattr("isaaclab_arena.utils.usd.helpers.extract_trimesh_from_usd", fake_extract)
+    obj = Object.__new__(Object)
+    obj.name = "box"
+    obj.usd_path = "/tmp/declared.usda"
+    obj.scale = (1.0, 1.0, 1.0)
+    obj.object_type = ObjectType.RIGID
+    obj.repair_collision_mesh_non_watertight = False
+    obj.object_cfg = SimpleNamespace(spawn=sim_utils.UsdFileCfg(usd_path="/tmp/small.usda", scale=(1.0, 1.0, 1.0)))
+    manager = WarpMeshAndSphereCache(device="cpu")
+
+    small_mesh = manager.get_collision_mesh(obj)
+    small_warp_mesh = manager.get_warp_mesh(small_mesh, obj)
+    assert small_mesh.extents.tolist() == [1.0, 1.0, 1.0]
+
+    obj.object_cfg.spawn = sim_utils.UsdFileCfg(usd_path="/tmp/big.usda", scale=(1.0, 1.0, 1.0))
+    big_mesh = manager.get_collision_mesh(obj)
+    assert big_mesh.extents.tolist() == [2.0, 2.0, 2.0]
+    # A Warp mesh cached under the declared asset would alias the old geometry.
+    big_warp_mesh = manager.get_warp_mesh(big_mesh, obj)
+    assert big_warp_mesh is not small_warp_mesh
+    assert big_warp_mesh.points.numpy().max() == pytest.approx(1.0)
+
+    obj.object_cfg.spawn = sim_utils.CuboidCfg(size=(1.0, 1.0, 1.0))
+    assert manager.get_collision_mesh(obj) is None
+
+    obj.object_cfg.spawn = sim_utils.MultiUsdFileCfg(usd_path=["/tmp/small.usda", "/tmp/big.usda"])
+    assert manager.get_collision_mesh(obj) is None
+    assert manager.get_collision_mesh_or_raise(obj) is None
 
 
 def test_background_anchor_exclusions_can_remove_all_meshes(monkeypatch):
