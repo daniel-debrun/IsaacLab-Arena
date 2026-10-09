@@ -201,7 +201,7 @@ def compute_local_bounding_box_from_usd(
 ) -> AxisAlignedBoundingBox:
     """Compute the local bounding box matching Isaac Lab ``UsdFileCfg`` spawn size.
 
-    Opens the USD file and delegates to compute_local_bounding_box_from_stage().
+    A spawn scale replaces the default prim's authored root scale, as ``UsdFileCfg.scale`` does at spawn time.
 
     Args:
         usd_path: Path to the USD file.

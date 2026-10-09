@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import TYPE_CHECKING
 
 from isaaclab.sim import (
     CapsuleCfg,
@@ -23,13 +22,11 @@ from isaaclab.sim import (
 from isaaclab.sim.spawners.shapes.shapes_cfg import ShapeCfg
 from isaaclab.sim.spawners.spawner_cfg import SpawnerCfg
 from isaaclab.utils.assets import retrieve_file_path
+from pxr import Sdf, Usd
 
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 from isaaclab_arena.utils.usd.helpers import compute_local_bounding_box_from_stage
 from isaaclab_arena.utils.usd.rigid_bodies import apply_usd_variant_selections, find_shallowest_rigid_body_from_stage
-
-if TYPE_CHECKING:
-    from pxr import Usd
 
 
 def get_usd_variant_selections(spawn_cfg: UsdFileCfg) -> dict[str, str] | None:
@@ -81,9 +78,8 @@ def get_geometry_key(spawn_cfg: SpawnerCfg) -> tuple:
 class ObjectGeometry:
     """Bounds and contact body derived from one native spawn configuration.
 
-    USD bounds use the frame and scale rule Object.get_bounding_box() has always used:
-    the default prim's world translation is removed, and a tuple spawn scale replaces
-    the authored root scale.
+    USD bounds are measured from the default prim's origin with its authored rotation kept.
+    A tuple spawn scale replaces the authored root scale and None keeps it.
     """
 
     def __init__(self, spawn_cfg: SpawnerCfg):
@@ -132,9 +128,6 @@ class ObjectGeometry:
 
         The source file is never edited.
         """
-        # Avoid loading pxr at module scope before SimulationApp starts, which happens in unit tests.
-        from pxr import Sdf, Usd
-
         assert isinstance(self.spawn_cfg, UsdFileCfg), "A USD spawn configuration is required."
         usd_path = retrieve_file_path(self.spawn_cfg.usd_path)
         layer = Sdf.Layer.FindOrOpen(usd_path)
