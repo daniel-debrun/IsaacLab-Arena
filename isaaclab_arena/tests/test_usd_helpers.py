@@ -115,6 +115,32 @@ def _test_compute_local_bounding_box_from_usd_prim_path(simulation_app, asset_di
     return True
 
 
+def _test_compute_local_bounding_box_from_stage_scale(simulation_app, asset_dir: pathlib.Path) -> bool:
+    """A None scale keeps the authored root scale; a tuple replaces it, as UsdFileCfg.scale does."""
+    import torch
+
+    from pxr import Usd
+
+    from isaaclab_arena.utils.usd.helpers import (
+        compute_local_bounding_box_from_stage,
+        compute_local_bounding_box_from_usd,
+    )
+
+    scaled_root_cube = asset_dir / "scaled_root_cube.usd"
+    _write_cube_asset_usd(scaled_root_cube, cube_size=1.0, root_scale=(0.5, 0.5, 0.5))
+    stage = Usd.Stage.Open(scaled_root_cube.as_posix())
+
+    size = compute_local_bounding_box_from_stage(stage, scale=None).size[0]
+    assert all(abs(float(dim) - 0.5) < EPS for dim in size), size
+
+    for scale in ((1.0, 1.0, 1.0), (2.0, 3.0, 4.0)):
+        from_stage = compute_local_bounding_box_from_stage(stage, scale=scale)
+        from_usd = compute_local_bounding_box_from_usd(scaled_root_cube.as_posix(), scale=scale)
+        assert torch.allclose(from_stage.min_point, from_usd.min_point)
+        assert torch.allclose(from_stage.max_point, from_usd.max_point)
+    return True
+
+
 def _test_mesh_exclusion_errors(simulation_app, asset_dir: pathlib.Path) -> bool:
     """Distinguish fully excluded meshes from malformed included meshes."""
     import pytest
@@ -154,6 +180,15 @@ def test_compute_local_bounding_box_from_usd(tmp_path: pathlib.Path):
 def test_compute_local_bounding_box_from_usd_prim_path(tmp_path: pathlib.Path):
     result = run_function_with_persistent_simulation_app(
         _test_compute_local_bounding_box_from_usd_prim_path,
+        headless=HEADLESS,
+        asset_dir=tmp_path,
+    )
+    assert result, "Test failed"
+
+
+def test_compute_local_bounding_box_from_stage_scale(tmp_path: pathlib.Path):
+    result = run_function_with_persistent_simulation_app(
+        _test_compute_local_bounding_box_from_stage_scale,
         headless=HEADLESS,
         asset_dir=tmp_path,
     )
