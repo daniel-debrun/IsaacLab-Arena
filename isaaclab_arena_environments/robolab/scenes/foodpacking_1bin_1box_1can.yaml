@@ -39,7 +39,7 @@ relations:
   params: {}
 - kind: 'on'
   subject: mustard
-  reference: table_oak_robolab
+  reference: bin_a06
   params: {}
 - kind: 'on'
   subject: tomato_soup_can
