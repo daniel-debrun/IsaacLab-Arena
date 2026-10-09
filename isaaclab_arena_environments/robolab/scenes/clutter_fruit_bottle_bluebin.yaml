@@ -21,7 +21,7 @@ objects:
   registry_name: lemon_01_fruits_veggies_robolab
   params: {}
 - id: lemon_2
-  registry_name: lemon_01_fruits_veggies_robolab
+  registry_name: lemon_02_fruits_veggies_robolab
   params: {}
 - id: lime_1
   registry_name: lime01_fruits_veggies_robolab
@@ -33,7 +33,7 @@ objects:
   registry_name: orange_01_fruits_veggies_robolab
   params: {}
 - id: orange_2
-  registry_name: orange_01_fruits_veggies_robolab
+  registry_name: orange_02_fruits_veggies_robolab
   params: {}
 - id: pomegranate
   registry_name: pomegranate01_fruits_veggies_robolab
@@ -65,7 +65,11 @@ objects:
   params: {}
 - id: container_f24
   registry_name: container_f24_vomp_robolab
-  params: {}
+  params:
+    scale:
+    - 0.3
+    - 0.3
+    - 0.2
 relations:
 - kind: is_anchor
   subject: maple_table_robolab
