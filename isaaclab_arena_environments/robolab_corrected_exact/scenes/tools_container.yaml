@@ -1,0 +1,96 @@
+embodiment:
+  id: droid
+  registry_name: droid_abs_joint_pos
+  params: {}
+background:
+  id: maple_table_robolab
+  registry_name: maple_table_robolab
+  params: {}
+objects:
+- id: container_f24
+  registry_name: container_f24_vomp_robolab
+  params:
+    scale:
+    - 0.3
+    - 0.3
+    - 0.2
+  initial_pose:
+    position_xyz:
+    - 0.6125770807266235
+    - 0.38136932253837585
+    - 0.002997465431690216
+    rotation_xyzw:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+- id: bin_b04
+  registry_name: bin_b04_vomp_robolab
+  params:
+    scale:
+    - 1.0
+    - 1.0
+    - 0.9
+  initial_pose:
+    position_xyz:
+    - 0.6041571497917175
+    - -0.3133331537246704
+    - 0.010926837101578712
+    rotation_xyzw:
+    - 0.0
+    - 0.0
+    - 0.9999226331710815
+    - -0.01243983767926693
+- id: spring_clamp
+  registry_name: spring_clamp_ycb_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.610592782497406
+    - -0.10363898426294327
+    - 0.020865194499492645
+    rotation_xyzw:
+    - -0.0009466228657402098
+    - 0.00482378201559186
+    - -0.0001853934081736952
+    - 0.9999879002571106
+- id: red_hammer
+  registry_name: hammer_7_handal_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.5201451778411865
+    - 0.10229665040969849
+    - 0.019043944776058197
+    rotation_xyzw:
+    - 0.001956507097929716
+    - 0.0035756125580519438
+    - 0.0002762363583315164
+    - 0.9999916553497314
+- id: black_hammer
+  registry_name: hammer_8_handal_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.6765944957733154
+    - 0.03523700684309006
+    - 0.042902205139398575
+    rotation_xyzw:
+    - -0.00039131336961872876
+    - 0.08065713196992874
+    - -0.005193070042878389
+    - 0.9967283010482788
+- id: cordless_drill
+  registry_name: cordless_drill_ycb_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.3832567632198334
+    - -0.030917689204216003
+    - 0.030837547034025192
+    rotation_xyzw:
+    - -0.00027199709438718855
+    - -0.0010573647450655699
+    - 9.483032044954598e-06
+    - 0.9999994039535522
+relations: []
