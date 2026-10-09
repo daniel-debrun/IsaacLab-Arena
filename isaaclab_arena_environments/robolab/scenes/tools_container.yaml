@@ -26,6 +26,16 @@ objects:
     - 1.0
     - 1.0
     - 0.9
+  initial_pose:
+    position_xyz:
+    - 0.6041571497917175
+    - -0.3133331537246704
+    - 0.010926837101578712
+    rotation_xyzw:
+    - 0.0
+    - 0.0
+    - 1.0
+    - 0.0
 - id: spring_clamp
   registry_name: spring_clamp_ycb_robolab
   params: {}
@@ -47,9 +57,9 @@ relations:
   subject: container_f24
   reference: table_oak_robolab
   params: {}
-- kind: 'on'
+- kind: is_anchor
   subject: bin_b04
-  reference: table_oak_robolab
+  reference: null
   params: {}
 - kind: 'on'
   subject: spring_clamp
