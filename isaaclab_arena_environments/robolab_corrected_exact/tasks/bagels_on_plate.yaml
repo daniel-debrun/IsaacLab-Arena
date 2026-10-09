@@ -1,0 +1,18 @@
+env_name: bagels_on_plate
+external_yaml: ../scenes/bagel_plate_banana_bowl.yaml
+task:
+  composition: parallel
+  description: Put the bagels on the plate
+  subtasks:
+  - kind: PickAndPlaceTask
+    params:
+      pick_up_object: bagel_1
+      destination_location: plate
+      background_scene: table_oak_robolab
+      episode_length_s: 70.0
+  - kind: PickAndPlaceTask
+    params:
+      pick_up_object: bagel_2
+      destination_location: plate
+      background_scene: table_oak_robolab
+      episode_length_s: 70.0
