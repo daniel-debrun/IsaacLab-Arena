@@ -1,0 +1,12 @@
+env_name: banana_on_plate
+external_yaml: ../scenes/bagel_plate_banana_bowl.yaml
+task:
+  composition: atomic
+  description: Pick up the banana and place it on the plate.
+  subtasks:
+  - kind: PickAndPlaceTask
+    params:
+      pick_up_object: banana
+      destination_location: plate
+      background_scene: table_oak_robolab
+      episode_length_s: 70.0
