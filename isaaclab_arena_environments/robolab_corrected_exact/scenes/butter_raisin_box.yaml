@@ -1,0 +1,46 @@
+# Poses are the RoboLab mesh-child world poses (butter_raisin_box.usda overrides obj_000003_Mesh / obj_000023_Mesh),
+# i.e. the pose of the Arena asset root that reproduces RoboLab's geometry. Do not regenerate from poses/ sidecars.
+embodiment:
+  id: droid
+  registry_name: droid_abs_joint_pos
+  params: {}
+background:
+  id: maple_table_robolab
+  registry_name: maple_table_robolab
+  params: {}
+objects:
+- id: butter_hope_robolab
+  registry_name: butter_hope_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.3717891698101972
+    - 0.05082980179429665
+    - 0.015191092591794034
+    rotation_xyzw:
+    - 0.5360061848280888
+    - -0.46545785668728185
+    - -0.5349842917828622
+    - -0.458080954657261
+- id: raisin_box_hope_robolab
+  registry_name: raisin_box_hope_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.40095659305173537
+    - 0.1955108775839895
+    - 0.022223543121916947
+    rotation_xyzw:
+    - -0.005553924645149977
+    - 0.7025997849408638
+    - -0.0035491342323698545
+    - 0.7115547060966491
+placer_params:
+  enabled_checks:
+  - no_overlap
+  - on_relation
+  - ik_reachable
+  required_checks:
+  - no_overlap
+  - on_relation
+relations: []
