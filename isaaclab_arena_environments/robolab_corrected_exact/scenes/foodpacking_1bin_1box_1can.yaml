@@ -1,0 +1,62 @@
+embodiment:
+  id: droid
+  registry_name: droid_abs_joint_pos
+  params: {}
+background:
+  id: table_oak_robolab
+  registry_name: table_oak_robolab
+  params: {}
+objects:
+- id: cheez_it_box
+  registry_name: cheez_it_ycb_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.4740942120552063
+    - -0.2727200388908386
+    - 0.10890547186136246
+    rotation_xyzw:
+    - -0.014833275228738785
+    - 0.014101319946348667
+    - 0.7083337903022766
+    - 0.7055808901786804
+- id: bin_a06
+  registry_name: bin_a06_vomp_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.6623992323875427
+    - 0.3591690957546234
+    - 0.0030019916594028473
+    rotation_xyzw:
+    - 3.147776806144975e-05
+    - -0.0006731754983775318
+    - 0.9999997615814209
+    - -8.307394523399125e-07
+- id: mustard
+  registry_name: mustard_ycb_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.5671444535255432
+    - 0.3033906817436218
+    - 0.10240653157234192
+    rotation_xyzw:
+    - -0.039163146167993546
+    - 0.012512042187154293
+    - -0.0022289594635367393
+    - 0.9991520047187805
+- id: tomato_soup_can
+  registry_name: tomato_soup_can_ycb_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.41869235038757324
+    - -0.00021113763796165586
+    - 0.05389999970793724
+    rotation_xyzw:
+    - -0.0014145285822451115
+    - -0.02142239175736904
+    - 0.0014267179649323225
+    - 0.9997684955596924
+relations: []
