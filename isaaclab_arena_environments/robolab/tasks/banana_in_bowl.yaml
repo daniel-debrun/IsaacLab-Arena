@@ -13,5 +13,5 @@ task:
     params:
       pick_up_object: banana
       destination_location: bowl
-      background_scene: maple_table_robolab
+      background_scene: table_oak_robolab
       episode_length_s: 70.0
