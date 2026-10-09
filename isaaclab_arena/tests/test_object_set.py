@@ -66,18 +66,23 @@ def _test_object_set_samples_and_stores_variant_indices(simulation_app):
     assert getattr(spawn_cfg, "usd_path") == obj_set.object_usd_paths
     assert getattr(spawn_cfg, "random_choice") is False
 
-    with patch("isaaclab_arena.assets.object.find_shallowest_rigid_body", return_value="/rigid") as find_rigid_body:
+    from isaaclab_arena.assets.object_geometry import ObjectGeometry
+
+    with patch.object(
+        ObjectGeometry, "get_contact_body_path", autospec=True, return_value="/rigid"
+    ) as get_contact_body_path:
         contact_sensor_cfg = obj_set.get_contact_sensor_cfg()
-    assert [call.args[0] for call in find_rigid_body.call_args_list] == [can_a.usd_path, can_b.usd_path]
-    assert all(
-        call.kwargs == {"within_default_prim": True, "relative_to_default_prim": True, "variants": None}
-        for call in find_rigid_body.call_args_list
-    )
+    assert [call.args[0].spawn_cfg.usd_path for call in get_contact_body_path.call_args_list] == [
+        can_a.usd_path,
+        can_b.usd_path,
+    ]
     assert contact_sensor_cfg.prim_path == f"{obj_set.prim_path}/rigid"
 
-    with patch("isaaclab_arena.assets.object.find_shallowest_rigid_body", return_value="/rigid") as find_rigid_body:
+    with patch.object(
+        ObjectGeometry, "get_contact_body_path", autospec=True, return_value="/rigid"
+    ) as get_contact_body_path:
         contact_sensor_cfg = obj_set.get_contact_sensor_cfg(contact_against_object=destination_set)
-    assert [call.args[0] for call in find_rigid_body.call_args_list] == [
+    assert [call.args[0].spawn_cfg.usd_path for call in get_contact_body_path.call_args_list] == [
         can_a.usd_path,
         can_b.usd_path,
         can_b.usd_path,
@@ -85,7 +90,7 @@ def _test_object_set_samples_and_stores_variant_indices(simulation_app):
     ]
     assert contact_sensor_cfg.filter_prim_paths_expr == [f"{destination_set.prim_path}/rigid"]
 
-    with patch("isaaclab_arena.assets.object.find_shallowest_rigid_body", side_effect=["/rigid", "/other_rigid"]):
+    with patch.object(ObjectGeometry, "get_contact_body_path", autospec=True, side_effect=["/rigid", "/other_rigid"]):
         with pytest.raises(AssertionError, match="same contact-sensor prim path"):
             obj_set.get_contact_sensor_prim_path()
 

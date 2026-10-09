@@ -317,3 +317,87 @@ def test_geometry_key_tracks_only_geometric_settings():
         _test_geometry_key_tracks_only_geometric_settings, headless=HEADLESS
     )
     assert result, "Test failed"
+
+
+def _test_object_geometry_follows_spawn_cfg(simulation_app, asset_dir: Path) -> bool:
+    import copy
+    from unittest.mock import patch
+
+    import isaaclab.sim as sim_utils
+
+    from isaaclab_arena.assets.object import Object
+    from isaaclab_arena.assets.object_geometry import ObjectGeometry
+    from isaaclab_arena.assets.object_type import ObjectType
+    from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
+    from isaaclab_arena.utils.usd.helpers import compute_local_bounding_box_from_usd
+
+    root_path = asset_dir / "root_scaled.usda"
+    nested_path = asset_dir / "nested.usda"
+    _write_root_scaled_body_usd(root_path)
+    _write_nested_body_usd(nested_path)
+
+    obj = Object(name="box", object_type=ObjectType.RIGID, usd_path=str(root_path))
+    # Repeated queries for an unchanged spawn config reuse one ObjectGeometry (solver hot path).
+    with patch("isaaclab_arena.assets.object.ObjectGeometry", wraps=ObjectGeometry) as object_geometry_class:
+        assert torch.allclose(obj.get_bounding_box().size[0], torch.tensor([2.0, 2.0, 2.0]))
+        obj.get_bounding_box()
+        assert obj.get_contact_sensor_prim_path() == obj.prim_path
+    assert object_geometry_class.call_count == 1
+
+    obj.object_cfg.spawn = sim_utils.UsdFileCfg(usd_path=str(nested_path), scale=(2.0, 2.0, 2.0))
+    expected = compute_local_bounding_box_from_usd(str(nested_path), (2.0, 2.0, 2.0))
+    assert torch.allclose(obj.get_bounding_box().min_point, expected.min_point)
+    assert torch.allclose(obj.get_bounding_box().max_point, expected.max_point)
+    assert obj.get_contact_sensor_prim_path() == obj.prim_path + "/Group/Body"
+
+    obj.object_cfg.spawn = sim_utils.CuboidCfg(size=(1.0, 2.0, 3.0), rigid_props=sim_utils.RigidBodyPropertiesCfg())
+    assert torch.allclose(obj.get_bounding_box().max_point[0], torch.tensor([0.5, 1.0, 1.5]))
+    assert obj.get_contact_sensor_prim_path() == obj.prim_path
+    obj.object_cfg.spawn.size = (4.0, 5.0, 6.0)
+    assert torch.allclose(obj.get_bounding_box().max_point[0], torch.tensor([2.0, 2.5, 3.0]))
+
+    # Declared construction inputs keep their values; bounding_box stays an explicit override.
+    assert obj.usd_path == str(root_path)
+    assert tuple(obj.scale) == (1.0, 1.0, 1.0)
+    assert obj.bounding_box is None
+    position = torch.tensor([[1.0, 2.0, 3.0]])
+    assert torch.equal(obj.get_corners(position), obj.get_bounding_box().get_corners_at(position))
+    copied = copy.deepcopy(obj)
+    assert torch.allclose(copied.get_bounding_box().max_point, obj.get_bounding_box().max_point)
+    override = AxisAlignedBoundingBox(min_point=(0.0, 0.0, 0.0), max_point=(1.0, 1.0, 1.0))
+    obj.bounding_box = override
+    assert obj.get_bounding_box() is override
+
+    unscaled = Object(
+        name="unscaled",
+        object_type=ObjectType.RIGID,
+        spawner_cfg=sim_utils.UsdFileCfg(usd_path=str(root_path)),
+    )
+    assert torch.allclose(unscaled.get_bounding_box().size[0], torch.tensor([1.0, 1.0, 1.0]))
+    return True
+
+
+def test_object_geometry_follows_spawn_cfg(tmp_path: Path):
+    result = run_function_with_persistent_simulation_app(
+        _test_object_geometry_follows_spawn_cfg, headless=HEADLESS, asset_dir=tmp_path
+    )
+    assert result, "Test failed"
+
+
+def _test_library_primitive_objects_get_geometry(simulation_app) -> bool:
+    from isaaclab_arena.assets.object_library import ProceduralCube, Sphere
+
+    sphere = Sphere()
+    assert torch.allclose(sphere.get_bounding_box().max_point[0], torch.tensor([0.1, 0.1, 0.1]))
+    assert sphere.get_contact_sensor_prim_path() == sphere.prim_path
+    cube = ProceduralCube()
+    assert torch.allclose(cube.get_bounding_box().max_point[0], torch.tensor([0.025, 0.05, 0.05]))
+    assert cube.get_contact_sensor_prim_path() == "{ENV_REGEX_NS}/Object"
+    return True
+
+
+def test_library_primitive_objects_get_geometry():
+    result = run_function_with_persistent_simulation_app(
+        _test_library_primitive_objects_get_geometry, headless=HEADLESS
+    )
+    assert result, "Test failed"
