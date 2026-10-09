@@ -1,0 +1,238 @@
+embodiment:
+  id: droid
+  registry_name: droid_abs_joint_pos
+  params: {}
+background:
+  id: maple_table_robolab
+  registry_name: maple_table_robolab
+  params: {}
+objects:
+- id: pumpkin_large
+  registry_name: pumpkinlarge_vomp_robolab
+  initial_pose:
+    position_xyz:
+    - 0.605211615562439
+    - 0.2390698939561844
+    - 0.0027876272797584534
+    rotation_xyzw:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+- id: pumpkin_small
+  registry_name: pumpkinsmall_vomp_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.5097787380218506
+    - 0.20728765428066254
+    - 0.002739720046520233
+    rotation_xyzw:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+- id: lemon_1
+  registry_name: lemon_01_fruits_veggies_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.42004135251045227
+    - 0.2429235875606537
+    - 0.0012257490307092667
+    rotation_xyzw:
+    - -0.16874898970127106
+    - -0.03416704759001732
+    - 0.030169136822223663
+    - 0.9846045970916748
+- id: lemon_2
+  registry_name: lemon_02_fruits_veggies_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.47836241126060486
+    - 0.06863716244697571
+    - 0.0005861949175596237
+    rotation_xyzw:
+    - 0.14194341003894806
+    - -0.008274530991911888
+    - -0.01192239299416542
+    - 0.989768385887146
+- id: lime_1
+  registry_name: lime01_fruits_veggies_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.4800299108028412
+    - -0.15183968842029572
+    - 0.006471998989582062
+    rotation_xyzw:
+    - -0.2908906638622284
+    - 0.12936575710773468
+    - 0.024031905457377434
+    - 0.9476653337478638
+- id: lime_2
+  registry_name: lime01_fruits_veggies_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.37394365668296814
+    - 0.077291339635849
+    - 0.006466416642069817
+    rotation_xyzw:
+    - -0.2911056876182556
+    - 0.12859947979450226
+    - 0.026651177555322647
+    - 0.9476335644721985
+- id: orange_1
+  registry_name: orange_01_fruits_veggies_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.5467105507850647
+    - -0.024539051577448845
+    - 0.001354023814201355
+    rotation_xyzw:
+    - -0.04060796648263931
+    - -0.24204914271831512
+    - 0.012338805012404919
+    - 0.9693353176116943
+- id: orange_2
+  registry_name: orange_02_fruits_veggies_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.44774821400642395
+    - -0.024718308821320534
+    - 0.002987075597047806
+    rotation_xyzw:
+    - 0.07376372814178467
+    - -0.2129518836736679
+    - -0.005964635405689478
+    - 0.9742560386657715
+- id: pomegranate
+  registry_name: pomegranate01_fruits_veggies_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.6182338595371154
+    - 0.06038472056035909
+    - 0.004827134534310027
+    rotation_xyzw:
+    - 0.09737984090400831
+    - -0.052888136353578766
+    - 0.005217669997019997
+    - 0.9938273429214742
+- id: white_packer_bottle
+  registry_name: whitepackerbottle_a01_vomp_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.4271099865436554
+    - 0.1891821175813675
+    - 0.0030382685363292694
+    rotation_xyzw:
+    - -4.0625070596433943e-07
+    - 1.992122520277917e-07
+    - 0.0011451207101345062
+    - 0.9999993443489075
+- id: avocado
+  registry_name: avocado01_fruits_veggies_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.32371649146080017
+    - 0.3751741051673889
+    - 0.046209439635276794
+    rotation_xyzw:
+    - -0.5130934119224548
+    - 0.1472005546092987
+    - -0.19095927476882935
+    - 0.8237728476524353
+- id: crabbypenholder
+  registry_name: crabbypenholder_vomp_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.25074413418769836
+    - 0.30302557349205017
+    - 0.010265938937664032
+    rotation_xyzw:
+    - 1.90769742403063e-06
+    - -7.995423061402107e-07
+    - 0.0005980163696222007
+    - 0.9999998211860657
+- id: serving_bowl
+  registry_name: serving_bowl_vomp_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.3460094928741455
+    - 0.3938780128955841
+    - 0.009603578597307205
+    rotation_xyzw:
+    - -7.789356459397823e-06
+    - -1.4550871128449216e-05
+    - 0.0014234761474654078
+    - 0.9999989867210388
+- id: milk_jug
+  registry_name: milkjug_a01_vomp_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.6447099447250366
+    - 0.40290379524230957
+    - 0.0029997751116752625
+    rotation_xyzw:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+- id: utilityjug
+  registry_name: utilityjug_a03_vomp_robolab
+  params:
+    scale:
+    - 0.4
+    - 0.4
+    - 0.4
+  initial_pose:
+    position_xyz:
+    - 0.5616968274116516
+    - 0.3863130509853363
+    - 0.0057578119449317455
+    rotation_xyzw:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+- id: red_onion
+  registry_name: red_onion_fruits_veggies_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.7519021034240723
+    - 0.18498873710632324
+    - 0.0
+    rotation_xyzw:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+- id: container_f24
+  registry_name: container_f24_vomp_robolab
+  params:
+    scale:
+    - 0.3
+    - 0.3
+    - 0.2
+  initial_pose:
+    position_xyz:
+    - 0.506022036075592
+    - -0.2905642092227936
+    - 0.002997465431690216
+    rotation_xyzw:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+relations: []
