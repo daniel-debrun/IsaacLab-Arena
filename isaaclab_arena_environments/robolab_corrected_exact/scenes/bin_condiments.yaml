@@ -1,0 +1,178 @@
+embodiment:
+  id: droid
+  registry_name: droid_abs_joint_pos
+  params: {}
+background:
+  id: table_black_robolab
+  registry_name: table_black_robolab
+  params: {}
+objects:
+- id: coffee_pot
+  registry_name: coffee_pot_hot3d_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.6630373597145081
+    - -0.1867702305316925
+    - 0.004819825291633606
+    rotation_xyzw:
+    - -0.0008148651686497033
+    - 0.0004117730422876775
+    - 3.0042696380405687e-05
+    - 0.9999995827674866
+- id: grey_bin
+  registry_name: grey_bin_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.5183134078979492
+    - 0.28813523054122925
+    - 0.005000017583370209
+    rotation_xyzw:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+- id: mug
+  registry_name: mug_ycb_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.5091613531112671
+    - -0.18375848233699799
+    - 0.045551568269729614
+    rotation_xyzw:
+    - -0.0003264030092395842
+    - -0.0015945202903822064
+    - 0.0003045946650672704
+    - 0.9999986290931702
+- id: mustard
+  registry_name: mustard_ycb_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.5899195075035095
+    - 2.7499947464093566e-05
+    - 0.10049289464950562
+    rotation_xyzw:
+    - -0.00016057706670835614
+    - -0.0008991099894046783
+    - 1.676502506597899e-05
+    - 0.9999995827674866
+- id: bowl
+  registry_name: bowl_ycb_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.3650992810726166
+    - -0.03975581377744675
+    - 0.03235117718577385
+    rotation_xyzw:
+    - -0.0003868608037009835
+    - -0.0004555128689389676
+    - -2.1784549971926026e-05
+    - 0.9999998211860657
+- id: ranch_dressing
+  registry_name: ranch_dressing_hope_robolab
+  params:
+    scale:
+    - 1.0
+    - 1.0
+    - 1.0
+  initial_pose:
+    position_xyz:
+    - 0.33993446826934814
+    - -0.18289290368556976
+    - 0.02666691318154335
+    rotation_xyzw:
+    - 0.666987419128418
+    - -0.23441211879253387
+    - 0.6761288642883301
+    - 0.20743325352668762
+- id: bbq_sauce_bottle_1
+  registry_name: bbq_sauce_bottle_hope_robolab
+  params:
+    scale:
+    - 1.0
+    - 1.0
+    - 1.0
+  initial_pose:
+    position_xyz:
+    - 0.367838591337204
+    - -0.30065858364105225
+    - 0.03341643884778023
+    rotation_xyzw:
+    - 0.5155712962150574
+    - 0.5496606826782227
+    - 0.450074166059494
+    - 0.47905391454696655
+- id: bbq_sauce_bottle_2
+  registry_name: bbq_sauce_bottle_hot3d_robolab
+  params:
+    scale:
+    - 1.0
+    - 1.0
+    - 1.0
+  initial_pose:
+    position_xyz:
+    - 0.5509929656982422
+    - -0.35545113682746887
+    - 0.00486639142036438
+    rotation_xyzw:
+    - -0.0031640250235795975
+    - 0.0015523405745625496
+    - 0.8502979278564453
+    - 0.5262898206710815
+- id: oatmeal_raisin_cookies
+  registry_name: oatmeal_raisin_cookies_hope_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.7361661195755005
+    - -0.001550795161165297
+    - 0.025254851207137108
+    rotation_xyzw:
+    - -0.521587610244751
+    - -0.47726812958717346
+    - 0.5230560302734375
+    - -0.47599780559539795
+- id: canned_tuna
+  registry_name: canned_tuna_hope_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.48388510942459106
+    - -4.9625581596046686e-05
+    - 0.02115478925406933
+    rotation_xyzw:
+    - 0.0017041299724951386
+    - -0.0004419876786414534
+    - -5.197254267841345e-06
+    - 0.9999984502792358
+- id: soft_scrub
+  registry_name: soft_scrub_ycb_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.7707796096801758
+    - 0.42428383231163025
+    - 0.1299397498369217
+    rotation_xyzw:
+    - -0.004685268271714449
+    - 8.705012987775262e-06
+    - -0.5686801075935364
+    - 0.8225454092025757
+- id: wood_block
+  registry_name: wood_block_ycb_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.7292099595069885
+    - -0.4031379222869873
+    - 0.04966840520501137
+    rotation_xyzw:
+    - -0.05756407976150513
+    - -0.7018840909004211
+    - 0.06567556411027908
+    - 0.7069171071052551
+relations: []
