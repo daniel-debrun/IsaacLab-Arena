@@ -53,6 +53,14 @@ actuators). ``spawn_cfg_addon`` configures how the USD is loaded and which physi
 are authored during spawning: mass/density, collision settings, and contact materials.
 Use ``prim_physics`` within the spawn addons for selected bodies, colliders, or joints.
 
+The constructor builds ``object_cfg.spawn`` once from these inputs. Placement bounds and the
+contact-sensor body are then computed from ``object_cfg.spawn`` (its USD path, scale and variants,
+or its primitive shape), so later edits to it are honored. ``MESH`` mode collision meshes are
+extracted from its USD path and scale, without variants; objects spawned from primitives use their
+bounds instead. ``UsdFileCfg(scale=None)`` keeps the USD's authored root scale. To override the
+bounds, for example for objects spawned with a custom spawner, set the object's ``bounding_box``
+attribute.
+
 Physics spawn addons
 ~~~~~~~~~~~~~~~~~~~~
 
