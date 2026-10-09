@@ -13,5 +13,5 @@ task:
     params:
       pick_up_object: canned_tuna
       destination_location: grey_bin
-      background_scene: maple_table_robolab
+      background_scene: table_black_robolab
       episode_length_s: 70.0
