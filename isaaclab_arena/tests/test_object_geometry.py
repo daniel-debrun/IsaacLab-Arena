@@ -18,12 +18,18 @@ HEADLESS = True
 
 
 def _write_nested_body_usd(path: Path) -> None:
-    """Write /Asset (root scale 0.5) > Group (translated) > Body (rigid, translated, rotated) > Cube."""
+    """Write a nested rigid body under a translated, rotated, scaled default prim.
+
+    The hierarchy is /Asset (translate, rotateZ 30, scale 0.5) > Group (translated) >
+    Body (rigid, translated, rotated) > Cube.
+    """
     from pxr import Gf, Usd, UsdGeom, UsdPhysics
 
     stage = Usd.Stage.CreateNew(str(path))
     root = UsdGeom.Xform.Define(stage, "/Asset")
     stage.SetDefaultPrim(root.GetPrim())
+    root.AddTranslateOp().Set(Gf.Vec3d(0.3, -0.2, 0.1))
+    root.AddRotateZOp().Set(30.0)
     root.AddScaleOp().Set(Gf.Vec3f(0.5, 0.5, 0.5))
     group = UsdGeom.Xform.Define(stage, "/Asset/Group")
     group.AddTranslateOp().Set(Gf.Vec3d(1.0, 2.0, 3.0))
@@ -86,7 +92,7 @@ def _write_layout_variant_usd(path: Path) -> None:
     stage.GetRootLayer().Save()
 
 
-def _test_usd_bounds_and_contact_body_match_main_helpers(simulation_app, asset_dir: Path) -> bool:
+def _test_usd_bounds_and_contact_body_match_file_helpers(simulation_app, asset_dir: Path) -> bool:
     from isaaclab.sim import UsdFileCfg
 
     from isaaclab_arena.assets.object_geometry import ObjectGeometry
@@ -107,9 +113,9 @@ def _test_usd_bounds_and_contact_body_match_main_helpers(simulation_app, asset_d
     return True
 
 
-def test_usd_bounds_and_contact_body_match_main_helpers(tmp_path: Path):
+def test_usd_bounds_and_contact_body_match_file_helpers(tmp_path: Path):
     result = run_function_with_persistent_simulation_app(
-        _test_usd_bounds_and_contact_body_match_main_helpers, headless=HEADLESS, asset_dir=tmp_path
+        _test_usd_bounds_and_contact_body_match_file_helpers, headless=HEADLESS, asset_dir=tmp_path
     )
     assert result, "Test failed"
 

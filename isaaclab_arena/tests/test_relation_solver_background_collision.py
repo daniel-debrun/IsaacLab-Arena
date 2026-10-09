@@ -226,7 +226,7 @@ def test_warp_mesh_cache_keys_exclusions(monkeypatch):
     assert calls == [("/Kitchen/counter",), ("/Kitchen/floor",)]
 
 
-def test_warp_mesh_cache_follows_spawn_cfg(tmp_path, monkeypatch):
+def test_warp_mesh_cache_follows_spawn_cfg(monkeypatch):
     """Mesh extraction and Warp cache keys use the live spawn config, not the declared USD path."""
     from types import SimpleNamespace
 
