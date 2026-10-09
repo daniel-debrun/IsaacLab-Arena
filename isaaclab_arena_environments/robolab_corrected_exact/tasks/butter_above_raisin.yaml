@@ -8,5 +8,5 @@ task:
     params:
       pick_up_object: butter_hope_robolab
       destination_location: raisin_box_hope_robolab
-      background_scene: maple_table_robolab
+      background_scene: table_oak_robolab
       episode_length_s: 70.0

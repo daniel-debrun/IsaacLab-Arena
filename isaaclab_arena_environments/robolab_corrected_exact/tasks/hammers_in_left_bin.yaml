@@ -8,11 +8,11 @@ task:
     params:
       pick_up_object: red_hammer
       destination_location: container_f24
-      background_scene: maple_table_robolab
+      background_scene: table_oak_robolab
       episode_length_s: 70.0
   - kind: PickAndPlaceTask
     params:
       pick_up_object: black_hammer
       destination_location: container_f24
-      background_scene: maple_table_robolab
+      background_scene: table_oak_robolab
       episode_length_s: 70.0
