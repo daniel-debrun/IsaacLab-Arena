@@ -19,7 +19,7 @@ from isaaclab_arena.assets.object_set import RigidObjectSet
 from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.assets.registries import AssetRegistry, ObjectRelationLibraryRegistry
 from isaaclab_arena.environment_spec.arena_env_graph_task_conversion_utils import build_task_from_spec
-from isaaclab_arena.environment_spec.arena_env_graph_types import ObjectReferenceSpec, SpatialRelationSpec
+from isaaclab_arena.environment_spec.arena_env_graph_types import AssetSpec, ObjectReferenceSpec, SpatialRelationSpec
 from isaaclab_arena.relations.placement_asset import PlaceableAsset
 from isaaclab_arena.utils.physics_backend import PhysicsBackend
 from isaaclab_arena.utils.pose import Pose
@@ -177,15 +177,18 @@ def instantiate_assets_from_spec(
     assets_by_node_id[graph_spec.embodiment.id] = asset_registry.get_asset_by_name(graph_spec.embodiment.registry_name)(
         **embodiment_params
     )
+    _apply_initial_pose(graph_spec.embodiment, assets_by_node_id[graph_spec.embodiment.id])
 
     assets_by_node_id[graph_spec.background.id] = asset_registry.get_asset_by_name(graph_spec.background.registry_name)(
         **parse_asset_params(graph_spec.background.params)
     )
+    _apply_initial_pose(graph_spec.background, assets_by_node_id[graph_spec.background.id])
 
     for obj in graph_spec.objects:
         params = parse_asset_params(obj.params)
         params.setdefault("instance_name", obj.id)
         assets_by_node_id[obj.id] = asset_registry.get_asset_by_name(obj.registry_name)(**params)
+        _apply_initial_pose(obj, assets_by_node_id[obj.id])
 
     for object_set in graph_spec.object_sets or []:
         assets_by_node_id[object_set.id] = RigidObjectSet(
@@ -202,6 +205,18 @@ def instantiate_assets_from_spec(
         )
 
     return assets_by_node_id
+
+
+def _apply_initial_pose(asset_spec: AssetSpec, asset: Asset) -> None:
+    """Apply a graph asset's fixed env-local pose after construction."""
+    if asset_spec.initial_pose is None:
+        return
+    asset.set_initial_pose(
+        Pose(
+            position_xyz=asset_spec.initial_pose.position_xyz,
+            rotation_xyzw=asset_spec.initial_pose.rotation_xyzw,
+        )
+    )
 
 
 def _attach_spatial_relations_to_assets(
