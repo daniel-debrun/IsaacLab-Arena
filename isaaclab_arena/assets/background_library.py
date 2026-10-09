@@ -211,12 +211,48 @@ class MapleTableRobolab(LibraryBackground):
     object_min_z = -0.05
 
 
-@register_asset
-class TableOakRobolab(LibraryBackground):
-    name = "table_oak_robolab"
+class RobolabTableFixture(LibraryBackground):
+    """Base class for the RoboLab table fixtures (fixtures/table_*.usd).
+
+    The fixture root carries a dynamic RigidBodyAPI and the fixture's ground plane lies outside the default prim,
+    so spawned as is the table falls under gravity and everything on it drops. The root is made kinematic so the
+    table stays where `initial_pose` puts it.
+    """
+
     tags = ["background", "robolab"]
-    usd_path = f"{ARENA_NUCLEUS_DIR}/Arena/assets/object_library/srl_robolab_assets/fixtures/table_oak.usd"
+    # Table pose in the RoboLab scenes (relative to the env origin); the tabletop is then at z=0.003.
+    initial_pose = Pose(
+        position_xyz=(0.5471954941749573, -5.750182754127309e-05, -0.3470015823841095),
+        rotation_xyzw=(0.0, 0.0, 0.0, 1.0),
+    )
     object_min_z = -0.05
+    spawn_cfg_addon = {
+        "rigid_props": sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+    }
+
+
+@register_asset
+class TableOakRobolab(RobolabTableFixture):
+    """The oak table fixture from the RoboLab assets."""
+
+    name = "table_oak_robolab"
+    usd_path = f"{ARENA_NUCLEUS_DIR}/Arena/assets/object_library/srl_robolab_assets/fixtures/table_oak.usd"
+
+
+@register_asset
+class TableBlackRobolab(RobolabTableFixture):
+    """The black table fixture from the RoboLab assets."""
+
+    name = "table_black_robolab"
+    usd_path = f"{ARENA_NUCLEUS_DIR}/Arena/assets/object_library/srl_robolab_assets/fixtures/table_black.usd"
+
+
+@register_asset
+class TableBambooRobolab(RobolabTableFixture):
+    """The bamboo table fixture from the RoboLab assets."""
+
+    name = "table_bamboo_robolab"
+    usd_path = f"{ARENA_NUCLEUS_DIR}/Arena/assets/object_library/srl_robolab_assets/fixtures/table_bamboo.usd"
 
 
 # -----------------------------------------------------------------------------
