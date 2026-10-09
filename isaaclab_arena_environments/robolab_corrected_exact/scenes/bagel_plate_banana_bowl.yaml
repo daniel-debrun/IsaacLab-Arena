@@ -1,0 +1,76 @@
+embodiment:
+  id: droid
+  registry_name: droid_abs_joint_pos
+  params:
+    stand_height_m: 1.35
+background:
+  id: table_oak_robolab
+  registry_name: table_oak_robolab
+  params: {}
+objects:
+- id: banana
+  registry_name: banana_ycb_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.46775150299072266
+    - -0.11145339161157608
+    - 0.023178761824965477
+    rotation_xyzw:
+    - -0.0006236117915250361
+    - -0.0011313874274492264
+    - -1.5240297557284066e-07
+    - 0.9999991655349731
+- id: plate
+  registry_name: plate_large_vomp_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.5880935788154602
+    - 0.2263718545436859
+    - 0.002241978421807289
+    rotation_xyzw:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+- id: bagel_1
+  registry_name: bagel_00_objaverse_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.34174713492393494
+    - 0.1315135657787323
+    - 0.019792597740888596
+    rotation_xyzw:
+    - -0.020257316529750824
+    - 0.004855533596128225
+    - 0.00024258921621367335
+    - 0.9997829794883728
+- id: bagel_2
+  registry_name: bagel_06_objaverse_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.31704191417461214
+    - -0.05657568346895488
+    - 0.020598358401841366
+    rotation_xyzw:
+    - 0.004846479278056147
+    - 0.002536324551328144
+    - 2.2179478946774547e-06
+    - 0.999985039233817
+- id: bowl
+  registry_name: bowl_ycb_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.36508864164352417
+    - -0.31005972623825073
+    - 0.032351087778806686
+    rotation_xyzw:
+    - -0.00038594496436417103
+    - -0.0004538443754427135
+    - -5.195786070544273e-05
+    - 0.9999998211860657
+relations: []
