@@ -13,11 +13,11 @@ task:
     params:
       pick_up_object: cordless_drill
       destination_location: bin_b04
-      background_scene: maple_table_robolab
+      background_scene: table_oak_robolab
       episode_length_s: 70.0
   - kind: PickAndPlaceTask
     params:
       pick_up_object: spring_clamp
       destination_location: bin_b04
-      background_scene: maple_table_robolab
+      background_scene: table_oak_robolab
       episode_length_s: 70.0
