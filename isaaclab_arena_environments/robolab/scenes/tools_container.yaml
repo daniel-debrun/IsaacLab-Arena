@@ -34,8 +34,8 @@ objects:
     rotation_xyzw:
     - 0.0
     - 0.0
-    - 0.9999226331710815
-    - -0.01243983767926693
+    - 1.0
+    - 0.0
 - id: spring_clamp
   registry_name: spring_clamp_ycb_robolab
   params: {}
