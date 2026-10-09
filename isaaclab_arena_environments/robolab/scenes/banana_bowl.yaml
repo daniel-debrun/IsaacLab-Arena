@@ -8,19 +8,9 @@ embodiment:
   registry_name: droid_abs_joint_pos
   params: {}
 background:
-  id: table_oak_robolab
-  registry_name: table_oak_robolab
+  id: maple_table_robolab
+  registry_name: maple_table_robolab
   params: {}
-  initial_pose:
-    position_xyz:
-    - 0.5471946001052856
-    - -5.8164543588645756e-05
-    - -0.3470015227794647
-    rotation_xyzw:
-    - 0.0
-    - 0.0
-    - 0.0
-    - 1.0
 objects:
 - id: banana
   registry_name: banana_ycb_robolab
@@ -30,14 +20,14 @@ objects:
   params: {}
 relations:
 - kind: is_anchor
-  subject: table_oak_robolab
+  subject: maple_table_robolab
   reference: null
   params: {}
 - kind: 'on'
   subject: bowl
-  reference: table_oak_robolab
+  reference: maple_table_robolab
   params: {}
 - kind: 'on'
   subject: banana
-  reference: table_oak_robolab
+  reference: maple_table_robolab
   params: {}
