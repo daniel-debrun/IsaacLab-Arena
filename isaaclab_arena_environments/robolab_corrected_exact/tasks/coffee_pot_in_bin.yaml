@@ -1,0 +1,12 @@
+env_name: coffee_pot_in_bin
+external_yaml: ../scenes/bin_condiments.yaml
+task:
+  composition: atomic
+  description: pick up the coffee pot and place it into the grey bin
+  subtasks:
+  - kind: PickAndPlaceTask
+    params:
+      pick_up_object: coffee_pot
+      destination_location: grey_bin
+      background_scene: table_black_robolab
+      episode_length_s: 70.0
