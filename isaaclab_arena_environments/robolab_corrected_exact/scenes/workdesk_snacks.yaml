@@ -1,0 +1,183 @@
+embodiment:
+  id: droid
+  registry_name: droid_abs_joint_pos
+  params: {}
+background:
+  id: maple_table_robolab
+  registry_name: maple_table_robolab
+  params: {}
+objects:
+- id: apple
+  registry_name: apple_01_objaverse_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.5420447587966919
+    - -0.24566592276096344
+    - 0.01951161026954651
+    rotation_xyzw:
+    - 0.021628594025969505
+    - 0.008842671290040016
+    - 0.12186112254858017
+    - 0.9922720789909363
+- id: plasticpail
+  registry_name: plasticpail_a02_vomp_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.3327648341655731
+    - 0.375302791595459
+    - 0.0030000433325767517
+    rotation_xyzw:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+- id: ceramic_mug
+  registry_name: ceramic_mug_hot3d_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.5655824542045593
+    - 0.3956895172595978
+    - 0.0027950406074523926
+    rotation_xyzw:
+    - -0.0013856299920007586
+    - 0.002621990628540516
+    - 0.00016328590572811663
+    - 0.9999955892562866
+- id: glasses
+  registry_name: glasses_hot3d_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.43946224451065063
+    - -0.05904073268175125
+    - 0.032562579959630966
+    rotation_xyzw:
+    - -0.008855385705828667
+    - -0.01858494058251381
+    - 0.9045017957687378
+    - 0.425972580909729
+- id: keyboard
+  registry_name: keyboard_hot3d_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.5687872767448425
+    - 5.422276444733143e-06
+    - 0.01637859269976616
+    rotation_xyzw:
+    - -0.03918091952800751
+    - 0.039330773055553436
+    - 0.7114208340644836
+    - -0.7005699872970581
+- id: marker
+  registry_name: dry_erase_marker_ycb_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.27475279569625854
+    - 0.10902655124664307
+    - 0.012080775573849678
+    rotation_xyzw:
+    - -0.0007768860086798668
+    - 0.041144244372844696
+    - -0.0007133550243452191
+    - 0.999152660369873
+- id: remote_control
+  registry_name: remote_control_hot3d_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.33648964762687683
+    - -0.19671517610549927
+    - -0.010286616161465645
+    rotation_xyzw:
+    - 0.43069031834602356
+    - 0.5648491382598877
+    - -0.5588465332984924
+    - -0.42795073986053467
+- id: smartphone
+  registry_name: smartphone_hot3d_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.5133537650108337
+    - 0.1342775821685791
+    - 0.016583841294050217
+    rotation_xyzw:
+    - 0.041713058948516846
+    - -0.04535997286438942
+    - -0.588001549243927
+    - 0.8065089583396912
+- id: wooden_bowl
+  registry_name: wooden_bowl_hot3d_robolab
+  params:
+    scale:
+    - 0.5
+    - 0.5
+    - 0.5
+  initial_pose:
+    position_xyz:
+    - 0.44627946615219116
+    - -0.36308354139328003
+    - 0.002888146787881851
+    rotation_xyzw:
+    - -0.002224082825705409
+    - 0.00040964220534078777
+    - 0.000982503523118794
+    - 0.9999969601631165
+- id: spoon_big
+  registry_name: spoon_big_vomp_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.39477843046188354
+    - -0.368248850107193
+    - 0.048863478004932404
+    rotation_xyzw:
+    - -0.004212594591081142
+    - 0.31519898772239685
+    - 0.0014124856097623706
+    - 0.949015200138092
+- id: computer_mouse
+  registry_name: computer_mouse_hot3d_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.34163978695869446
+    - -0.3205063045024872
+    - 0.023606425151228905
+    rotation_xyzw:
+    - 0.7084091901779175
+    - 3.470107913017273e-05
+    - -0.00010590750025585294
+    - 0.7058019638061523
+- id: yogurt_cup
+  registry_name: yogurt_cup_hope_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.43394234776496887
+    - -0.2420373111963272
+    - 0.02976848930120468
+    rotation_xyzw:
+    - 5.585753024206497e-05
+    - -0.0013799055013805628
+    - 9.407940524397418e-06
+    - 0.9999990463256836
+- id: pitcher
+  registry_name: pitcher_hot3d_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.6800341010093689
+    - 0.3392566442489624
+    - 0.0030554234981536865
+    rotation_xyzw:
+    - -0.0016955281607806683
+    - -0.0012693081516772509
+    - 0.5595375895500183
+    - 0.8288022875785828
+relations: []
