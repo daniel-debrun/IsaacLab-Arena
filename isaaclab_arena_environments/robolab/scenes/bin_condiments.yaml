@@ -8,8 +8,8 @@ embodiment:
   registry_name: droid_abs_joint_pos
   params: {}
 background:
-  id: table_oak_robolab
-  registry_name: table_oak_robolab
+  id: table_black_robolab
+  registry_name: table_black_robolab
   params: {}
 objects:
 - id: coffee_pot
@@ -62,54 +62,54 @@ objects:
   params: {}
 relations:
 - kind: is_anchor
-  subject: table_oak_robolab
+  subject: table_black_robolab
   reference: null
   params: {}
 - kind: 'on'
   subject: coffee_pot
-  reference: table_oak_robolab
+  reference: table_black_robolab
   params: {}
 - kind: 'on'
   subject: grey_bin
-  reference: table_oak_robolab
+  reference: table_black_robolab
   params: {}
 - kind: 'on'
   subject: mug
-  reference: table_oak_robolab
+  reference: table_black_robolab
   params: {}
 - kind: 'on'
   subject: mustard
-  reference: table_oak_robolab
+  reference: table_black_robolab
   params: {}
 - kind: 'on'
   subject: bowl
-  reference: table_oak_robolab
+  reference: table_black_robolab
   params: {}
 - kind: 'on'
   subject: ranch_dressing
-  reference: table_oak_robolab
+  reference: table_black_robolab
   params: {}
 - kind: 'on'
   subject: bbq_sauce_bottle_1
-  reference: table_oak_robolab
+  reference: table_black_robolab
   params: {}
 - kind: 'on'
   subject: bbq_sauce_bottle_2
-  reference: table_oak_robolab
+  reference: table_black_robolab
   params: {}
 - kind: 'on'
   subject: oatmeal_raisin_cookies
-  reference: table_oak_robolab
+  reference: table_black_robolab
   params: {}
 - kind: 'on'
   subject: canned_tuna
-  reference: table_oak_robolab
+  reference: table_black_robolab
   params: {}
 - kind: 'on'
   subject: soft_scrub
-  reference: table_oak_robolab
+  reference: table_black_robolab
   params: {}
 - kind: 'on'
   subject: wood_block
-  reference: table_oak_robolab
+  reference: table_black_robolab
   params: {}
