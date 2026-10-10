@@ -1,0 +1,49 @@
+embodiment:
+  id: droid
+  registry_name: droid_abs_joint_pos
+  params: {}
+background:
+  id: table_oak_robolab
+  registry_name: table_oak_robolab
+  params: {}
+objects:
+- id: grey_bin_left
+  registry_name: grey_bin_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.5183117985725403
+    - 0.28813636302948
+    - 0.005000028759241104
+    rotation_xyzw:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+- id: grey_bin_right
+  registry_name: grey_bin_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.5183118581771851
+    - -0.2965139656394774
+    - 0.005000010132789626
+    rotation_xyzw:
+    - -1.1159102623073682e-16
+    - 2.9567889027287352e-18
+    - -1.1349835297931882e-18
+    - 1.0
+- id: mustard
+  registry_name: mustard_ycb_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.5899075865745544
+    - 3.1596486223861575e-05
+    - 0.10049273818731308
+    rotation_xyzw:
+    - -0.00016255438094958663
+    - -0.0008989080088213086
+    - 2.3059724298946094e-06
+    - 0.9999995827674866
+relations: []
