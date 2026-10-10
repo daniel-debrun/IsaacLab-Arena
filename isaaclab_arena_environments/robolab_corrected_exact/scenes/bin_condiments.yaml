@@ -3,8 +3,8 @@ embodiment:
   registry_name: droid_abs_joint_pos
   params: {}
 background:
-  id: table_black_robolab
-  registry_name: table_black_robolab
+  id: table_oak_robolab
+  registry_name: table_oak_robolab
   params: {}
 objects:
 - id: coffee_pot
