@@ -141,19 +141,6 @@ objects:
     - 0.00041227880865335464
     - 0.0008549473132006824
     - 0.9999970197677612
-- id: spoon_big
-  registry_name: spoon_big_vomp_robolab
-  params: {}
-  initial_pose:
-    position_xyz:
-    - 0.7698599696159363
-    - 0.3079741597175598
-    - 0.06094201281666756
-    rotation_xyzw:
-    - -0.01870708353817463
-    - 0.3335457444190979
-    - 0.004425136838108301
-    - 0.9425379037857056
 - id: yogurt_cup
   registry_name: yogurt_cup_hope_robolab
   params: {}
@@ -193,4 +180,17 @@ objects:
     - 0.0008484750287607312
     - 4.013145826320397e-06
     - 0.999995768070221
+- id: spoon_big
+  registry_name: spoon_big_vomp_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.7698599696159363
+    - 0.3079741597175598
+    - 0.06094201281666756
+    rotation_xyzw:
+    - -0.01870708353817463
+    - 0.3335457444190979
+    - 0.004425136838108301
+    - 0.9425379037857056
 relations: []
