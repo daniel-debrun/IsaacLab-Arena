@@ -28,7 +28,7 @@ objects:
   registry_name: keyboard_hot3d_robolab
   params: {}
 - id: marker
-  registry_name: marker_hot3d_robolab
+  registry_name: dry_erase_marker_ycb_robolab
   params: {}
 - id: remote_control
   registry_name: remote_control_hot3d_robolab
@@ -53,7 +53,7 @@ objects:
   registry_name: yogurt_cup_hope_robolab
   params: {}
 - id: pitcher
-  registry_name: pitcher_ycb_robolab
+  registry_name: pitcher_hot3d_robolab
   params: {}
 relations:
 - kind: is_anchor
