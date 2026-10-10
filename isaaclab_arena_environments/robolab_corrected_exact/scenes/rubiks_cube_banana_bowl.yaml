@@ -1,0 +1,49 @@
+embodiment:
+  id: droid
+  registry_name: droid_abs_joint_pos
+  params: {}
+background:
+  id: maple_table_robolab
+  registry_name: maple_table_robolab
+  params: {}
+objects:
+- id: banana
+  registry_name: banana_ycb_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.538878858089447
+    - -0.07555567473173141
+    - 0.0684281587600708
+    rotation_xyzw:
+    - -0.0026648887433111668
+    - -0.006051987875252962
+    - 0.0001454032608307898
+    - 0.9999781250953674
+- id: cube
+  registry_name: rubiks_cube_hot3d_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.42064785330338367
+    - -0.06850957985762898
+    - 0.0738889150000433
+    rotation_xyzw:
+    - -0.0009071399690583122
+    - 0.0010379400337114672
+    - 8.44117093947695e-05
+    - 0.9999990463256584
+- id: bowl
+  registry_name: bowl_ycb_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.44258353114128113
+    - 0.12658219039440155
+    - 0.07732785493135452
+    rotation_xyzw:
+    - -5.8753543271450326e-05
+    - -0.00032362030469812453
+    - -0.00010501052747713402
+    - 0.9999999403953552
+relations: []
