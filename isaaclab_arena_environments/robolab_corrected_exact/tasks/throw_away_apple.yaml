@@ -8,5 +8,5 @@ task:
     params:
       pick_up_object: apple
       destination_location: plasticpail
-      background_scene: maple_table_robolab
+      background_scene: table_oak_robolab
       episode_length_s: 70.0
