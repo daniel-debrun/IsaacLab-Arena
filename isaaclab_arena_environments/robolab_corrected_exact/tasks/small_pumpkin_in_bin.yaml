@@ -1,0 +1,12 @@
+env_name: small_pumpkin_in_bin
+external_yaml: ../scenes/clutter_fruit_bottle_bluebin.yaml
+task:
+  composition: atomic
+  description: Put the small pumpkin in the bin
+  subtasks:
+  - kind: PickAndPlaceTask
+    params:
+      pick_up_object: pumpkin_small
+      destination_location: container_f24
+      background_scene: maple_table_robolab
+      episode_length_s: 70.0
