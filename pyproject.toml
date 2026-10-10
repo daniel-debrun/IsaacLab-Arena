@@ -235,6 +235,9 @@ namespaces = false
 "*" = ["**/*.yaml", "**/*.yml", "**/*.json", "**/*.jsonl", "**/*.html"]
 
 "isaaclab_arena_environments" = [
+    "coffee_disposal/assets/*.usda",
+    "coffee_disposal/assets/*.png",
+    "coffee_disposal/assets/*.md",
     "pc_upgrade/assets/*.usda",
     "pc_upgrade/assets/*.png",
     "pc_upgrade/assets/*.svg",

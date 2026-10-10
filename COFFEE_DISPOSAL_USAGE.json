@@ -1,0 +1,119 @@
+{
+  "started_at_utc": "2026-10-10T08:37:41.591Z",
+  "snapshot_at_utc": "2026-10-10T11:52:26.348088+00:00",
+  "elapsed_wall_clock_seconds": 11684.8,
+  "scope": "Coffee request only; excludes preceding PC work and intervening idle days. Includes analysis, implementation, tests, rendering, and active runtime waits. Concurrent agent times are not added to wall clock.",
+  "primary_thread_delta": {
+    "input_tokens": 52364155,
+    "cached_input_tokens": 51639168,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 168562,
+    "reasoning_output_tokens": 66302,
+    "total_tokens": 52532717
+  },
+  "coffee_agents": {
+    "/root/coffee_task_logic": {
+      "input_tokens": 38300356,
+      "cached_input_tokens": 37937920,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 105383,
+      "reasoning_output_tokens": 40530,
+      "total_tokens": 38405739
+    },
+    "/root/coffee_video_analysis": {
+      "input_tokens": 516401,
+      "cached_input_tokens": 472448,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 4593,
+      "reasoning_output_tokens": 273,
+      "total_tokens": 520994
+    },
+    "/root/coffee_review": {
+      "input_tokens": 11877580,
+      "cached_input_tokens": 11543296,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 31494,
+      "reasoning_output_tokens": 8304,
+      "total_tokens": 11909074
+    },
+    "/root/coffee_assets": {
+      "input_tokens": 4397626,
+      "cached_input_tokens": 4204544,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 35511,
+      "reasoning_output_tokens": 7386,
+      "total_tokens": 4433137
+    }
+  },
+  "combined_agent_usage": {
+    "input_tokens": 107456118,
+    "cached_input_tokens": 105797376,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 345543,
+    "reasoning_output_tokens": 122795,
+    "total_tokens": 107801661
+  },
+  "automatic_approval_review_usage_separate": {
+    "01a1252e-6843-7a73-8b8d-2da7c41a4704": {
+      "input_tokens": 400923,
+      "cached_input_tokens": 313856,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 893,
+      "reasoning_output_tokens": 477,
+      "total_tokens": 401816
+    },
+    "01a124fb-2aca-76d3-96d8-58fce93eb561": {
+      "input_tokens": 522313,
+      "cached_input_tokens": 391168,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 1092,
+      "reasoning_output_tokens": 362,
+      "total_tokens": 523405
+    },
+    "01a12593-2eb9-7d71-8c80-fc53884b0be6": {
+      "input_tokens": 100867,
+      "cached_input_tokens": 73728,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 429,
+      "reasoning_output_tokens": 191,
+      "total_tokens": 101296
+    },
+    "01a12595-5b43-7432-9963-12bb58a20a4e": {
+      "input_tokens": 73214,
+      "cached_input_tokens": 50432,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 350,
+      "reasoning_output_tokens": 168,
+      "total_tokens": 73564
+    },
+    "01a124fb-97ff-7210-9ac8-c42a3a85bb19": {
+      "input_tokens": 2192498,
+      "cached_input_tokens": 1912320,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 2438,
+      "reasoning_output_tokens": 881,
+      "total_tokens": 2194936
+    },
+    "01a1250c-93db-74f3-a053-904f726ae855": {
+      "input_tokens": 916368,
+      "cached_input_tokens": 784896,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 1358,
+      "reasoning_output_tokens": 527,
+      "total_tokens": 917726
+    },
+    "01a1254c-ea99-7002-984f-b21093cdcbdd": {
+      "input_tokens": 2861866,
+      "cached_input_tokens": 2674432,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 2532,
+      "reasoning_output_tokens": 705,
+      "total_tokens": 2864398
+    }
+  },
+  "notes": [
+    "Input totals include repeated context; cached_input_tokens is a subset, not additional tokens.",
+    "reasoning_output_tokens is included in output_tokens, not additional.",
+    "Snapshot excludes later responses; no monetary-cost estimate is inferred."
+  ]
+}
