@@ -1,0 +1,30 @@
+env_name: condiments_in_bin
+external_yaml: ../scenes/bin_condiments.yaml
+task:
+  composition: parallel
+  description: Sort the sauce condiments into the grey bin
+  subtasks:
+  - kind: PickAndPlaceTask
+    params:
+      pick_up_object: mustard
+      destination_location: grey_bin
+      background_scene: table_black_robolab
+      episode_length_s: 70.0
+  - kind: PickAndPlaceTask
+    params:
+      pick_up_object: ranch_dressing
+      destination_location: grey_bin
+      background_scene: table_black_robolab
+      episode_length_s: 70.0
+  - kind: PickAndPlaceTask
+    params:
+      pick_up_object: bbq_sauce_bottle_1
+      destination_location: grey_bin
+      background_scene: table_black_robolab
+      episode_length_s: 70.0
+  - kind: PickAndPlaceTask
+    params:
+      pick_up_object: bbq_sauce_bottle_2
+      destination_location: grey_bin
+      background_scene: table_black_robolab
+      episode_length_s: 70.0

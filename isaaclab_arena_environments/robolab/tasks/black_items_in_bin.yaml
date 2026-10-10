@@ -13,29 +13,29 @@ task:
     params:
       pick_up_object: keyboard
       destination_location: grey_bin
-      background_scene: maple_table_robolab
+      background_scene: table_oak_robolab
       episode_length_s: 70.0
   - kind: PickAndPlaceTask
     params:
       pick_up_object: remote_control
       destination_location: grey_bin
-      background_scene: maple_table_robolab
+      background_scene: table_oak_robolab
       episode_length_s: 70.0
   - kind: PickAndPlaceTask
     params:
       pick_up_object: computer_mouse
       destination_location: grey_bin
-      background_scene: maple_table_robolab
+      background_scene: table_oak_robolab
       episode_length_s: 70.0
   - kind: PickAndPlaceTask
     params:
       pick_up_object: smartphone
       destination_location: grey_bin
-      background_scene: maple_table_robolab
+      background_scene: table_oak_robolab
       episode_length_s: 70.0
   - kind: PickAndPlaceTask
     params:
       pick_up_object: glasses
       destination_location: grey_bin
-      background_scene: maple_table_robolab
+      background_scene: table_oak_robolab
       episode_length_s: 70.0
