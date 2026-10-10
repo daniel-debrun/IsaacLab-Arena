@@ -13,5 +13,5 @@ task:
     params:
       pick_up_object: bbq_sauce_bottle
       destination_location: purple_crate
-      background_scene: maple_table_robolab
+      background_scene: table_oak_robolab
       episode_length_s: 70.0

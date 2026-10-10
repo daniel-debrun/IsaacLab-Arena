@@ -1,0 +1,76 @@
+embodiment:
+  id: droid
+  registry_name: droid_abs_joint_pos
+  params: {}
+background:
+  id: table_oak_robolab
+  registry_name: table_oak_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.6095603704452515
+    - -7.927604883661843e-07
+    - -0.3000028133392334
+    rotation_xyzw:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+objects:
+- id: bbq_sauce_bottle
+  registry_name: bbq_sauce_bottle_hot3d_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.5014588832855225
+    - -0.037549179047346094
+    - 0.04985173046588902
+    rotation_xyzw:
+    - -0.0004246294914387645
+    - 0.002969254975383485
+    - -0.0006545560219044611
+    - 0.9999952873744458
+- id: purple_crate
+  registry_name: purple_crate
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.5074701905250549
+    - 0.1984313428401947
+    - 0.1231769546866417
+    rotation_xyzw:
+    - 4.820479080080986e-05
+    - -3.2972275221254677e-05
+    - 0.7071133852005005
+    - 0.7071001529693604
+- id: ceramic_mug
+  registry_name: ceramic_mug_hot3d_robolab
+  params: {}
+  initial_pose:
+    position_xyz:
+    - 0.7683145403862
+    - -0.015248280018568034
+    - 0.04977923631668088
+    rotation_xyzw:
+    - -0.0015737633054550794
+    - 0.0025847094561130914
+    - -5.72182974682994e-05
+    - 0.9999954196255864
+- id: salad_dressing_bottle
+  registry_name: ranch_dressing_hope_robolab
+  params:
+    scale:
+    - 1.0
+    - 1.0
+    - 1.0
+  initial_pose:
+    position_xyz:
+    - 0.6699619293212891
+    - -0.204751655459404
+    - 0.16765667498111725
+    rotation_xyzw:
+    - 0.5722489953041077
+    - -0.017393143847584724
+    - 0.02851787395775318
+    - 0.819399356842041
+relations: []
