@@ -1,0 +1,16 @@
+{
+  "task": "Multi-angle PC upgrade videos",
+  "started_at": "2026-10-08T13:14:18.842Z",
+  "snapshot_at": "2026-10-08T13:39:07.003620+00:00",
+  "elapsed_minutes": 24.8,
+  "token_usage": {
+    "input_tokens": 3258284,
+    "cached_input_tokens": 3096832,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 24226,
+    "reasoning_output_tokens": 7112,
+    "total_tokens": 3282510,
+    "uncached_input_tokens": 161452
+  },
+  "scope": "Primary thread delta for this video request; no subagents. Includes repeated context and compaction. Excludes final bookkeeping after this snapshot; not a billing estimate."
+}

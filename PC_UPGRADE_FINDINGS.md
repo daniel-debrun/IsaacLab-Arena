@@ -9,6 +9,25 @@ physics-rate assisted motion. The original version is preserved in commit
 `588f1ca241`; the early sections below are its historical findings. See the
 2026-10-08 refinement section for the new design and validation.
 
+## Asset creation and provenance
+
+The PC, all three graphics cards, workbench and recycling bin are custom
+procedural assets authored in Python and exported as USD by
+[`build_assets.py`](isaaclab_arena_environments/pc_upgrade/build_assets.py).
+Their meshes, materials, collision shapes and chassis hinge are defined in
+code. Pillow generates the labels, recycling emblem and oak-grain texture.
+These props are original code-generated models, not downloaded CAD or stock
+3D models; no generative-image service was used to create their textures.
+
+The exceptions are the **NVIDIA logo**, extracted from NVIDIA's official site
+and saved as SVG/PNG, and the **Franka robot**, reused through Arena from Isaac
+Lab's existing asset library. The RTX model uses published dimensions as a
+reference, while its geometry is illustrative. VORTEX and CINDER branding is
+fictional. Floor and lighting use standard Isaac Lab spawners.
+
+The [asset provenance document](isaaclab_arena_environments/pc_upgrade/assets/ATTRIBUTION.md)
+provides a per-asset breakdown, logo attribution and rebuilding instructions.
+
 ## Objective and design
 
 Build a runnable Arena scene with a service bench, hinged PC chassis, visibly branded
@@ -252,3 +271,33 @@ This pass excludes the overnight gap and previous work. The original usage
 snapshot remains in `PC_UPGRADE_USAGE.json`; this pass is recorded separately in
 `PC_UPGRADE_REFINEMENT_USAGE.json`. Counters are telemetry snapshots, not billing
 estimates, and exclude final bookkeeping after the snapshot.
+
+### Multi-angle video recording
+
+- Added `demo.py --video` and a demo-only recorder sampling every fourth physics
+  substep: 30 fps output with unchanged 120 Hz dynamics and 15 Hz control.
+- Camera edit: original overview, near-vertical card-name close-up, open
+  motherboard/socket, continuous insertion close-up, then overview for panel
+  closure and both recycling operations. Short still holds let viewers inspect
+  details. Captions explicitly identify the force-assisted demonstration.
+- Smoke recording validated H.264 encoding and top-down framing: all three
+  cards and their names fit, with the front table instructions visible.
+- Reproduction commands are in `isaaclab_arena_examples/pc_upgrade/VIDEO.md`.
+  Videos are stored separately in the ignored `outputs/pc_upgrade_video/`
+  directory. The main example README was left untouched while its editor lock
+  file was present.
+- Full recorded rollout completed successfully with all six stages, one terminal
+  episode, verified reset, and motion bounds passing. Maximum free-space tracking
+  error was 0.08025 mm. The encoder exited successfully with an empty error log.
+- Inspected overview, card labels, insertion, installed GPU and completed frames.
+  Verified all three MP4 files by full decoding with FFmpeg and metadata checks:
+  1440 × 1080, H.264, 30 fps. Normal speed is 91.33 s (2,740 frames), 2× is
+  45.73 s, and 5× is 18.33 s; frame rounding adds at most two output frames.
+  `video_manifest.json` contains cut timestamps, and `video_validation.json`
+  contains the final file sizes, durations and decode-check results.
+- Video pass time snapshot: 24.8 minutes from
+  2026-10-08T13:14:18.842Z, including rendering and encoding. Output tokens:
+  24,226; uncached input: 161,452;
+  cached input: 3,096,832. Detailed counters are in
+  `PC_UPGRADE_VIDEO_USAGE.json`. These are telemetry deltas, not billing estimates,
+  and exclude final bookkeeping after the snapshot.
