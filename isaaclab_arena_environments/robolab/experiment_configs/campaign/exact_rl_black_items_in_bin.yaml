@@ -1,0 +1,67 @@
+# Copyright (c) 2026, The Isaac Lab Arena Project Developers (https://github.com/isaac-sim/IsaacLab-Arena/blob/main/CONTRIBUTORS.md).
+# All rights reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+shared:
+  environment:
+    enable_cameras: true
+  environment_builder:
+    num_envs: 20
+  rollout_limit:
+    num_episodes: 20
+  variations:
+    light:
+      hdr_image:
+        enabled: true
+        hdr_names:
+        - home_office_robolab
+      intensity:
+        enabled: true
+        sampler_cfg:
+          low:
+          - 500.0
+          high:
+          - 500.0
+      color:
+        enabled: true
+        sampler_cfg:
+          low:
+          - 1.0
+          - 1.0
+          - 1.0
+          high:
+          - 1.0
+          - 1.0
+          - 1.0
+    droid_abs_joint_pos:
+      camera_extrinsics_wrist_camera:
+        enabled: false
+        sampler_cfg:
+          low:
+          - -0.05
+          - -0.05
+          - -0.05
+          high:
+          - 0.05
+          - 0.05
+          - 0.05
+    sphere_light:
+      intensity:
+        enabled: true
+        sampler_cfg:
+          low:
+          - 5000.0
+          high:
+          - 5000.0
+runs:
+  black_items_in_bin_pi0:
+    environment:
+      type: isaaclab_arena_environments/robolab_corrected_exact/tasks/black_items_in_bin.yaml
+    policy:
+      type: isaaclab_arena_openpi.policy.pi0_remote_policy.Pi0RemotePolicy
+      policy_variant: pi05
+      policy_device: cuda:0
+      remote_host: 127.0.0.1
+      remote_port: 8000
+      openpi_embodiment_adapter: droid

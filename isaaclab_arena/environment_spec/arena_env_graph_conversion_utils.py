@@ -27,6 +27,8 @@ from isaaclab_arena.utils.usd.helpers import has_light, open_stage
 
 _DEFAULT_DOME_LIGHT_ASSET_NAME = "light"
 _DEFAULT_DOME_LIGHT_NODE_ID = "auto_dome_light"
+_DEFAULT_SPHERE_LIGHT_ASSET_NAME = "sphere_light"
+_DEFAULT_SPHERE_LIGHT_NODE_ID = "auto_sphere_light"
 _DEFAULT_DIRECTIONAL_LIGHT_ASSET_NAME = "directional_light"
 _DEFAULT_DIRECTIONAL_LIGHT_NODE_ID = "auto_directional_light"
 _AFFORDANCE_REFERENCE_CLASSES: dict[str, type[ObjectReference]] = {
@@ -86,6 +88,7 @@ def _ensure_scene_lighting(graph_spec: ArenaEnvGraphSpec, assets_by_node_id: dic
     Injects:
     - dome light
     - directional light (default turned off). For lighting variations to act on.
+    - per-env sphere light (default turned off), which a light intensity variation can enable.
     """
     if _scene_already_has_light(graph_spec, assets_by_node_id):
         return
@@ -100,6 +103,11 @@ def _ensure_scene_lighting(graph_spec: ArenaEnvGraphSpec, assets_by_node_id: dic
     # Let the direction variation dim this dome when it activates, so shadows show.
     directional_light.set_dome_light(dome_light)
     assets_by_node_id[directional_node_id] = directional_light
+
+    sphere_node_id = _unique_node_id(set(assets_by_node_id), _DEFAULT_SPHERE_LIGHT_NODE_ID)
+    sphere_light = AssetRegistry().get_asset_by_name(_DEFAULT_SPHERE_LIGHT_ASSET_NAME)()
+    sphere_light.off()  # a sphere-light intensity variation turns it on at build time
+    assets_by_node_id[sphere_node_id] = sphere_light
 
     print(
         f"INFO: no light found in scene or background USD(s); injected default light '{dome_node_id}'"

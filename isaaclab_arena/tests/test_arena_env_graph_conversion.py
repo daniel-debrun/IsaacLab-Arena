@@ -183,7 +183,7 @@ def _lights_of_type(arena_env, light_cls) -> list:
 
 
 def _test_default_light_is_injected_when_scene_has_none(simulation_app):
-    from isaaclab_arena.assets.object_library import DirectionalLight, DomeLight
+    from isaaclab_arena.assets.object_library import DirectionalLight, DomeLight, SphereLight
 
     # A single YCB object with no light asset and no light baked into its USD: the converter
     # must inject a default light so the env does not render black.
@@ -198,6 +198,11 @@ def _test_default_light_is_injected_when_scene_has_none(simulation_app):
     assert len(directional_lights) == 1
     assert directional_lights[0].spawner_cfg.intensity == 0.0
 
+    # Likewise the per-env sphere light, which a light intensity variation can switch on.
+    sphere_lights = _lights_of_type(arena_env, SphereLight)
+    assert len(sphere_lights) == 1
+    assert sphere_lights[0].spawner_cfg.intensity == 0.0
+
     # An explicit light suppresses injection — no double-lighting, and no directional light either.
     explicit = _minimal_scene_spec(
         objects=[
@@ -208,6 +213,7 @@ def _test_default_light_is_injected_when_scene_has_none(simulation_app):
     explicit_env = explicit.to_arena_env()
     assert len(_lights_of_type(explicit_env, DomeLight)) == 1
     assert len(_lights_of_type(explicit_env, DirectionalLight)) == 0
+    assert len(_lights_of_type(explicit_env, SphereLight)) == 0
 
     # The injected lights own their spawner cfgs: turning the directional light off above must not
     # have darkened the shared class default for later builds.
