@@ -586,6 +586,13 @@ class ArenaEnvBuilder:
         _configure_arena_visualizer_defaults(env_cfg)
         self.arena_env.scene.validate_simulation_cfg(env_cfg.sim)
         entry_point = self.get_entry_point()
+        # Register the environment with the Gym registry.
+        # NOTE(alexmillane, 2026-08-05): Do not spread env_kwargs into the registry kwargs. env_kwargs carries the
+        # VariationRecorder, whose bind_env() holds a reference to the constructed env
+        # (and thus its SimulationContext/PhysX GPU buffers). The Gym registry is process-global
+        # and never cleared, so pinning it there retains every registered env's GPU memory until
+        # process exit — an unbounded leak across a persistent SimulationApp.
+        # TODO(alexmillane, 2026-08-05): Fix this issue and remove this note.
         # TODO(qianl, 2026-10-12): Restore Isaac Lab interoperability without retaining these runtime objects in
         # the Gym registry. Relation placement and enabled run-time variations currently fail because their
         # VariationRecorder is not forwarded to and bound by Isaac Lab's later gym.make() call.
@@ -597,7 +604,6 @@ class ArenaEnvBuilder:
             )
             return env_type(**(env_kwargs | kwargs))
 
-        # Runtime objects stay in the constructor closure; the recorder holds only a weak reference to the env.
         kwargs = {
             "env_cfg_entry_point": env_cfg,
         }
