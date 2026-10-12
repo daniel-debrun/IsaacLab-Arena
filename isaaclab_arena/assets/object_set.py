@@ -40,6 +40,10 @@ class RigidObjectSet(Object):
             initial_pose: The initial pose of the object from this object set.
         """
         assert len(objects) >= 1, f"Object set {name} must contain at least 1 object."
+        assert "scale" not in kwargs, (
+            f"Object set {name} does not take a scale: each member keeps the scale of its own spawn configuration. "
+            "Set the scale on the member objects instead."
+        )
         for member in objects:
             assert not isinstance(
                 member, RigidObjectSet

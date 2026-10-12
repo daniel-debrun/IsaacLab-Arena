@@ -367,6 +367,17 @@ def _test_object_set_addons_follow_object_rules(simulation_app):
     return True
 
 
+def _test_object_set_rejects_set_level_scale(simulation_app):
+    """A set takes each member's scale from the member, so a set-level scale is rejected."""
+    from isaaclab_arena.assets.object_set import RigidObjectSet
+
+    can_a, can_b, _bbox_a, _bbox_b = _make_object_set_variants()
+    with _patch_contact_body_path():
+        with pytest.raises(AssertionError, match="Set the scale on the member objects"):
+            RigidObjectSet(name="scaled_cans", objects=[can_a, can_b], scale=(2.0, 2.0, 2.0))
+    return True
+
+
 def _test_object_set_expansion_keeps_live_spawn_settings(simulation_app):
     """Per-environment expansion keeps set-wide settings made on object_cfg.spawn and takes entries from the members."""
     import isaaclab.sim as sim_utils
@@ -1010,6 +1021,14 @@ def test_object_set_addons_follow_object_rules():
         headless=HEADLESS,
     )
     assert result, f"Test {_test_object_set_addons_follow_object_rules.__name__} failed"
+
+
+def test_object_set_rejects_set_level_scale():
+    result = run_function_with_persistent_simulation_app(
+        _test_object_set_rejects_set_level_scale,
+        headless=HEADLESS,
+    )
+    assert result, f"Test {_test_object_set_rejects_set_level_scale.__name__} failed"
 
 
 def test_object_set_expansion_keeps_live_spawn_settings():
