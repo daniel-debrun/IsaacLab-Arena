@@ -9,9 +9,10 @@ Usage (on the host, with ``gh`` authenticated):
     python3 -I skills/developer/draft-pr-review/validate_pending_review.py OWNER/REPO PR_NUMBER PAYLOAD.json
 
 Checks that the payload has no ``event`` (so the review stays pending), that ``commit_id`` is the
-current PR head, that the review body and every inline comment start with the AI attribution line,
-and that every inline comment is anchored on a line inside GitHub's diff. Only read-only ``gh``
-commands are run.
+current PR head, that the review body (when present) and every inline comment start with the AI
+attribution line, and that every inline comment is anchored on a line inside GitHub's diff. Only
+read-only ``gh`` commands are run. A payload without ``body`` checks comments meant for an existing
+pending review.
 """
 
 from __future__ import annotations
@@ -146,7 +147,7 @@ def main() -> int:
         problems.append("payload has 'event'; remove it so the review is created as PENDING")
     if payload.get("commit_id") != head_sha:
         problems.append(f"commit_id {payload.get('commit_id')} is not the PR head {head_sha}")
-    if not payload.get("body", "").startswith(ATTRIBUTION_PREFIX):
+    if "body" in payload and not payload["body"].startswith(ATTRIBUTION_PREFIX):
         problems.append(f"review body does not start with the attribution line ({ATTRIBUTION_PREFIX}...)")
     for index, comment in enumerate(payload.get("comments", [])):
         if not comment.get("body", "").startswith(ATTRIBUTION_PREFIX):

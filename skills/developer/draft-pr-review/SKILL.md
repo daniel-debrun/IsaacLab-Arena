@@ -38,18 +38,45 @@ Build this JSON, save it locally (e.g. `/tmp/<repo>-pr<N>-review/pending_review.
 
 1. Account: `gh api user --jq .login` must be the reviewer's own account; pending reviews are only visible to their author.
 2. Head SHA: `gh api repos/OWNER/REPO/pulls/N --jq .head.sha` → `commit_id`. Check each line reference in the findings with `git show <sha>:<path>`.
-3. Existing pending review (GitHub allows one per user per PR): `gh api repos/OWNER/REPO/pulls/N/reviews --paginate --jq '.[] | select(.state=="PENDING") | .id'`. If one exists, ask the reviewer.
+3. Existing pending review (GitHub allows one per user per PR): `gh api repos/OWNER/REPO/pulls/N/reviews --paginate --jq '.[] | select(.state=="PENDING") | .id'`. If one exists, ask the reviewer whether to add the comments to it (see "Adding to an existing pending review").
 4. Existing discussion: read the review summaries, inline threads (`.../pulls/N/comments`) and top-level comments (`.../issues/N/comments`). If someone already raised a point, even partly, tell the reviewer and wait for their answer before posting.
 5. Validate: `python3 -I skills/developer/draft-pr-review/validate_pending_review.py OWNER/REPO N payload.json`. Fix everything it reports.
 6. Create: `gh api repos/OWNER/REPO/pulls/N/reviews --method POST --input payload.json > response.json`, then read `response.json`. Expect `"state": "PENDING"`.
 7. Confirm anchors: `gh api repos/OWNER/REPO/pulls/N/reviews/ID/comments --jq '.[] | "\(.path): \(.diff_hunk | split("\n") | last)"'`. For pending comments `line` is null; the last `diff_hunk` line is the anchored line.
 8. Hand over `https://github.com/OWNER/REPO/pull/N/files`. The reviewer reads and edits every comment, which is what makes "reviewed by me" true, then uses "Finish your review" → Comment, Request changes or Approve.
 
+## Adding to an existing pending review
+
+A second POST to `.../reviews` fails while a pending review exists. Add threads to it with GraphQL instead:
+
+1. Get the review: `gh api repos/OWNER/REPO/pulls/N/reviews --paginate --jq '.[] | select(.state=="PENDING") | {id, node_id, commit_id}'`. Its `commit_id` must be the PR head; if not, ask the reviewer.
+2. Read its comments (`.../reviews/ID/comments`) so the new ones don't repeat what the reviewer already wrote.
+3. Validate a payload with `commit_id` and `comments` only (no `body`), as in step 5.
+4. Add each comment:
+
+   ```bash
+   gh api graphql -f query='mutation($review: ID!, $path: String!, $line: Int!, $body: String!) {
+     addPullRequestReviewThread(input: {pullRequestReviewId: $review, path: $path, line: $line, side: RIGHT, body: $body}) {
+       thread { comments(first: 1) { nodes { databaseId } } } } }' \
+     -f review=<node_id> -f path=pkg/builder.py -F line=339 -F body=@comment.md
+   ```
+
+   Use `side: LEFT` for deleted lines, and add `startLine` and `startSide` for a range.
+5. Confirm the review is still PENDING and the anchors are right, as in step 7.
+
 ## Changing an existing pending review
 
 1. Fetch the current review and its comments and compare them with the saved payload. If they differ, the reviewer edited them in the UI: ask before overwriting anything.
 2. Summary: `gh api repos/OWNER/REPO/pulls/N/reviews/ID --method PUT --input body.json` with `{"body": "..."}`. This works while the review is pending.
-3. Inline comments: GitHub's docs don't say whether `PATCH repos/OWNER/REPO/pulls/comments/CID` works on pending comments. Try one comment first. If it fails, ask whether to delete the pending review (`DELETE repos/OWNER/REPO/pulls/N/reviews/ID`) and POST again. Build the new bodies from the current GitHub text so UI edits survive, and take the anchors from the saved payload, since pending comments return `line: null`.
+3. Inline comments: the REST endpoints for single comments (`GET`/`PATCH repos/OWNER/REPO/pulls/comments/CID`) return 404 for pending comments. Take the comment's `node_id` from `.../reviews/ID/comments` and update it with GraphQL, building the new body from the current GitHub text so UI edits survive:
+
+   ```bash
+   gh api graphql -f query='mutation($comment: ID!, $body: String!) {
+     updatePullRequestReviewComment(input: {pullRequestReviewCommentId: $comment, body: $body}) {
+       pullRequestReviewComment { state } } }' \
+     -f comment=<node_id> -F body=@comment.md
+   ```
+
 4. Whenever a pending review returns 404, the reviewer most likely discarded it in the UI. Treat that as deliberate and don't recreate it without asking.
 
 ## Common mistakes
@@ -60,4 +87,5 @@ Build this JSON, save it locally (e.g. `/tmp/<repo>-pr<N>-review/pending_review.
 | Anchor outside a diff hunk | POST fails with 422 |
 | `commit_id` is not the head | Comments land on outdated lines |
 | `--jq` on a failing call | jq error hides the API's 404/422; look at the raw response first |
+| REST `.../pulls/comments/CID` on a pending comment | 404; read it from `.../reviews/ID/comments` and edit it with GraphQL |
 | Copying review text from a rendered chat or terminal | Markdown is lost; copy from the raw `.md` file instead |
