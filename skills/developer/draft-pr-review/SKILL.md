@@ -31,6 +31,7 @@ Build this JSON, save it locally (e.g. `/tmp/<repo>-pr<N>-review/pending_review.
 
 - No `event` key: that is what makes the review PENDING. Any `event` value publishes it.
 - The attribution line is the first line of the body and of every comment.
+- Refer to code by its name (class, function, method, variable), with file:line, so each comment can be checked without searching.
 - `side: RIGHT` takes new-file line numbers of added or context lines; `side: LEFT` takes old-file line numbers of deleted lines. A range must stay inside one hunk. Points without a diff line go in the summary.
 - Label each comment **Blocking**, **Design**, **Question** or **Suggestion (non-blocking)**, and order them that way.
 
