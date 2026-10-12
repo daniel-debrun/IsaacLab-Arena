@@ -117,23 +117,38 @@ def _selects_prims_by_path(props: Any) -> bool:
 
 
 def _relocated_path(path: Sdf.Path, original_body: Sdf.Path) -> Sdf.Path:
-    """Map a path from the source asset into the relocated asset."""
+    """Map a path of the source stage, below /Asset, to its path in the relocated asset."""
     if path.HasPrefix(original_body):
         return path.ReplacePrefix(original_body, _PREPARED_BODY)
     return path.ReplacePrefix(_SOURCE_ROOT, _PREPARED_SOURCE)
 
 
-def _rewrite_targets(stage: Usd.Stage, original_body: Sdf.Path) -> None:
-    """Point material bindings and shader connections at their new locations in the relocated asset."""
-    for prim in stage.Traverse():
-        for relationship in prim.GetRelationships():
-            targets = relationship.GetTargets()
-            if targets:
-                relationship.SetTargets([_relocated_path(target, original_body) for target in targets])
-        for attribute in prim.GetAttributes():
-            connections = attribute.GetConnections()
-            if connections:
-                attribute.SetConnections([_relocated_path(path, original_body) for path in connections])
+def _redirect_paths_into_moved_body(layer: Sdf.Layer, copied_body: Sdf.Path) -> None:
+    """Point relationship targets and attribute connections that name the body's old path at /Prepared/rigid_body.
+
+    Sdf.CopySpec remaps only paths inside the subtree it copies, so prims outside the body that point into it,
+    such as joints, filtered pairs or collections, still name the removed body copy below /Prepared/source.
+    """
+
+    def redirect_into_moved_body(path: Sdf.Path) -> Sdf.Path:
+        if path.HasPrefix(copied_body):
+            return path.ReplacePrefix(copied_body, _PREPARED_BODY)
+        return path
+
+    property_paths = []
+
+    def collect_property_path(spec_path: Sdf.Path) -> None:
+        if spec_path.IsPropertyPath():
+            property_paths.append(spec_path)
+
+    # Collect the paths first, so the list edits below never run while the layer is being traversed.
+    layer.Traverse(Sdf.Path.absoluteRootPath, collect_property_path)
+    for property_path in property_paths:
+        property_spec = layer.GetPropertyAtPath(property_path)
+        if isinstance(property_spec, Sdf.RelationshipSpec):
+            property_spec.targetPathList.ModifyItemEdits(redirect_into_moved_body)
+        elif isinstance(property_spec, Sdf.AttributeSpec):
+            property_spec.connectionPathList.ModifyItemEdits(redirect_into_moved_body)
 
 
 def _relocate_rigid_body(geometry: SpawnCfgGeometry, body_path: str) -> Sdf.Layer:
@@ -191,7 +206,7 @@ def _relocate_rigid_body(geometry: SpawnCfgGeometry, body_path: str) -> Sdf.Laye
     prepared_stage.RemovePrim(copied_body)
     prepared_stage.RemovePrim(_SOURCE_ROOT)
     prepared_stage.SetDefaultPrim(prepared_root)
-    _rewrite_targets(prepared_stage, original_body)
+    _redirect_paths_into_moved_body(layer, copied_body)
 
     prepared_body = prepared_stage.GetPrimAtPath(_PREPARED_BODY)
     UsdGeom.Xformable(prepared_body).MakeMatrixXform().Set(body_transform)

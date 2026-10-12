@@ -187,6 +187,40 @@ def _test_relocation_preserves_bounds_and_materials(simulation_app, tmp_path):
     return True
 
 
+def _test_relocation_redirects_paths_from_outside_into_the_moved_body(simulation_app, tmp_path):
+    from pxr import Sdf, Usd, UsdGeom
+
+    from isaaclab_arena.utils.usd.rigid_asset_preparation import align_rigid_body_paths
+
+    root_path = tmp_path / "root.usda"
+    nested_path = tmp_path / "nested.usda"
+    _write_asset(root_path, "/Asset")
+    nested_stage = _write_asset(nested_path, "/Asset/Group/Body")
+    # A prim outside the body that points into it, as joints, filtered pairs and collections do.
+    helper = UsdGeom.Xform.Define(nested_stage, "/Asset/Helper").GetPrim()
+    helper.CreateRelationship("bodyTargets").SetTargets(["/Asset/Group/Body", "/Asset/Group/Body/Cube"])
+    helper_size = helper.CreateAttribute("cubeSize", Sdf.ValueTypeNames.Double)
+    helper_size.SetConnections(["/Asset/Group/Body/Cube.size"])
+    nested_stage.GetRootLayer().Save()
+    with patch(CACHE_DIR_TARGET, return_value=tmp_path):
+        aligned = align_rigid_body_paths([_make_spawn_cfg(root_path), _make_spawn_cfg(nested_path)])
+    stage = Usd.Stage.CreateInMemory()
+    holder = UsdGeom.Xform.Define(stage, "/World/Object").GetPrim()
+    holder.GetReferences().AddReference(aligned[1].usd_path)
+    relocated_helpers = [prim for prim in stage.Traverse() if prim.GetName() == "Helper"]
+    assert len(relocated_helpers) == 1
+    relocated_helper = relocated_helpers[0]
+    assert not relocated_helper.GetPath().HasPrefix("/World/Object/rigid_body")
+    body_targets = relocated_helper.GetRelationship("bodyTargets").GetTargets()
+    assert body_targets == [Sdf.Path("/World/Object/rigid_body"), Sdf.Path("/World/Object/rigid_body/Cube")]
+    for target in body_targets:
+        assert stage.GetPrimAtPath(target), target
+    size_connections = relocated_helper.GetAttribute("cubeSize").GetConnections()
+    assert size_connections == [Sdf.Path("/World/Object/rigid_body/Cube.size")]
+    assert stage.GetPropertyAtPath(size_connections[0])
+    return True
+
+
 def _test_relocation_keeps_authored_root_scale_when_spawn_scale_is_none(simulation_app, tmp_path):
     import torch
 
@@ -396,6 +430,12 @@ def test_matching_body_paths_return_copies_without_writing(tmp_path):
 def test_relocation_preserves_bounds_and_materials(tmp_path):
     assert run_function_with_persistent_simulation_app(
         _test_relocation_preserves_bounds_and_materials, headless=HEADLESS, tmp_path=tmp_path
+    )
+
+
+def test_relocation_redirects_paths_from_outside_into_the_moved_body(tmp_path):
+    assert run_function_with_persistent_simulation_app(
+        _test_relocation_redirects_paths_from_outside_into_the_moved_body, headless=HEADLESS, tmp_path=tmp_path
     )
 
 
