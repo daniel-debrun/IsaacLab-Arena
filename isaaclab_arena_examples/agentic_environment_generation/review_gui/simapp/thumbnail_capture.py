@@ -162,8 +162,8 @@ def _resolve_object_set_members(
 ) -> tuple[dict[str, str], dict[str, AabbDimensionsM]]:
     """Return the USD path and AABB of every object-set member, keyed so each gets its own card.
 
-    Each member's thumbnail shows the member object's own USD file. Members spawned from a custom
-    spawner config have no USD file and get no thumbnail.
+    Each member's thumbnail shows the member object's own usd_path. Members built from a spawner config
+    have no usd_path and get no thumbnail, even when that spawner is a UsdFileCfg.
     """
     usd_paths: dict[str, str] = {}
     dimensions: dict[str, AabbDimensionsM] = {}

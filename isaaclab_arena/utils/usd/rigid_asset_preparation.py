@@ -43,13 +43,11 @@ _CACHE_LAYOUT_VERSION = "rigid-layout-v1"
 
 
 def align_rigid_body_paths(spawn_cfgs: Sequence[SpawnerCfg]) -> list[SpawnerCfg]:
-    """Return independent copies of the spawn configurations with their rigid bodies at one common path.
+    """Return copies of the spawn configurations with their rigid bodies at one common path.
 
-    Isaac Lab finds the rigid-body path in one environment and uses it for every environment, so all spawn
-    entries of one object need the same path. When the paths already agree, the copies are unchanged,
-    including their scales, and nothing is written. Otherwise every member must be a USD asset, and each is
-    copied into a cache file with its rigid body moved to /rigid_body. The source files and the spawn scales
-    stay unchanged; USD variant selections are baked into the copy.
+    When the body paths already agree, the copies are unchanged and nothing is written. Otherwise every member
+    must be a USD asset and gets a cached copy with its body at /rigid_body and its USD variant selections
+    baked in.
 
     Args:
         spawn_cfgs: One native spawn configuration per member, in member order.

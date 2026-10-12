@@ -145,11 +145,12 @@ class RigidObjectSet(Object):
     def get_contact_sensor_prim_path(self) -> str:
         """Return the contact-sensor path shared by all spawn entries of the set."""
         spawn_cfg = self.object_cfg.spawn
+        # One entry per member, or one per environment once assign_variants() has expanded the live config.
         if isinstance(spawn_cfg, sim_utils.MultiAssetSpawnerCfg):
-            member_spawn_cfgs = spawn_cfg.assets_cfg
+            spawn_entries = spawn_cfg.assets_cfg
         else:
-            member_spawn_cfgs = [spawn_cfg]
-        return self.prim_path + self._get_shared_contact_body_path(member_spawn_cfgs)
+            spawn_entries = [spawn_cfg]
+        return self.prim_path + self._get_shared_contact_body_path(spawn_entries)
 
     def _generate_variant_indices(self, num_envs: int, variant_seed: int | None = None) -> list[int]:
         """Return one member index per env.

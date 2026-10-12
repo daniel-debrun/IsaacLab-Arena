@@ -49,8 +49,9 @@ sets are rejected when you construct the set.
 
 Each member spawns from a copy of its own spawn configuration
 (``member.object_cfg.spawn``), taken when the set is built. Its scale, physics
-properties, USD variant selections and materials stay as configured; later
-edits to the member do not reach the set. A member may also be a primitive
+properties, USD variant selections and materials stay as configured. Later
+edits to the member do not change what the set spawns, but the set's placement
+bounds still read the member objects. A member may also be a primitive
 shape, for example an ``Object`` with ``spawner_cfg=CuboidCfg(...)`` and
 ``rigid_props`` set. A member built from ``spawner_cfg`` (for example a
 primitive shape) keeps its own ``activate_contact_sensors`` value, which
@@ -151,10 +152,10 @@ Limitations
   to ``/rigid_body`` and caches it as ``rigid_<sha256>.usd``. This needs USD
   members, and their spawn configurations cannot name prims inside the asset:
   ``prim_physics``, schema fragments or target patterns in ``*_props``,
-  ``visual_material_bindings``, ``physics_material_prim_path`` and a relative
-  ``visual_material_path`` are rejected. The copy keeps materials and bakes in
-  the USD variant selections. An authored rotation on the asset's root is
-  dropped, as when Isaac Lab spawns it.
+  ``visual_material_bindings``, ``physics_material_prim_path``, and a relative
+  ``visual_material_path`` when ``visual_material`` is set, are rejected. The
+  copy keeps materials and bakes in the USD variant selections. An authored
+  rotation on the asset's root is dropped, as when Isaac Lab spawns it.
 - **Single-box geometry has a fallback.** ``get_bounding_box()`` returns one box
   from the tallest member; per-environment placement uses
   ``get_bounding_box_per_env()`` instead.
