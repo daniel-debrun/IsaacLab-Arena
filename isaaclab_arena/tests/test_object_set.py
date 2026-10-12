@@ -411,6 +411,74 @@ def _test_relation_free_object_set_is_not_a_passive_obstacle(simulation_app, tmp
     return True
 
 
+def _test_live_object_set_keeps_member_mass_and_scale(simulation_app, tmp_path):
+    """Each environment spawns one whole member: its own mass together with its own scale."""
+    import torch
+
+    import isaaclab.sim as sim_utils
+    import warp as wp
+    from isaaclab.sim.utils.stage import get_current_stage
+
+    from isaaclab_arena.assets.object import Object
+    from isaaclab_arena.assets.object_set import RigidObjectSet
+    from isaaclab_arena.assets.object_type import ObjectType
+    from isaaclab_arena.cli.isaaclab_arena_cli import arena_env_builder_cfg_from_argparse, get_isaaclab_arena_cli_parser
+    from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
+    from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
+    from isaaclab_arena.scene.scene import Scene
+    from isaaclab_arena.utils.pose import Pose
+
+    light_member = Object(
+        name="light_member",
+        object_type=ObjectType.RIGID,
+        usd_path=_write_rigid_cube_usd(tmp_path / "light_member.usda"),
+        scale=(1.0, 1.0, 1.0),
+    )
+    heavy_member = Object(
+        name="heavy_member",
+        object_type=ObjectType.RIGID,
+        usd_path=_write_rigid_cube_usd(tmp_path / "heavy_member.usda", body_path="/Object/Group/Body"),
+        scale=(2.0, 2.0, 2.0),
+    )
+    light_member.object_cfg.spawn.mass_props = sim_utils.MassPropertiesCfg(mass=0.5)
+    heavy_member.object_cfg.spawn.mass_props = sim_utils.MassPropertiesCfg(mass=2.0)
+    with patch("isaaclab_arena.utils.usd.rigid_asset_preparation.get_arena_asset_cache_dir", return_value=tmp_path):
+        object_set = RigidObjectSet(
+            name="weighted_set",
+            objects=[light_member, heavy_member],
+            random_choice=True,
+            initial_pose=Pose(position_xyz=(0.0, 0.0, 1.0), rotation_xyzw=(0.0, 0.0, 0.0, 1.0)),
+        )
+    assert object_set.get_contact_sensor_prim_path() == f"{object_set.prim_path}/rigid_body"
+    # The builder assigns members only for relation placement, so assign them here. The draw differs from the
+    # round robin a two-entry config would get, so the check below fails unless the expansion is spawned.
+    member_indices_by_env = [1, 0, 0, 1]
+    with patch("isaaclab_arena.assets.object_set.torch.randint", return_value=torch.tensor(member_indices_by_env)):
+        object_set.assign_variants(num_envs=4)
+    assert len(object_set.object_cfg.spawn.assets_cfg) == 4
+    mass_and_scale_by_member = [(0.5, 1.0), (2.0, 2.0)]
+    expected_mass_and_scale_by_env = [mass_and_scale_by_member[index] for index in member_indices_by_env]
+
+    environment = IsaacLabArenaEnvironment(
+        name="object_set_member_mass_and_scale_test", scene=Scene(assets=[object_set])
+    )
+    args_cli = get_isaaclab_arena_cli_parser().parse_args(["--num_envs", "4"])
+    env = ArenaEnvBuilder(environment, arena_env_builder_cfg_from_argparse(args_cli)).make_registered()
+    try:
+        env.reset()
+        masses = wp.to_torch(env.unwrapped.scene[object_set.name].data.body_mass)[:, 0].tolist()
+        stage = get_current_stage()
+        mass_and_scale_by_env = []
+        for env_index, mass in enumerate(masses):
+            root_prim = stage.GetPrimAtPath(f"/World/envs/env_{env_index}/{object_set.name}")
+            scale = root_prim.GetAttribute("xformOp:scale").Get()
+            mass_and_scale_by_env.append((round(mass, 4), round(float(scale[0]), 4)))
+        assert mass_and_scale_by_env == expected_mass_and_scale_by_env, mass_and_scale_by_env
+    finally:
+        env.close()
+    return True
+
+
 def _build_and_reset_env(simulation_app, scene_assets, env_name="object_set_test", task=None):
     """Build arena env with given scene and optional task, then reset. Returns env (caller must close)."""
     from isaaclab_arena.assets.registries import AssetRegistry
@@ -959,6 +1027,15 @@ def test_relation_free_object_set_is_not_a_passive_obstacle(tmp_path):
         tmp_path=tmp_path,
     )
     assert result, f"Test {_test_relation_free_object_set_is_not_a_passive_obstacle.__name__} failed"
+
+
+def test_live_object_set_keeps_member_mass_and_scale(tmp_path):
+    result = run_function_with_persistent_simulation_app(
+        _test_live_object_set_keeps_member_mass_and_scale,
+        headless=HEADLESS,
+        tmp_path=tmp_path,
+    )
+    assert result, f"Test {_test_live_object_set_keeps_member_mass_and_scale.__name__} failed"
 
 
 if __name__ == "__main__":
