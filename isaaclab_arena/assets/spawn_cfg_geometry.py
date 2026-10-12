@@ -29,47 +29,26 @@ from isaaclab_arena.utils.usd.helpers import compute_local_bounding_box_from_sta
 from isaaclab_arena.utils.usd.rigid_bodies import apply_usd_variant_selections, find_shallowest_rigid_body_from_stage
 
 
-def get_usd_variant_selections(spawn_cfg: UsdFileCfg) -> dict[str, str] | None:
-    """Return a USD spawn configuration's variant selections as a dictionary.
-
-    Args:
-        spawn_cfg: USD spawn configuration whose variants are a dictionary, a configclass, or None.
-
-    Returns:
-        Variant set names mapped to selections, or None when no variants are configured.
-    """
-    variants = spawn_cfg.variants
-    if variants is None:
-        return None
-    if not isinstance(variants, dict):
-        variants = variants.to_dict()
-    return dict(variants)
-
-
 def get_geometry_key(spawn_cfg: SpawnerCfg) -> tuple:
-    """Return a hashable key of the spawn settings that determine an object's geometry.
+    """Return the spawn settings that an object's bounds and contact body depend on, as a hashable key.
 
-    Physics, rendering and semantic settings are excluded, so editing them keeps cached geometry.
+    Physics, rendering and semantic settings are not part of the key, so editing them keeps cached geometry.
 
     Args:
         spawn_cfg: One concrete native spawn configuration.
 
     Returns:
-        A tuple that changes whenever bounds or the contact body could change.
+        A tuple that changes whenever the bounds or the contact body could change.
     """
     _assert_single_spawn_cfg(spawn_cfg)
     if isinstance(spawn_cfg, UsdFileCfg):
         scale = tuple(spawn_cfg.scale) if spawn_cfg.scale is not None else None
-        variants = get_usd_variant_selections(spawn_cfg)
-        variant_items = tuple(sorted(variants.items())) if variants is not None else None
-        return ("UsdFileCfg", str(spawn_cfg.usd_path), scale, variant_items)
-    if isinstance(spawn_cfg, CuboidCfg):
-        return ("CuboidCfg", tuple(spawn_cfg.size), spawn_cfg.rigid_props is not None)
-    if isinstance(spawn_cfg, SphereCfg):
-        return ("SphereCfg", spawn_cfg.radius, spawn_cfg.rigid_props is not None)
-    if isinstance(spawn_cfg, (CylinderCfg, ConeCfg, CapsuleCfg)):
-        shape = (spawn_cfg.radius, spawn_cfg.height, spawn_cfg.axis)
-        return (type(spawn_cfg).__name__, *shape, spawn_cfg.rigid_props is not None)
+        variant_selections = tuple(sorted(_get_variant_selections(spawn_cfg).items()))
+        return ("UsdFileCfg", str(spawn_cfg.usd_path), scale, variant_selections)
+    if isinstance(spawn_cfg, ShapeCfg):
+        has_rigid_body = spawn_cfg.rigid_props is not None
+        return (type(spawn_cfg).__name__, _get_shape_half_extents(spawn_cfg), has_rigid_body)
+    # Other spawners have no geometry to derive. SpawnCfgGeometry reports that when it is queried.
     return (type(spawn_cfg).__name__,)
 
 
@@ -99,7 +78,8 @@ class SpawnCfgGeometry:
                     self.open_usd_stage(), scale=self.spawn_cfg.scale
                 )
             else:
-                self._bounding_box = _get_shape_bounding_box(self.spawn_cfg)
+                half_extents = _get_shape_half_extents(self.spawn_cfg)
+                self._bounding_box = AxisAlignedBoundingBox(tuple(-extent for extent in half_extents), half_extents)
         return self._bounding_box
 
     def get_contact_body_path(self) -> str:
@@ -135,14 +115,25 @@ class SpawnCfgGeometry:
         root = stage.DefinePrim("/Asset")
         root.GetReferences().AddReference(usd_path)
         stage.SetDefaultPrim(root)
-        variants = get_usd_variant_selections(self.spawn_cfg)
-        if variants:
-            apply_usd_variant_selections(stage, variants)
+        apply_usd_variant_selections(stage, _get_variant_selections(self.spawn_cfg))
         return stage
 
 
-def _get_shape_bounding_box(spawn_cfg: SpawnerCfg) -> AxisAlignedBoundingBox:
-    """Return analytic bounds for the standard Isaac Lab primitive spawners."""
+def _get_variant_selections(spawn_cfg: UsdFileCfg) -> dict[str, str]:
+    """Return the variant selections of a USD spawn configuration, empty when none are set.
+
+    Isaac Lab accepts the selections as a dictionary or as a configclass with one field per variant set.
+    """
+    variants = spawn_cfg.variants
+    if variants is None:
+        return {}
+    if isinstance(variants, dict):
+        return variants
+    return variants.to_dict()
+
+
+def _get_shape_half_extents(spawn_cfg: SpawnerCfg) -> tuple[float, float, float]:
+    """Return the half extents of a standard Isaac Lab primitive shape along x, y and z."""
     if isinstance(spawn_cfg, CuboidCfg):
         half_extents = [dimension / 2 for dimension in spawn_cfg.size]
     elif isinstance(spawn_cfg, SphereCfg):
@@ -155,7 +146,7 @@ def _get_shape_bounding_box(spawn_cfg: SpawnerCfg) -> AxisAlignedBoundingBox:
             half_extents[axis] += spawn_cfg.radius
     else:
         assert False, f"Set Object.bounding_box for objects spawned with {type(spawn_cfg).__name__}."
-    return AxisAlignedBoundingBox(tuple(-extent for extent in half_extents), tuple(half_extents))
+    return tuple(half_extents)
 
 
 def _assert_single_spawn_cfg(spawn_cfg: SpawnerCfg) -> None:
