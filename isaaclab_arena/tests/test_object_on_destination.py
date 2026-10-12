@@ -97,6 +97,19 @@ def _check_bounds_center_over_tilted_destination(spatial, axis_aligned_bounding_
     )
     torch.testing.assert_close(result_flat, torch.tensor([True, True, False, False, False]))
 
+    # Upright destination yawed by 45 deg keeps the oriented own-frame footprint (not the larger world AABB):
+    # a point on the destination's local x axis at 0.03 m is outside the local x bound of 0.02 m even
+    # though it is inside the world AABB.
+    yaw_45_quaternion = (0.0, 0.0, math.sin(math.pi / 8), math.cos(math.pi / 8))
+    T_W_D_yawed = torch.tensor([[0.0, 0.0, 0.0, *yaw_45_quaternion]]).expand(num_cases, 7)
+    point_on_local_x = 0.03 * math.sqrt(0.5)
+    result_yawed = spatial.object_bounds_center_over_destination(
+        object_centroid_W=torch.tensor([[point_on_local_x, point_on_local_x, 0.01]]).expand(num_cases, 3),
+        T_W_D=T_W_D_yawed,
+        destination_bounds_D=destination_bounds_D,
+    )
+    assert not result_yawed.any()
+
 
 def _check_upward_support_force(spatial) -> None:
     """Exercise the force threshold, sign, and support cone boundary."""

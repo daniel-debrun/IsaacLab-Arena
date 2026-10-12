@@ -55,14 +55,13 @@ def object_bounds_center_over_destination(
 ) -> torch.Tensor:
     """Check whether an object's bounds center is over a destination.
 
-    The check is gravity-aligned: the destination bounds are transformed into the world
-    frame and the object's bounds center must be inside the X/Y extent of the resulting
-    world-aligned bounding box and above its lowest Z. This makes the check meaningful for
-    destinations whose root frame is tilted (e.g. a box lying on its side). For destinations
-    that are not rotated, or are rotated by multiples of 90 degrees about Z, it equals the
-    check in the destination's own frame. The upper Z bound is intentionally ignored so the
-    same check works for open containers and supporting surfaces. This is a center-point
-    test, not full-object containment.
+    For a destination whose local Z axis is within 45 degrees of world up, the check is done
+    in the destination's own frame: the centroid must be inside its X/Y footprint and above its
+    lower Z bound. For a destination that is tilted further (e.g. a box lying on its side) the
+    own-frame check is meaningless, so the check is gravity-aligned instead: the centroid must
+    be inside the X/Y extent of the destination's world-aligned bounding box and above its lowest
+    Z. The upper Z bound is intentionally ignored so the same check works for open containers
+    and supporting surfaces. This is a center-point test, not full-object containment.
 
     Args:
         object_centroid_W: Object geometry centroid expressed in world frame
@@ -78,7 +77,14 @@ def object_bounds_center_over_destination(
     """
     t_W_D, q_W_D = T_W_D[:, :3], T_W_D[:, 3:]
 
-    # World AABB of the destination: transform the 8 corners of its local bounds.
+    # Own-frame check.
+    object_centroid_D = quat_apply_inverse(q_W_D, object_centroid_W - t_W_D)
+    inside_D = (
+        (object_centroid_D[:, :2] >= destination_bounds_D.min_point[:, :2])
+        & (object_centroid_D[:, :2] <= destination_bounds_D.max_point[:, :2])
+    ).all(dim=-1) & (object_centroid_D[:, 2] >= destination_bounds_D.min_point[:, 2])
+
+    # Gravity-aligned check against the world AABB of the destination (its 8 transformed corners).
     corners_D = destination_bounds_D.get_corners_at()
     num_corners = corners_D.shape[1]
     corners_W = t_W_D[:, None, :] + quat_apply(
@@ -87,12 +93,14 @@ def object_bounds_center_over_destination(
     ).reshape(-1, num_corners, 3)
     destination_min_W = corners_W.amin(dim=1)
     destination_max_W = corners_W.amax(dim=1)
-
-    center_inside_horizontal_bounds = (
+    inside_W = (
         (object_centroid_W[:, :2] >= destination_min_W[:, :2]) & (object_centroid_W[:, :2] <= destination_max_W[:, :2])
-    ).all(dim=-1)
-    center_above_destination_bottom = object_centroid_W[:, 2] >= destination_min_W[:, 2]
-    return center_inside_horizontal_bounds & center_above_destination_bottom
+    ).all(dim=-1) & (object_centroid_W[:, 2] >= destination_min_W[:, 2])
+
+    # cos(angle between destination local Z and world Z) = 1 - 2 (qx^2 + qy^2).
+    destination_z_up_component = 1.0 - 2.0 * (q_W_D[:, 0] ** 2 + q_W_D[:, 1] ** 2)
+    destination_is_upright = destination_z_up_component >= math.cos(math.pi / 4)
+    return torch.where(destination_is_upright, inside_D, inside_W)
 
 
 def contact_force_is_upward_support(
