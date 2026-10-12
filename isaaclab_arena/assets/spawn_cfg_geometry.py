@@ -57,9 +57,7 @@ def get_geometry_key(spawn_cfg: SpawnerCfg) -> tuple:
     Returns:
         A tuple that changes whenever bounds or the contact body could change.
     """
-    assert not isinstance(
-        spawn_cfg, (MultiAssetSpawnerCfg, MultiUsdFileCfg)
-    ), "Geometry requires one concrete native spawn configuration."
+    _assert_single_spawn_cfg(spawn_cfg)
     if isinstance(spawn_cfg, UsdFileCfg):
         scale = tuple(spawn_cfg.scale) if spawn_cfg.scale is not None else None
         variants = get_usd_variant_selections(spawn_cfg)
@@ -86,9 +84,7 @@ class SpawnCfgGeometry:
     """
 
     def __init__(self, spawn_cfg: SpawnerCfg):
-        self.key = get_geometry_key(spawn_cfg)
-        """Geometry key of the spawn settings these results were derived from."""
-
+        _assert_single_spawn_cfg(spawn_cfg)
         self.spawn_cfg = deepcopy(spawn_cfg)
         """Independent copy of the spawn settings, so later edits cannot change cached results."""
 
@@ -160,3 +156,10 @@ def _get_shape_bounding_box(spawn_cfg: SpawnerCfg) -> AxisAlignedBoundingBox:
     else:
         assert False, f"Set Object.bounding_box for objects spawned with {type(spawn_cfg).__name__}."
     return AxisAlignedBoundingBox(tuple(-extent for extent in half_extents), tuple(half_extents))
+
+
+def _assert_single_spawn_cfg(spawn_cfg: SpawnerCfg) -> None:
+    """Reject multi-asset spawners, which have no single geometry."""
+    assert not isinstance(
+        spawn_cfg, (MultiAssetSpawnerCfg, MultiUsdFileCfg)
+    ), "Geometry requires one concrete native spawn configuration."
