@@ -140,12 +140,16 @@ def environment_registration_callback() -> list[str]:
     # TODO(cvolk, 2026-07-06): [typed-config-migration] Remove this Namespace conversion when the Isaac Lab
     # external callback can receive ArenaEnvBuilderCfg directly.
     env_builder = ArenaEnvBuilder(isaaclab_arena_environment, arena_env_builder_cfg_from_argparse(args))
-    variation_hosts = env_builder.get_all_variations()
+    variation_paths = set()
+    for host, variations in env_builder.get_all_variations().items():
+        for variation in variations:
+            variation_paths.add(f"{host}.{variation.name}")
     variation_overrides = []
     lab_args = []
     for arg in remaining_args:
-        host = arg.lstrip("+~").partition("=")[0].partition(".")[0]
-        if host in variation_hosts and ("=" in arg or arg.startswith("~")):
+        key = arg.lstrip("+~").partition("=")[0]
+        variation_path = ".".join(key.split(".")[:2])
+        if variation_path in variation_paths and ("=" in arg or arg.startswith("~")):
             variation_overrides.append(arg)
         else:
             lab_args.append(arg)

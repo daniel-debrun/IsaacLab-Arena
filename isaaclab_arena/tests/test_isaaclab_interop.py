@@ -123,14 +123,16 @@ def test_registered_environment_preserves_runtime_recorders(monkeypatch, tmp_pat
     )
 
 
-def _test_registration_callback_routes_variation_overrides(_simulation_app, monkeypatch):
+def _test_registration_callback_routes_variation_overrides(_simulation_app, monkeypatch, variation_host):
     """Apply Arena variations while leaving Isaac Lab CLI and Hydra options untouched."""
     from isaaclab_arena.environments import arena_env_builder, isaaclab_interop
     from isaaclab_arena.variations import variations_hydra
     from isaaclab_arena.variations.object_mass_variation import ObjectMassVariation
 
-    variation = ObjectMassVariation("asset")
-    variations = {"asset": [variation]}
+    variation = ObjectMassVariation(variation_host)
+    # Asset names may match Lab's config roots, including assets without variations.
+    variations = {"env": [], "agent": []}
+    variations[variation_host] = [variation]
     arena_env = SimpleNamespace(scene=SimpleNamespace(get_asset_variations=lambda: variations), embodiment=None)
     task_name = "arena_interop_variations_test"
     factory = object()
@@ -147,7 +149,7 @@ def _test_registration_callback_routes_variation_overrides(_simulation_app, monk
         variations_hydra.apply_overrides(builder.get_all_variations(), builder.hydra_overrides or [])
 
     monkeypatch.setattr(arena_env_builder.ArenaEnvBuilder, "build_registered", build_registered)
-    variation_args = ["asset.mass.enabled=true", "asset.mass.sampler_cfg.low=[0.2]"]
+    variation_args = [f"{variation_host}.mass.enabled=true", f"{variation_host}.mass.sampler_cfg.low=[0.2]"]
     lab_args = ["--dataset_file", "demos.hdf5", "env.seed=17", "agent.policy.activation=relu"]
     monkeypatch.setattr(
         sys, "argv", ["record_demos.py", "--task", task_name, "--device", "cpu", *variation_args, *lab_args]
@@ -162,7 +164,8 @@ def _test_registration_callback_routes_variation_overrides(_simulation_app, monk
     return True
 
 
-def test_registration_callback_routes_variation_overrides(monkeypatch):
+@pytest.mark.parametrize("variation_host", ["asset", "env", "agent"])
+def test_registration_callback_routes_variation_overrides(monkeypatch, variation_host):
     assert run_function_with_persistent_simulation_app(
-        _test_registration_callback_routes_variation_overrides, monkeypatch=monkeypatch
+        _test_registration_callback_routes_variation_overrides, monkeypatch=monkeypatch, variation_host=variation_host
     )
