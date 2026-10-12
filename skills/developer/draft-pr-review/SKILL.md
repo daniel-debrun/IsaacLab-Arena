@@ -20,7 +20,7 @@ Build this JSON, save it locally (e.g. `/tmp/<repo>-pr<N>-review/pending_review.
   "body": "_AI-drafted (<agent name>), reviewed by me._\n\n<short verdict>. <whether anything was run, e.g. 'Everything below comes from reading the code at `abc1234`; nothing was run.'>\n\n<index of the inline comments, most important first>\n\n<points that have no line in the diff>",
   "comments": [
     {"path": "pkg/builder.py", "line": 339, "side": "RIGHT",
-     "body": "_AI-drafted (<agent name>), reviewed by me._\n\n**Blocking: <title>**\n\n<evidence, failure scenario, suggested fix>"},
+     "body": "_AI-drafted (<agent name>), reviewed by me._\n\n**Blocking: <title>**\n\n<what the code does now>\n\n<why it matters: failure scenario or cost>\n\n<suggestion>"},
     {"path": "pkg/builder.py", "start_line": 304, "line": 331, "start_side": "RIGHT", "side": "RIGHT",
      "body": "_AI-drafted (<agent name>), reviewed by me._\n\n**Design: <title>**\n\n..."},
     {"path": "tests/test_replay.py", "line": 253, "side": "LEFT",
@@ -32,6 +32,7 @@ Build this JSON, save it locally (e.g. `/tmp/<repo>-pr<N>-review/pending_review.
 - No `event` key: that is what makes the review PENDING. Any `event` value publishes it.
 - The attribution line is the first line of the body and of every comment.
 - Refer to code by its name (class, function, method, variable), with file:line, so each comment can be checked without searching.
+- Write each comment as short paragraphs, one point each: what the code does now, why it matters, then the suggestion. Put lists of items in bullets.
 - `side: RIGHT` takes new-file line numbers of added or context lines; `side: LEFT` takes old-file line numbers of deleted lines. A range must stay inside one hunk. Points without a diff line go in the summary.
 - Label each comment **Blocking**, **Design**, **Question** or **Suggestion (non-blocking)**, and order them that way.
 
