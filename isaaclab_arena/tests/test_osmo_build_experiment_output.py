@@ -7,6 +7,7 @@
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -16,7 +17,7 @@ from isaaclab_arena.evaluation.arena_experiment_result import (
     ARENA_SINGLE_RUN_TIMINGS_FILENAME,
 )
 from isaaclab_arena.evaluation.arena_run import RunStatus
-from isaaclab_arena.evaluation.experiment_timings import aggregate_experiment_timings
+from isaaclab_arena.evaluation.experiment_timings import aggregate_experiment_timings, write_run_timings
 from isaaclab_arena.visualization.report import RunExecutionReport
 from osmo.scripts.build_experiment_output import (
     EXPERIMENT_RUNNER_RESULT_FILE_NAME,
@@ -74,11 +75,8 @@ def _write_run_timings(
 ) -> None:
     """Write the timings the Experiment Runner leaves: one file in the Run directory and the aggregate beside it."""
     run_output_directory = experiment_runner_output_directory / run_name
-    run_output_directory.mkdir(parents=True, exist_ok=True)
-    (run_output_directory / ARENA_SINGLE_RUN_TIMINGS_FILENAME).write_text(
-        json.dumps(timing_records) + "\n",
-        encoding="utf-8",
-    )
+    with patch("isaaclab_arena.utils.timer.get_timer_stats_json", return_value=timing_records):
+        write_run_timings(run_output_directory)
     aggregate_experiment_timings(experiment_runner_output_directory, [run_name])
 
 
@@ -210,8 +208,36 @@ def test_collects_run_outputs_without_building_report(tmp_path):
     }
     assert (experiment_output_directory / "first/episode_results_rebuild0.jsonl").is_file()
     assert (experiment_output_directory / "first" / EXPERIMENT_RUNNER_RESULT_FILE_NAME).is_file()
-    assert (experiment_output_directory / "first" / ARENA_SINGLE_RUN_TIMINGS_FILENAME).is_file()
+    collected_run_timings = json.loads(
+        (experiment_output_directory / "first" / ARENA_SINGLE_RUN_TIMINGS_FILENAME).read_text(encoding="utf-8")
+    )
+    assert isinstance(collected_run_timings, list)
+    assert collected_run_timings == json.loads(
+        (experiment_runner_output_directory / "first" / ARENA_SINGLE_RUN_TIMINGS_FILENAME).read_text(encoding="utf-8")
+    )
     assert not (experiment_output_directory / "index.html").exists()
+
+
+def test_rejects_completed_experiment_runner_output_without_timings(tmp_path):
+    experiment_runner_output_directory = tmp_path / "experiment-runner-0-output"
+    _write_run_output(experiment_runner_output_directory / "first", "first", True)
+    _write_run_timings(experiment_runner_output_directory, "first", [_timing_record("step", 1, 10.0)])
+    run_timings_path = experiment_runner_output_directory / "first" / ARENA_SINGLE_RUN_TIMINGS_FILENAME
+    run_timings_path.unlink()
+    assert (experiment_runner_output_directory / ARENA_AGGREGATED_TIMINGS_FILENAME).is_file()
+    _write_experiment_runner_result(
+        experiment_runner_output_directory,
+        RunStatus.COMPLETED,
+        0,
+        {"first": _run_metadata("first-environment", "pi05")},
+    )
+
+    with pytest.raises(AssertionError, match="Completed Run 'first' is missing its timings file") as error:
+        collect_run_outputs_into_experiment_output(
+            {"first": experiment_runner_output_directory},
+            tmp_path / "experiment-output",
+        )
+    assert str(run_timings_path) in str(error.value)
 
 
 def test_builds_experiment_output_from_separate_experiment_runner_outputs(tmp_path):
@@ -278,8 +304,16 @@ def test_builds_experiment_output_from_separate_experiment_runner_outputs(tmp_pa
     }]
     assert set(first_run_result) == {"environment", "policy_variant", "status", "rebuilds"}
     assert experiment_result["runs"]["second"]["policy_variant"] == "cosmos"
-    assert (experiment_output_directory / "first" / ARENA_SINGLE_RUN_TIMINGS_FILENAME).is_file()
-    assert (experiment_output_directory / "second" / ARENA_SINGLE_RUN_TIMINGS_FILENAME).is_file()
+    for run_output_directory in (first_run_output_directory, second_run_output_directory):
+        collected_run_timings = json.loads(
+            (experiment_output_directory / run_output_directory.name / ARENA_SINGLE_RUN_TIMINGS_FILENAME).read_text(
+                encoding="utf-8"
+            )
+        )
+        assert isinstance(collected_run_timings, list)
+        assert collected_run_timings == json.loads(
+            (run_output_directory / ARENA_SINGLE_RUN_TIMINGS_FILENAME).read_text(encoding="utf-8")
+        )
     experiment_timings = json.loads(
         (experiment_output_directory / ARENA_AGGREGATED_TIMINGS_FILENAME).read_text(encoding="utf-8")
     )

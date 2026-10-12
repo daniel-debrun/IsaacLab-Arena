@@ -20,7 +20,7 @@ import shutil
 from collections.abc import Mapping
 from pathlib import Path
 
-from isaaclab_arena.evaluation.arena_experiment_result import ArenaExperimentResult
+from isaaclab_arena.evaluation.arena_experiment_result import ARENA_SINGLE_RUN_TIMINGS_FILENAME, ArenaExperimentResult
 from isaaclab_arena.evaluation.arena_run import RunStatus
 from isaaclab_arena.evaluation.experiment_timings import aggregate_experiment_timings
 from isaaclab_arena.visualization.report import RunExecutionReport, build_report
@@ -140,6 +140,10 @@ def collect_run_outputs_into_experiment_output(
         assert (
             source_run_output_directory.is_dir()
         ), f"Completed Run '{run_name}' is missing its expected output directory: '{source_run_output_directory}'"
+        source_run_timings_path = source_run_output_directory / ARENA_SINGLE_RUN_TIMINGS_FILENAME
+        assert (
+            source_run_timings_path.is_file()
+        ), f"Completed Run '{run_name}' is missing its timings file: '{source_run_timings_path}'"
         shutil.copytree(
             source_run_output_directory,
             destination_run_output_directory,
