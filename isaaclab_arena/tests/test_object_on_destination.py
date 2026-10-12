@@ -54,6 +54,50 @@ def _check_bounds_center_over_destination(spatial, axis_aligned_bounding_box_typ
     torch.testing.assert_close(result, torch.tensor([True, False, False, True, True, False, True, False]))
 
 
+def _check_bounds_center_over_tilted_destination(spatial, axis_aligned_bounding_box_type) -> None:
+    """A destination lying on its side is tested against its world-aligned footprint."""
+    import torch
+
+    # Box with local extents 0.04 x 0.09 x 0.12 whose local +Z (long axis) points along world +X (pitch 90 deg).
+    pitch_90_quaternion = (0.0, math.sqrt(0.5), 0.0, math.sqrt(0.5))
+    identity_quaternion = (0.0, 0.0, 0.0, 1.0)
+    num_cases = 5
+    T_W_D = torch.tensor([[1.0, 2.0, 0.045, *pitch_90_quaternion]]).expand(num_cases, 7)
+    destination_bounds_D = axis_aligned_bounding_box_type(
+        min_point=torch.tensor([-0.02, -0.045, -0.06]).expand(num_cases, 3),
+        max_point=torch.tensor([0.02, 0.045, 0.06]).expand(num_cases, 3),
+    )
+    # World AABB: x in [0.94, 1.06], y in [1.955, 2.045], z in [0.025, 0.065].
+    object_centroid_W = torch.tensor([
+        [1.0, 2.0, 0.08],  # centered on top (outside the local x bounds of +-0.02 only because of the tilt)
+        [1.05, 2.04, 0.08],  # near the corner, still inside the world footprint
+        [1.07, 2.0, 0.08],  # outside world X
+        [1.0, 2.0, 0.02],  # below the world bottom
+        [1.0, 2.05, 0.08],  # outside world Y
+    ])
+    result = spatial.object_bounds_center_over_destination(
+        object_centroid_W=object_centroid_W,
+        T_W_D=T_W_D,
+        destination_bounds_D=destination_bounds_D,
+    )
+    torch.testing.assert_close(result, torch.tensor([True, True, False, False, False]))
+
+    # Unrotated destination: identical to the destination-frame check.
+    T_W_D_flat = torch.tensor([[1.0, 2.0, 0.0, *identity_quaternion]]).expand(num_cases, 7)
+    result_flat = spatial.object_bounds_center_over_destination(
+        object_centroid_W=torch.tensor([
+            [1.0, 2.0, 0.01],
+            [1.019, 2.044, 0.0],
+            [1.021, 2.0, 0.0],
+            [1.0, 2.0, -0.07],
+            [1.0, 2.046, 0.0],
+        ]),
+        T_W_D=T_W_D_flat,
+        destination_bounds_D=destination_bounds_D,
+    )
+    torch.testing.assert_close(result_flat, torch.tensor([True, True, False, False, False]))
+
+
 def _check_upward_support_force(spatial) -> None:
     """Exercise the force threshold, sign, and support cone boundary."""
     import torch
@@ -317,6 +361,7 @@ def _test_object_on_destination(_simulation_app) -> bool:
     from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 
     _check_bounds_center_over_destination(spatial, AxisAlignedBoundingBox)
+    _check_bounds_center_over_tilted_destination(spatial, AxisAlignedBoundingBox)
     _check_upward_support_force(spatial)
     _check_deformable_support(spatial, AxisAlignedBoundingBox)
     _check_object_on_destination(

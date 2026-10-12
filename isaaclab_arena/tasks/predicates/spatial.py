@@ -55,10 +55,14 @@ def object_bounds_center_over_destination(
 ) -> torch.Tensor:
     """Check whether an object's bounds center is over a destination.
 
-    The check requires the object's bounds center to be inside the destination's
-    X/Y footprint and above its lower Z bound. The upper Z bound is intentionally
-    ignored so the same check works for open containers and supporting surfaces.
-    This is a center-point test, not full-object containment.
+    The check is gravity-aligned: the destination bounds are transformed into the world
+    frame and the object's bounds center must be inside the X/Y extent of the resulting
+    world-aligned bounding box and above its lowest Z. This makes the check meaningful for
+    destinations whose root frame is tilted (e.g. a box lying on its side). For destinations
+    that are not rotated, or are rotated by multiples of 90 degrees about Z, it equals the
+    check in the destination's own frame. The upper Z bound is intentionally ignored so the
+    same check works for open containers and supporting surfaces. This is a center-point
+    test, not full-object containment.
 
     Args:
         object_centroid_W: Object geometry centroid expressed in world frame
@@ -74,15 +78,20 @@ def object_bounds_center_over_destination(
     """
     t_W_D, q_W_D = T_W_D[:, :3], T_W_D[:, 3:]
 
-    object_centroid_D = quat_apply_inverse(
-        q_W_D,
-        object_centroid_W - t_W_D,
-    )
+    # World AABB of the destination: transform the 8 corners of its local bounds.
+    corners_D = destination_bounds_D.get_corners_at()
+    num_corners = corners_D.shape[1]
+    corners_W = t_W_D[:, None, :] + quat_apply(
+        q_W_D[:, None, :].expand(-1, num_corners, -1).reshape(-1, 4),
+        corners_D.expand(t_W_D.shape[0], -1, -1).reshape(-1, 3),
+    ).reshape(-1, num_corners, 3)
+    destination_min_W = corners_W.amin(dim=1)
+    destination_max_W = corners_W.amax(dim=1)
+
     center_inside_horizontal_bounds = (
-        (object_centroid_D[:, :2] >= destination_bounds_D.min_point[:, :2])
-        & (object_centroid_D[:, :2] <= destination_bounds_D.max_point[:, :2])
+        (object_centroid_W[:, :2] >= destination_min_W[:, :2]) & (object_centroid_W[:, :2] <= destination_max_W[:, :2])
     ).all(dim=-1)
-    center_above_destination_bottom = object_centroid_D[:, 2] >= destination_bounds_D.min_point[:, 2]
+    center_above_destination_bottom = object_centroid_W[:, 2] >= destination_min_W[:, 2]
     return center_inside_horizontal_bounds & center_above_destination_bottom
 
 
