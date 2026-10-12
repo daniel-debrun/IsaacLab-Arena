@@ -37,8 +37,7 @@ from isaaclab_arena.environments.relation_solver_interface import solve_and_appl
 from isaaclab_arena.metrics.metric_base import MetricBase
 from isaaclab_arena.metrics.metric_term_cfg import MetricTermCfg
 from isaaclab_arena.metrics.recorder_manager_utils import metrics_to_recorder_manager_cfg
-from isaaclab_arena.progress_tracking.progress_tracker import ProgressTrackingRecorderManagerCfg
-from isaaclab_arena.progress_tracking.task_success import TaskSuccessTerm
+from isaaclab_arena.progress_tracking.task_progress_cfg import TaskProgressCfg
 from isaaclab_arena.recording.common_terms import CoreEpisodeRecorderTermCfg, VariationEpisodeRecorderTermCfg
 from isaaclab_arena.recording.episode_recorder_manager import EpisodeRecorderTermCfg
 from isaaclab_arena.recording.progress_terms import ProgressEpisodeRecorderTermCfg
@@ -52,6 +51,7 @@ from isaaclab_arena.relations.placement_layouts import PlacementLayouts
 from isaaclab_arena.relations.relation_solver_params import RelationSolverParams
 from isaaclab_arena.tasks.no_task import NoTask
 from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
+from isaaclab_arena.tasks.terminations import task_success_from_progress
 from isaaclab_arena.terms.events import ResetBackgroundPhysics
 from isaaclab_arena.terms.recorders import ArenaEnvRecorderManagerCfg
 from isaaclab_arena.utils.configclass import combine_configclass_instances, make_configclass
@@ -59,6 +59,7 @@ from isaaclab_arena.utils.isaaclab_utils.warp_patch import install_empty_cpu_war
 from isaaclab_arena.utils.multiprocess import get_local_rank
 from isaaclab_arena.utils.physics_backend import PhysicsBackend
 from isaaclab_arena.variations import variations_hydra, variations_printing
+from isaaclab_arena.variations.recorded_variation_replay import configure_recorded_variation_replay
 from isaaclab_arena.variations.variation_base import RunTimeVariationBase, VariationBase
 from isaaclab_arena.variations.variation_recorder import VariationRecorder
 
@@ -264,14 +265,7 @@ class ArenaEnvBuilder:
 
         # Install the shared success term when the task defines success criteria.
         if success_criteria:
-            success_term = TerminationTermCfg(
-                func=TaskSuccessTerm,
-                params={
-                    "success_criteria": success_criteria,
-                    "subtasks_are_sequential": task_termination_cfg.subtasks_are_sequential,
-                    "desired_subtask_success_state": task_termination_cfg.desired_subtask_success_state,
-                },
-            )
+            success_term = TerminationTermCfg(func=task_success_from_progress)
             termination_terms["success"] = success_term
         termination_fields = [(name, TerminationTermCfg, term) for name, term in termination_terms.items()]
         return make_configclass("TerminationsCfg", termination_fields)()
@@ -312,14 +306,20 @@ class ArenaEnvBuilder:
             self._solve_relations()
 
         # Apply Hydra variation overrides. Needs to happen before build-time variations are applied.
+        variations = self.get_all_variations()
         if self.hydra_overrides:
-            variations: dict[str, list[VariationBase]] = self.get_all_variations()
             variations_hydra.apply_overrides(variations, self.hydra_overrides)
+
+        variation_replay_scheduler = (
+            configure_recorded_variation_replay(self.cfg.recorded_variation_samples_path, variations)
+            if self.cfg.recorded_variation_samples_path is not None
+            else None
+        )
 
         # Attach the variation recorder before any sampling, so it observes both build-time samples
         # (drawn just below) and run-time samples (drawn during simulation).
         variation_recorder = VariationRecorder()
-        variation_recorder.attach(self.get_all_variations())
+        variation_recorder.attach(variations)
 
         # Apply build-time variations now, before scene_cfg is materialised.
         self._apply_build_time_variations()
@@ -388,6 +388,13 @@ class ArenaEnvBuilder:
             variations_event_cfg,
         )
         termination_cfg = self._build_termination_manager_cfg(task_termination_cfg)
+        task_progress_cfg = None
+        if task_termination_cfg.success:
+            task_progress_cfg = TaskProgressCfg(
+                success_criteria=task_termination_cfg.success,
+                subtasks_are_sequential=task_termination_cfg.subtasks_are_sequential,
+                desired_subtask_success_state=task_termination_cfg.desired_subtask_success_state,
+            )
         actions_cfg = embodiment.get_action_cfg()
         xr_cfg = embodiment.get_xr_cfg()
         isaac_teleop_cfg = None
@@ -402,17 +409,12 @@ class ArenaEnvBuilder:
         metrics = task.get_metrics()
         metrics_cfg = self._compose_metrics_cfg(metrics)
         metrics_recorder_manager_cfg = metrics_to_recorder_manager_cfg(metrics)
-        progress_tracking_recorder_cfg: Any = (
-            ProgressTrackingRecorderManagerCfg() if task_termination_cfg.success else None
-        )
-
         # Base has to be specified explicitly to avoid type errors and not lose inheritance.
         recorder_manager_cfg = combine_configclass_instances(
             "RecorderManagerCfg",
             metrics_recorder_manager_cfg,
             task.get_recorder_term_cfg(),
             embodiment.get_recorder_term_cfg(record_trajectories=self.cfg.record_trajectories),
-            progress_tracking_recorder_cfg,
             bases=(RecorderManagerBaseCfg,),
         )
         recorder_manager_cfg = self._modify_recorder_cfg_dataset_filename(recorder_manager_cfg)
@@ -464,6 +466,7 @@ class ArenaEnvBuilder:
                 events=events_cfg,
                 scene=scene_cfg,
                 terminations=termination_cfg,
+                task_progress=task_progress_cfg,
                 rewards=rewards_cfg,
                 curriculum=curriculum_cfg,
                 commands=commands_cfg,
@@ -492,6 +495,7 @@ class ArenaEnvBuilder:
                 events=events_cfg,
                 scene=scene_cfg,
                 terminations=termination_cfg,
+                task_progress=task_progress_cfg,
                 rewards=rewards_cfg,
                 curriculum=curriculum_cfg,
                 commands=commands_cfg,
@@ -535,7 +539,10 @@ class ArenaEnvBuilder:
                     env_cfg.sim.physics, NewtonCfg
                 ), "env_cfg_callback changed the physics backend away from Newton."
 
-        env_kwargs: dict[str, Any] = {"variation_recorder": variation_recorder}
+        env_kwargs: dict[str, Any] = {
+            "variation_recorder": variation_recorder,
+            "variation_replay_scheduler": variation_replay_scheduler,
+        }
         return env_cfg, env_kwargs
 
     def get_entry_point(self) -> str | type[ManagerBasedRLMimicEnv]:

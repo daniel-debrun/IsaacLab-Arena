@@ -10,9 +10,10 @@ import functools
 import torch
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Literal, TypedDict
 
 from isaaclab.managers import SceneEntityCfg, TerminationTermCfg
-from isaaclab.managers.recorder_manager import RecorderManagerBaseCfg, RecorderTerm, RecorderTermCfg
+from isaaclab.managers.recorder_manager import RecorderTerm, RecorderTermCfg
 from isaaclab.utils.configclass import configclass
 
 from isaaclab_arena.progress_tracking.completion_criteria import CompletionCriteria, CriteriaCompletionMode
@@ -45,9 +46,6 @@ def _create_predicate_from_config(predicate, env):
     """
 
     # Isaac Lab does not resolve configs inside CompletionCriteria dataclasses.
-    # NOTE(cvolk): TaskSuccessTerm creates the tracker while TerminationManager is
-    # still being constructed, before env.termination_manager is assigned.
-    # We therefore cannot delegate nested predicate initialization to that manager.
     if not isinstance(predicate, TerminationTermCfg):
         return predicate
 
@@ -81,6 +79,27 @@ class PredicateEvent:
 
     score_delta: float
     """Normalized score this advance added to the sequence."""
+
+
+class ConsecutiveStepProgress(TypedDict):
+    """Episode snapshot of a consecutive-step requirement; contains no live counter state."""
+
+    criteria_name: str
+    """Name of the requirement's completion criteria."""
+    sequence_name: str
+    """Name of the predicate sequence."""
+    predicate_index: int
+    """Position of the requirement in its sequence."""
+    predicate_name: str
+    """Human-readable requirement name."""
+    consecutive_steps: int
+    """Streak from the requirement's last evaluation."""
+    required_steps: int
+    """Number of uninterrupted qualifying steps required."""
+    status: Literal["completed", "active", "waiting"]
+    """Completed milestone, current enabled requirement, or waiting for an earlier requirement/subtask."""
+    first_satisfied_step: int | None
+    """First recorded completion step, or None when no completion step is known."""
 
 
 @dataclass
@@ -382,6 +401,46 @@ class CompletionCriteriaRunner:
         stacked = torch.stack([self.sequence_score[name] for name in sequence_names], dim=1)
         return torch.topk(stacked, self._num_required_sequences(), dim=1).values.mean(dim=1)
 
+    def get_consecutive_step_progress(
+        self, env_idx: int, *, subtask_enabled: bool = True
+    ) -> list[ConsecutiveStepProgress]:
+        """Read consecutive-step counters and sequence positions without evaluating predicates.
+
+        Args:
+            env_idx: Environment index to summarize.
+            subtask_enabled: Whether earlier sequential subtasks have completed.
+
+        Returns:
+            Requirement snapshots; the tracker adds first completion steps from its events.
+        """
+        progress: list[ConsecutiveStepProgress] = []
+        for sequence_name, chain in self.predicate_chains.items():
+            position = int(self.current_predicate_index[sequence_name][env_idx].item())
+            for index, (predicate, _) in enumerate(chain):
+                if not isinstance(predicate, _TrueForConsecutiveSteps):
+                    continue
+                # completed: the sequence has advanced past this requirement.
+                # active: this is the current requirement and its subtask is enabled.
+                # waiting: an earlier requirement or sequential subtask must complete first.
+                status: Literal["completed", "active", "waiting"]
+                if index < position:
+                    status = "completed"
+                elif index == position and subtask_enabled:
+                    status = "active"
+                else:
+                    status = "waiting"
+                progress.append({
+                    "criteria_name": self.completion_criteria.name,
+                    "sequence_name": sequence_name,
+                    "predicate_index": index,
+                    "predicate_name": _predicate_repr(predicate),
+                    "consecutive_steps": predicate.get_consecutive_steps(env_idx),
+                    "required_steps": predicate.required_steps,
+                    "status": status,
+                    "first_satisfied_step": None,
+                })
+        return progress
+
     def get_state_for_env(self, env_idx: int, is_complete, score) -> CompletionCriteriaState:
         """Per-env view of progress toward the completion criteria.
 
@@ -477,7 +536,7 @@ class ProgressTracker:
     def step(self, env, step_index: torch.Tensor | None = None) -> None:
         """Advance predicate sequences and update task success for one control step.
 
-        TaskSuccessTerm calls this once per control step. Other consumers read
+        The environment calls this once per control step. Other consumers read
         is_complete(), get_state(), or get_events() without advancing progress.
         Temporal requirements need a per-environment step_index. When supplied,
         indices must advance by exactly one between updates for each environment,
@@ -547,10 +606,6 @@ class ProgressTracker:
     def is_complete(self) -> torch.Tensor:
         """Return task success from the latest step without evaluating predicates again."""
         return self._task_success.clone()
-
-    def has_processed_step(self, step_index: torch.Tensor) -> bool:
-        """Return whether every environment was already updated at ``step_index``."""
-        return torch.equal(self._last_processed_step, step_index.to(device=self.device))
 
     def get_subtask_completion(self) -> torch.Tensor:
         """Return recorded completion for each environment and subtask, in subtask order."""
@@ -627,6 +682,36 @@ class ProgressTracker:
             )
         return output
 
+    def get_consecutive_step_summary(self, env_idx: int) -> list[ConsecutiveStepProgress]:
+        """Summarize recorded consecutive-step requirements for one environment's episode.
+
+        Read each requirement's first completion step, current count, and required steps
+        without evaluating predicates. Only _TrueForConsecutiveSteps requirements are included.
+
+        Args:
+            env_idx: Environment index whose episode is summarized before reset.
+
+        Returns:
+            Requirement summaries, or an empty list when there are no consecutive-step requirements.
+        """
+        first_satisfied_steps = {}
+        for event in self._events[env_idx]:
+            if event.step >= 0:
+                key = (event.criteria_name, event.sequence_name, event.predicate_index)
+                first_satisfied_steps.setdefault(key, event.step)
+        subtask_completion = self.get_subtask_completion()[env_idx] if self.subtasks_are_sequential else None
+        summary: list[ConsecutiveStepProgress] = []
+        for runner in self.runners:
+            subtask_enabled = True
+            if subtask_completion is not None:
+                subtask_index = runner.completion_criteria.parent_subtask_idx
+                subtask_enabled = bool(subtask_completion[:subtask_index].all().item())
+            for requirement in runner.get_consecutive_step_progress(env_idx, subtask_enabled=subtask_enabled):
+                key = (requirement["criteria_name"], requirement["sequence_name"], requirement["predicate_index"])
+                requirement["first_satisfied_step"] = first_satisfied_steps.get(key)
+                summary.append(requirement)
+        return summary
+
     def get_events(self) -> list[list[PredicateEvent]]:
         """Get all events for all envs."""
 
@@ -669,7 +754,7 @@ class ProgressTrackingRecorder(RecorderTerm):
         """Publish the current progress snapshot without advancing the tracker."""
 
         progress_tracker = self._env.progress_tracker
-        assert progress_tracker is not None, "Task success must initialize the progress tracker before recording."
+        assert progress_tracker is not None, "Task progress must be configured before recording."
         self._env.extras["progress_tracking"] = {
             "states": progress_tracker.get_state(),
             "events": progress_tracker.get_events(),
@@ -681,8 +766,3 @@ class ProgressTrackingRecorder(RecorderTerm):
 @configclass
 class ProgressTrackingRecorderCfg(RecorderTermCfg):
     class_type: type[RecorderTerm] = ProgressTrackingRecorder
-
-
-@configclass
-class ProgressTrackingRecorderManagerCfg(RecorderManagerBaseCfg):
-    progress_tracking: ProgressTrackingRecorderCfg = ProgressTrackingRecorderCfg()

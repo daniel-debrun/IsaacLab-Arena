@@ -21,7 +21,7 @@ from isaaclab_arena.relations.relations import RelationBase
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 from isaaclab_arena.utils.pose import Pose
 from isaaclab_arena.utils.usd.helpers import compute_local_bounding_box_from_usd, has_light, open_stage
-from isaaclab_arena.utils.usd.rigid_bodies import find_shallowest_rigid_body
+from isaaclab_arena.utils.usd.rigid_bodies import find_shallowest_rigid_body, read_asset_rigid_body_paths
 
 
 class Object(RootedObjectBase):
@@ -91,50 +91,54 @@ class Object(RootedObjectBase):
         self.reset_pose = True
         self._pose_event_cfg = self._build_reset_event()
 
-    def get_contact_sensor_cfg(
-        self, contact_against_object: ObjectBase | None = None, usd_path: str | None = None
-    ) -> ContactSensorCfg:
+    def get_contact_sensor_prim_path(self, usd_path: str | None = None) -> str:
+        """Return the scene prim path where this object's contact sensor is attached.
+
+        Args:
+            usd_path: Optional member USD path for object subclasses that spawn from multiple files.
+        """
         assert self.object_type == ObjectType.RIGID, "Contact sensor is only supported for rigid objects"
-        if contact_against_object is not None:
-            assert isinstance(
-                contact_against_object, RootedObjectBase
-            ), "Contact sensors against deformable objects and other non-rooted objects are not supported"
-        # We override this function from the parent class because in some assets, the rigid body
-        # is not at the root of the USD file. To be robust to this, we find the shallowest rigid body
-        # and add the contact sensor to it.
-        # TODO(alexmillane, 2026.01.29): This capability to search for the correct place
-        # to add the contact sensor is not yet supported for ObjectReferences and RigidObjectSet.
-        # For these objects we just (try to) add the contact sensor to the root prim.
         usd_path = usd_path or self.usd_path
+        assert usd_path is not None, f"No USD path available for {self.name}. Can't add contact sensor."
         rigid_body_relative_path = find_shallowest_rigid_body(
             usd_path,
-            relative_to_root=True,
+            within_default_prim=True,
+            relative_to_default_prim=True,
             variants=(self.spawn_cfg_addon or {}).get("variants"),
         )
         assert (
             rigid_body_relative_path is not None
         ), f"No rigid body found in {self.name} USD file: {usd_path}. Can't add contact sensor."
-        contact_sensor_prim_path = self.prim_path + rigid_body_relative_path
-        # There are also cases where the contact against object does not have its rigid body at the root.
-        # In that case, we also need to find the shallowest rigid body.
-        # NOTE(alexmillane, 2026.04.10): For now we only support this for Object, but in the future we
-        # could support this for ObjectReference and RigidObjectSet. For now, those object types
-        # are assumed to have their rigid body at the their prim path.
-        if isinstance(contact_against_object, Object):
-            assert (
-                contact_against_object.object_type == ObjectType.RIGID
-            ), "Contact sensor is only supported for rigid objects"
-            contact_against_relative_path = find_shallowest_rigid_body(
+        return self.prim_path + rigid_body_relative_path
+
+    def get_contact_sensor_cfg(self, contact_against_object: ObjectBase | None = None) -> ContactSensorCfg:
+        # We override this function from the parent class because some assets do not have their rigid body
+        # at the root of the USD file. To be robust to this, we find the shallowest rigid body and add the
+        # contact sensor to it.
+        if contact_against_object is not None:
+            assert isinstance(
+                contact_against_object, RootedObjectBase
+            ), "Contact sensors against deformable objects and other non-rooted objects are not supported"
+        contact_sensor_prim_path = self.get_contact_sensor_prim_path()
+        if isinstance(contact_against_object, Object) and contact_against_object.object_type == ObjectType.BASE:
+            # PhysX needs a separate filter expression for each nested target body.
+            body_paths = read_asset_rigid_body_paths(
                 contact_against_object.usd_path,
-                relative_to_root=True,
                 variants=(contact_against_object.spawn_cfg_addon or {}).get("variants"),
             )
-            assert contact_against_relative_path is not None, (
-                f"No rigid body found in {contact_against_object.name} USD file: {contact_against_object.usd_path}."
-                " Can't add contact sensor."
-            )
-            filter_prim_paths = [contact_against_object.get_prim_path() + contact_against_relative_path]
+            assert body_paths, "Contact targets must contain rigid bodies."
+            filter_prim_paths = []
+            for path in body_paths:
+                relative_path = path.removeprefix("/Asset")
+                filter_prim_paths.append(contact_against_object.get_prim_path() + relative_path)
+        elif isinstance(contact_against_object, Object):
+            # This branch supports rigid targets only. For ObjectInTask in kitchen scenes,
+            # supply receptacles such as the microwave as Background objects so the branch
+            # above filters contacts against their nested rigid bodies.
+            filter_prim_paths = [contact_against_object.get_contact_sensor_prim_path()]
         elif isinstance(contact_against_object, ObjectBase):
+            # Handles ObjectReference.
+            # NOTE(alexmillane, 2026.04.10): ObjectReference is assumed to have its rigid body at its scene prim path.
             filter_prim_paths = [contact_against_object.get_prim_path()]
         elif contact_against_object is None:
             filter_prim_paths = []
