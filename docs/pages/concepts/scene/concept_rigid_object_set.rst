@@ -44,8 +44,18 @@ How members are chosen:
      - Each environment picks independently. Pass a placement seed to make the
        choice reproducible.
 
-Members must be rigid objects. Articulations and empty lists are rejected when
-you construct the set.
+Members must be rigid objects. Articulations, empty lists and other object
+sets are rejected when you construct the set.
+
+Each member spawns from a copy of its own spawn configuration
+(``member.object_cfg.spawn``), taken when the set is built. Its scale, physics
+properties, USD variant selections and materials stay as configured; later
+edits to the member do not reach the set. A member may also be a primitive
+shape, for example an ``Object`` with ``spawner_cfg=CuboidCfg(...)`` and
+``rigid_props`` set. A member built from ``spawner_cfg`` (for example a
+primitive shape) keeps its own ``activate_contact_sensors`` value, which
+defaults to ``False``, so set it to ``True`` when a task needs contact sensing.
+Members built from ``usd_path`` have it enabled.
 
 How to Use
 ----------
@@ -134,9 +144,17 @@ Limitations
 - **Rigid only.** Members must be ``ObjectType.RIGID`` — no articulations.
 - **Choice is fixed per run.** Layouts can change on reset; the assigned member
   cannot.
-- **One shared prim path.** Every environment uses ``{ENV_REGEX_NS}/<name>``.
-  Arena may rewrite and cache member USDs so they spawn correctly together (for
-  example when scales or rigid-body nesting differ).
+- **One shared prim path and rigid-body path.** Every environment uses
+  ``{ENV_REGEX_NS}/<name>``, and Isaac Lab looks up the rigid body at one path
+  below it for all environments. When members keep their rigid bodies at
+  different paths, Arena writes a copy of each member's USD with the body moved
+  to ``/rigid_body`` and caches it as ``rigid_<sha256>.usd``. This needs USD
+  members, and their spawn configurations cannot name prims inside the asset:
+  ``prim_physics``, schema fragments or target patterns in ``*_props``,
+  ``visual_material_bindings``, ``physics_material_prim_path`` and a relative
+  ``visual_material_path`` are rejected. The copy keeps materials and bakes in
+  the USD variant selections. An authored rotation on the asset's root is
+  dropped, as when Isaac Lab spawns it.
 - **Single-box geometry has a fallback.** ``get_bounding_box()`` returns one box
   from the tallest member; per-environment placement uses
   ``get_bounding_box_per_env()`` instead.
@@ -146,6 +164,9 @@ Limitations
 - **Don't set an initial pose when placement owns it.** The builder supplies the
   set's creation and reset poses. Anchors are the exception — they stay fixed and
   still need a known pose.
-- **Contact sensors use the first member.** Setup uses the canonical first-member
-  USD after any rewrite, so prefer members whose rigid body lands at the same
-  relative path.
+- **Contact sensors use the shared rigid-body path.** A task's contact sensor
+  sits on the rigid body at the path that all members share.
+- **Not a fixed obstacle.** A set has no ``usd_path`` of its own, so a set
+  without relations is not used as a collision obstacle when other objects are
+  placed. In ``MESH`` collision mode, a set with more than one member uses its
+  bounding box.
