@@ -66,10 +66,10 @@ def _test_object_set_samples_and_stores_variant_indices(simulation_app):
     assert getattr(spawn_cfg, "usd_path") == obj_set.object_usd_paths
     assert getattr(spawn_cfg, "random_choice") is False
 
-    from isaaclab_arena.assets.object_geometry import ObjectGeometry
+    from isaaclab_arena.assets.spawn_cfg_geometry import SpawnCfgGeometry
 
     with patch.object(
-        ObjectGeometry, "get_contact_body_path", autospec=True, return_value="/rigid"
+        SpawnCfgGeometry, "get_contact_body_path", autospec=True, return_value="/rigid"
     ) as get_contact_body_path:
         contact_sensor_cfg = obj_set.get_contact_sensor_cfg()
     assert [call.args[0].spawn_cfg.usd_path for call in get_contact_body_path.call_args_list] == [
@@ -79,7 +79,7 @@ def _test_object_set_samples_and_stores_variant_indices(simulation_app):
     assert contact_sensor_cfg.prim_path == f"{obj_set.prim_path}/rigid"
 
     with patch.object(
-        ObjectGeometry, "get_contact_body_path", autospec=True, return_value="/rigid"
+        SpawnCfgGeometry, "get_contact_body_path", autospec=True, return_value="/rigid"
     ) as get_contact_body_path:
         contact_sensor_cfg = obj_set.get_contact_sensor_cfg(contact_against_object=destination_set)
     assert [call.args[0].spawn_cfg.usd_path for call in get_contact_body_path.call_args_list] == [
@@ -90,7 +90,7 @@ def _test_object_set_samples_and_stores_variant_indices(simulation_app):
     ]
     assert contact_sensor_cfg.filter_prim_paths_expr == [f"{destination_set.prim_path}/rigid"]
 
-    with patch.object(ObjectGeometry, "get_contact_body_path", autospec=True, side_effect=["/rigid", "/other_rigid"]):
+    with patch.object(SpawnCfgGeometry, "get_contact_body_path", autospec=True, side_effect=["/rigid", "/other_rigid"]):
         with pytest.raises(AssertionError, match="same contact-sensor prim path"):
             obj_set.get_contact_sensor_prim_path()
 

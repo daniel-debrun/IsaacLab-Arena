@@ -95,7 +95,7 @@ def _write_layout_variant_usd(path: Path) -> None:
 def _test_usd_bounds_and_contact_body_match_file_helpers(simulation_app, asset_dir: Path) -> bool:
     from isaaclab.sim import UsdFileCfg
 
-    from isaaclab_arena.assets.object_geometry import ObjectGeometry
+    from isaaclab_arena.assets.spawn_cfg_geometry import SpawnCfgGeometry
     from isaaclab_arena.utils.usd.helpers import compute_local_bounding_box_from_usd
     from isaaclab_arena.utils.usd.rigid_bodies import find_shallowest_rigid_body
 
@@ -103,7 +103,7 @@ def _test_usd_bounds_and_contact_body_match_file_helpers(simulation_app, asset_d
     _write_nested_body_usd(usd_path)
     original_content = usd_path.read_bytes()
 
-    geometry = ObjectGeometry(UsdFileCfg(usd_path=str(usd_path), scale=(2.0, 2.0, 2.0)))
+    geometry = SpawnCfgGeometry(UsdFileCfg(usd_path=str(usd_path), scale=(2.0, 2.0, 2.0)))
     expected = compute_local_bounding_box_from_usd(str(usd_path), (2.0, 2.0, 2.0))
     assert torch.allclose(geometry.get_bounding_box().min_point, expected.min_point)
     assert torch.allclose(geometry.get_bounding_box().max_point, expected.max_point)
@@ -123,17 +123,17 @@ def test_usd_bounds_and_contact_body_match_file_helpers(tmp_path: Path):
 def _test_usd_scale_none_keeps_authored_root_scale(simulation_app, asset_dir: Path) -> bool:
     from isaaclab.sim import UsdFileCfg
 
-    from isaaclab_arena.assets.object_geometry import ObjectGeometry
+    from isaaclab_arena.assets.spawn_cfg_geometry import SpawnCfgGeometry
 
     usd_path = asset_dir / "root_scaled.usda"
     _write_root_scaled_body_usd(usd_path)
 
     def size(scale):
-        return ObjectGeometry(UsdFileCfg(usd_path=str(usd_path), scale=scale)).get_bounding_box().size[0]
+        return SpawnCfgGeometry(UsdFileCfg(usd_path=str(usd_path), scale=scale)).get_bounding_box().size[0]
 
     assert torch.allclose(size(None), torch.tensor([1.0, 1.0, 1.0]))
     assert torch.allclose(size((1.0, 1.0, 1.0)), torch.tensor([2.0, 2.0, 2.0]))
-    assert ObjectGeometry(UsdFileCfg(usd_path=str(usd_path))).get_contact_body_path() == ""
+    assert SpawnCfgGeometry(UsdFileCfg(usd_path=str(usd_path))).get_contact_body_path() == ""
     return True
 
 
@@ -148,7 +148,7 @@ def _test_variants_select_bounds_and_contact_body(simulation_app, asset_dir: Pat
     from isaaclab.sim import UsdFileCfg
     from pxr import Usd
 
-    from isaaclab_arena.assets.object_geometry import ObjectGeometry
+    from isaaclab_arena.assets.spawn_cfg_geometry import SpawnCfgGeometry
 
     size_path = asset_dir / "size.usda"
     layout_path = asset_dir / "layout.usda"
@@ -158,13 +158,13 @@ def _test_variants_select_bounds_and_contact_body(simulation_app, asset_dir: Pat
 
     def size(variants):
         cfg = UsdFileCfg(usd_path=str(size_path), scale=(1.0, 1.0, 1.0), variants=variants)
-        return ObjectGeometry(cfg).get_bounding_box().size[0]
+        return SpawnCfgGeometry(cfg).get_bounding_box().size[0]
 
     assert torch.allclose(size(None), torch.tensor([1.0, 1.0, 1.0]))
     assert torch.allclose(size({"size": "large"}), torch.tensor([4.0, 4.0, 4.0]))
     for selection, body_path in (("first", "/FirstBody"), ("second", "/SecondBody")):
         cfg = UsdFileCfg(usd_path=str(layout_path), variants={"layout": selection})
-        assert ObjectGeometry(cfg).get_contact_body_path() == body_path
+        assert SpawnCfgGeometry(cfg).get_contact_body_path() == body_path
 
     assert size_path.read_bytes() == original_content
     stage = Usd.Stage.Open(str(size_path))
@@ -183,7 +183,7 @@ def _test_contact_body_keeps_shallowest_rigid_body(simulation_app, asset_dir: Pa
     from isaaclab.sim import UsdFileCfg
     from pxr import Usd, UsdGeom, UsdPhysics
 
-    from isaaclab_arena.assets.object_geometry import ObjectGeometry
+    from isaaclab_arena.assets.spawn_cfg_geometry import SpawnCfgGeometry
 
     two_bodies = asset_dir / "two_bodies.usda"
     stage = Usd.Stage.CreateNew(str(two_bodies))
@@ -192,7 +192,7 @@ def _test_contact_body_keeps_shallowest_rigid_body(simulation_app, asset_dir: Pa
     UsdGeom.Xform.Define(stage, "/Asset/B")
     UsdPhysics.RigidBodyAPI.Apply(UsdGeom.Xform.Define(stage, "/Asset/B/C").GetPrim())
     stage.GetRootLayer().Save()
-    assert ObjectGeometry(UsdFileCfg(usd_path=str(two_bodies))).get_contact_body_path() == "/A"
+    assert SpawnCfgGeometry(UsdFileCfg(usd_path=str(two_bodies))).get_contact_body_path() == "/A"
 
     no_body = asset_dir / "no_body.usda"
     stage = Usd.Stage.CreateNew(str(no_body))
@@ -200,7 +200,7 @@ def _test_contact_body_keeps_shallowest_rigid_body(simulation_app, asset_dir: Pa
     UsdGeom.Cube.Define(stage, "/Asset/Cube")
     stage.GetRootLayer().Save()
     with pytest.raises(AssertionError, match="No rigid body"):
-        ObjectGeometry(UsdFileCfg(usd_path=str(no_body))).get_contact_body_path()
+        SpawnCfgGeometry(UsdFileCfg(usd_path=str(no_body))).get_contact_body_path()
     return True
 
 
@@ -215,14 +215,14 @@ def _test_usd_without_default_prim_fails_clearly(simulation_app, asset_dir: Path
     from isaaclab.sim import UsdFileCfg
     from pxr import Usd, UsdGeom
 
-    from isaaclab_arena.assets.object_geometry import ObjectGeometry
+    from isaaclab_arena.assets.spawn_cfg_geometry import SpawnCfgGeometry
 
     usd_path = asset_dir / "no_default_prim.usda"
     stage = Usd.Stage.CreateNew(str(usd_path))
     UsdGeom.Cube.Define(stage, "/Cube")
     stage.GetRootLayer().Save()
     with pytest.raises(AssertionError, match="default prim"):
-        ObjectGeometry(UsdFileCfg(usd_path=str(usd_path))).get_bounding_box()
+        SpawnCfgGeometry(UsdFileCfg(usd_path=str(usd_path))).get_bounding_box()
     return True
 
 
@@ -236,10 +236,10 @@ def test_usd_without_default_prim_fails_clearly(tmp_path: Path):
 def _test_primitive_bounds_and_contact_path(simulation_app, shape_name, shape_kwargs, expected_max) -> bool:
     import isaaclab.sim as sim_utils
 
-    from isaaclab_arena.assets.object_geometry import ObjectGeometry
+    from isaaclab_arena.assets.spawn_cfg_geometry import SpawnCfgGeometry
 
     shape_cls = getattr(sim_utils, shape_name)
-    geometry = ObjectGeometry(shape_cls(rigid_props=sim_utils.RigidBodyPropertiesCfg(), **shape_kwargs))
+    geometry = SpawnCfgGeometry(shape_cls(rigid_props=sim_utils.RigidBodyPropertiesCfg(), **shape_kwargs))
     bounds = geometry.get_bounding_box()
     assert torch.allclose(bounds.max_point[0], torch.tensor(expected_max))
     assert torch.allclose(bounds.min_point[0], -torch.tensor(expected_max))
@@ -271,12 +271,12 @@ def test_primitive_bounds_and_contact_path(shape_name, shape_kwargs, expected_ma
 def _test_unsupported_geometry_requests_fail(simulation_app) -> bool:
     import isaaclab.sim as sim_utils
 
-    from isaaclab_arena.assets.object_geometry import ObjectGeometry, get_geometry_key
+    from isaaclab_arena.assets.spawn_cfg_geometry import SpawnCfgGeometry, get_geometry_key
 
     with pytest.raises(AssertionError, match="rigid_props"):
-        ObjectGeometry(sim_utils.CuboidCfg(size=(1.0, 1.0, 1.0))).get_contact_body_path()
+        SpawnCfgGeometry(sim_utils.CuboidCfg(size=(1.0, 1.0, 1.0))).get_contact_body_path()
     with pytest.raises(AssertionError, match="bounding_box"):
-        ObjectGeometry(sim_utils.DomeLightCfg()).get_bounding_box()
+        SpawnCfgGeometry(sim_utils.DomeLightCfg()).get_bounding_box()
     with pytest.raises(AssertionError, match="one concrete"):
         get_geometry_key(sim_utils.MultiUsdFileCfg(usd_path=["a.usd", "b.usd"]))
     with pytest.raises(AssertionError, match="one concrete"):
@@ -292,7 +292,7 @@ def test_unsupported_geometry_requests_fail():
 def _test_geometry_key_tracks_only_geometric_settings(simulation_app) -> bool:
     import isaaclab.sim as sim_utils
 
-    from isaaclab_arena.assets.object_geometry import get_geometry_key
+    from isaaclab_arena.assets.spawn_cfg_geometry import get_geometry_key
 
     base = sim_utils.UsdFileCfg(usd_path="/tmp/a.usd", scale=(1.0, 2.0, 3.0))
     same_scale_as_list = sim_utils.UsdFileCfg(usd_path="/tmp/a.usd", scale=[1.0, 2.0, 3.0])
@@ -332,8 +332,8 @@ def _test_object_geometry_follows_spawn_cfg(simulation_app, asset_dir: Path) -> 
     import isaaclab.sim as sim_utils
 
     from isaaclab_arena.assets.object import Object
-    from isaaclab_arena.assets.object_geometry import ObjectGeometry
     from isaaclab_arena.assets.object_type import ObjectType
+    from isaaclab_arena.assets.spawn_cfg_geometry import SpawnCfgGeometry
     from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
     from isaaclab_arena.utils.usd.helpers import compute_local_bounding_box_from_usd
 
@@ -343,12 +343,12 @@ def _test_object_geometry_follows_spawn_cfg(simulation_app, asset_dir: Path) -> 
     _write_nested_body_usd(nested_path)
 
     obj = Object(name="box", object_type=ObjectType.RIGID, usd_path=str(root_path))
-    # Repeated queries for an unchanged spawn config reuse one ObjectGeometry (solver hot path).
-    with patch("isaaclab_arena.assets.object.ObjectGeometry", wraps=ObjectGeometry) as object_geometry_class:
+    # Repeated queries for an unchanged spawn config reuse one SpawnCfgGeometry (solver hot path).
+    with patch("isaaclab_arena.assets.object.SpawnCfgGeometry", wraps=SpawnCfgGeometry) as spawn_cfg_geometry_class:
         assert torch.allclose(obj.get_bounding_box().size[0], torch.tensor([2.0, 2.0, 2.0]))
         obj.get_bounding_box()
         assert obj.get_contact_sensor_prim_path() == obj.prim_path
-    assert object_geometry_class.call_count == 1
+    assert spawn_cfg_geometry_class.call_count == 1
 
     obj.object_cfg.spawn = sim_utils.UsdFileCfg(usd_path=str(nested_path), scale=(2.0, 2.0, 2.0))
     expected = compute_local_bounding_box_from_usd(str(nested_path), (2.0, 2.0, 2.0))

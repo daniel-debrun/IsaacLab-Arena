@@ -14,10 +14,10 @@ from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
 from isaaclab.sim.spawners.spawner_cfg import SpawnerCfg
 
 from isaaclab_arena.assets.object_base import ObjectBase, RootedObjectBase
-from isaaclab_arena.assets.object_geometry import ObjectGeometry, get_geometry_key
 from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.assets.object_utils import detect_object_type
 from isaaclab_arena.assets.physics_spawner import make_usd_spawn_cfg_with_addons
+from isaaclab_arena.assets.spawn_cfg_geometry import SpawnCfgGeometry, get_geometry_key
 from isaaclab_arena.relations.relations import RelationBase
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 from isaaclab_arena.utils.pose import Pose
@@ -66,7 +66,7 @@ class Object(RootedObjectBase):
         self.asset_cfg_addon = asset_cfg_addon
         self.bounding_box: AxisAlignedBoundingBox | None = None
         """Explicit local bounds. None derives bounds from object_cfg.spawn."""
-        self._geometry_by_key: dict[tuple, ObjectGeometry] = {}
+        self._spawn_cfg_geometry_by_key: dict[tuple, SpawnCfgGeometry] = {}
         self.object_cfg = self._init_object_cfg()
         self._pose_event_cfg = self._build_reset_event()
 
@@ -77,7 +77,7 @@ class Object(RootedObjectBase):
         """
         if self.bounding_box is not None:
             return self.bounding_box
-        return self._get_geometry(self.object_cfg.spawn).get_bounding_box()
+        return self._get_spawn_cfg_geometry(self.object_cfg.spawn).get_bounding_box()
 
     def get_corners(self, pos: torch.Tensor) -> torch.Tensor:
         return self.get_bounding_box().get_corners_at(pos)
@@ -96,7 +96,7 @@ class Object(RootedObjectBase):
     def get_contact_sensor_prim_path(self) -> str:
         """Return the scene prim path where this object's contact sensor is attached."""
         assert self.object_type == ObjectType.RIGID, "Contact sensor is only supported for rigid objects"
-        return self.prim_path + self._get_geometry(self.object_cfg.spawn).get_contact_body_path()
+        return self.prim_path + self._get_spawn_cfg_geometry(self.object_cfg.spawn).get_contact_body_path()
 
     def get_contact_sensor_cfg(self, contact_against_object: ObjectBase | None = None) -> ContactSensorCfg:
         # We override this function from the parent class because some assets do not have their rigid body
@@ -134,12 +134,12 @@ class Object(RootedObjectBase):
             filter_prim_paths_expr=filter_prim_paths,
         )
 
-    def _get_geometry(self, spawn_cfg: SpawnerCfg) -> ObjectGeometry:
+    def _get_spawn_cfg_geometry(self, spawn_cfg: SpawnerCfg) -> SpawnCfgGeometry:
         """Return cached geometry for a spawn configuration, recomputed when its geometric settings change."""
         key = get_geometry_key(spawn_cfg)
-        if key not in self._geometry_by_key:
-            self._geometry_by_key[key] = ObjectGeometry(spawn_cfg)
-        return self._geometry_by_key[key]
+        if key not in self._spawn_cfg_geometry_by_key:
+            self._spawn_cfg_geometry_by_key[key] = SpawnCfgGeometry(spawn_cfg)
+        return self._spawn_cfg_geometry_by_key[key]
 
     def _get_spawn_cfg(self, activate_contact_sensors: bool = False) -> SpawnerCfg:
         """Return the custom spawn config if set, otherwise a USD spawn config with addons."""

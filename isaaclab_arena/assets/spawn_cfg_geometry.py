@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Geometry derived from one native object spawn configuration."""
+"""Geometry computed from one native object spawn configuration before spawning."""
 
 from __future__ import annotations
 
@@ -75,8 +75,11 @@ def get_geometry_key(spawn_cfg: SpawnerCfg) -> tuple:
     return (type(spawn_cfg).__name__,)
 
 
-class ObjectGeometry:
-    """Bounds and contact body derived from one native spawn configuration.
+class SpawnCfgGeometry:
+    """Bounds and contact body computed from one native spawn configuration, before anything is spawned.
+
+    Placement and contact-sensor setup use it while the scene configuration is built. ``ArenaWorld``
+    reports the live geometry of the spawned scene instead.
 
     USD bounds are measured from the default prim's origin with its authored rotation kept.
     A tuple spawn scale replaces the authored root scale and None keeps it.
