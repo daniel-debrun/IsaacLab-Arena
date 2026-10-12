@@ -9,8 +9,10 @@ These tests stay in plain Python (no ``SimulationApp``) because they only
 exercise the cfg plumbing and sampler wiring, not any Isaac Sim runtime.
 """
 
+import gc
 import hashlib
 import torch
+import weakref
 from dataclasses import FrozenInstanceError, field
 
 import pytest
@@ -338,3 +340,62 @@ def test_build_context_generator_without_seed_uses_system_entropy():
 
     assert first_generator.initial_seed() != second_generator.initial_seed()
     assert torch.equal(torch.random.get_rng_state(), original_global_state)
+
+
+def test_add_variation_sets_the_host():
+    asset = Asset(name="test_asset")
+    variation = _CustomVariation()
+    assert variation.host is None
+
+    asset.add_variation(variation)
+
+    assert variation.host is asset
+
+
+def test_variation_can_only_attach_to_one_host():
+    asset = Asset(name="first")
+    other_asset = Asset(name="second")
+    variation = _CustomVariation()
+    asset.add_variation(variation)
+
+    with pytest.raises(AssertionError, match="is already attached to an asset"):
+        other_asset.add_variation(variation)
+
+    assert other_asset.get_variations() == []
+    assert variation.host is asset
+
+
+def test_host_survives_apply_cfg():
+    asset = Asset(name="test_asset")
+    variation = _CustomVariation()
+    asset.add_variation(variation)
+
+    variation.apply_cfg(_CustomVariationCfg(enabled=True))
+
+    assert variation.host is asset
+
+
+def test_host_reference_does_not_keep_the_asset_alive():
+    asset = Asset(name="test_asset")
+    variation = _CustomVariation()
+    asset.add_variation(variation)
+    asset_reference = weakref.ref(asset)
+
+    del asset
+    gc.collect()
+
+    assert asset_reference() is None
+    assert variation.host is None
+
+
+def test_attached_variation_does_not_create_a_config_validation_cycle():
+    # configclass validation follows object attributes without cycle detection, so a strong
+    # asset -> variation -> asset reference would recurse until RecursionError.
+    asset = Asset(name="test_asset")
+    asset.add_variation(_CustomVariation())
+
+    @configclass
+    class _AssetHolderCfg:
+        target: Asset = asset
+
+    _AssetHolderCfg().validate()

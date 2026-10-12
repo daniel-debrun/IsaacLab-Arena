@@ -20,15 +20,19 @@ from __future__ import annotations
 
 import hashlib
 import torch
+import weakref
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from isaaclab.managers import EventTermCfg
 from isaaclab.utils.configclass import configclass
 
 from isaaclab_arena.variations.sampler_base import SamplerBase, SamplerBaseCfg
+
+if TYPE_CHECKING:
+    from isaaclab_arena.assets.asset import Asset
 
 
 def get_variation_key(asset_name: str, variation_name: str) -> str:
@@ -117,7 +121,29 @@ class VariationBase(ABC):
         self._sample_listeners: list[Callable[[Any, Any], None]] = []
         self._replay_sampler: Callable[[int, torch.Tensor | None], list[Any] | None] | None = None
         self._build_context: VariationBuildContext | None = None
+        self._host_ref: weakref.ReferenceType[Asset] | None = None
         self.apply_cfg(cfg)
+
+    @property
+    def host(self) -> Asset | None:
+        """Asset this variation was added to, or None before ``Asset.add_variation`` or once that asset is gone."""
+        if self._host_ref is None:
+            return None
+        return self._host_ref()
+
+    def attach(self, asset: Asset) -> None:
+        """Record ``asset`` as this variation's host; ``Asset.add_variation`` calls this.
+
+        A variation is attached once. Subclasses may override this to check the host
+        and then call ``super().attach(asset)``.
+
+        Args:
+            asset: Asset the variation is being added to.
+        """
+        assert self._host_ref is None, f"Variation '{self.name}' is already attached to an asset."
+        # A weak reference: configclass validation follows object attributes without cycle
+        # detection, so a strong asset -> variation -> asset reference would recurse forever.
+        self._host_ref = weakref.ref(asset)
 
     @property
     def enabled(self) -> bool:
