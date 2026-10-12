@@ -418,6 +418,7 @@ def object_on_destination(
     force_threshold: float,
     velocity_threshold: float,
     support_cone_half_angle_rad: float = math.pi / 4,
+    require_support: bool = True,
 ) -> torch.Tensor:
     """Check whether an object is stably placed on its destination.
 
@@ -434,6 +435,8 @@ def object_on_destination(
         force_threshold: Minimum upward support force in newtons.
         velocity_threshold: Maximum object linear speed in meters per second.
         support_cone_half_angle_rad: Maximum angle in radians from world ``+Z`` for the support force.
+        require_support: If False, skip the support check, so an object resting on other objects inside the
+            destination also counts. Only the bounds-center and speed conditions remain.
 
     Returns:
         One Boolean result per environment.
@@ -450,7 +453,9 @@ def object_on_destination(
         destination_bounds_D=arena_world.get_aabb_in_local_frame(destination_cfg.name),
     )
 
-    if object_cfg.name in env.scene.deformable_objects:
+    if not require_support:
+        destination_provides_upward_support = torch.ones_like(object_center_over_destination)
+    elif object_cfg.name in env.scene.deformable_objects:
         # Use geometric support for deformable objects.
         object_vertices_w = arena_world.get_vertices_w(object_cfg.name)
         destination_vertices_w = arena_world.get_vertices_w(destination_cfg.name)

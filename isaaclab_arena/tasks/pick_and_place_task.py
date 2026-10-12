@@ -59,6 +59,9 @@ class PickAndPlaceTask(TaskBase):
         support_cone_half_angle_rad: Maximum angle in radians between the filtered contact force and
             world +Z. Smaller values require the support force to be more vertical.
         placement_consecutive_steps: Number of consecutive control steps for which placement must hold.
+        require_destination_support: Whether the destination itself must exert the upward support force. Set False
+            to accept an object resting on other objects inside the destination (e.g. fruit in a bin).
+        terminate_on_object_dropped: Whether the episode fails when the object falls below the background.
 
     """
 
@@ -75,6 +78,8 @@ class PickAndPlaceTask(TaskBase):
         mimic_env_cfg_factory: Callable[[ArmMode], MimicEnvCfg] | None = None,
         support_cone_half_angle_rad: float = math.pi / 4,
         placement_consecutive_steps: int = 1,
+        require_destination_support: bool = True,
+        terminate_on_object_dropped: bool = True,
     ):
         super().__init__(episode_length_s=episode_length_s)
         assert (
@@ -102,6 +107,8 @@ class PickAndPlaceTask(TaskBase):
             and placement_consecutive_steps > 0
         ), f"placement_consecutive_steps must be a positive integer, got {placement_consecutive_steps}"
         self.placement_consecutive_steps = placement_consecutive_steps
+        self.require_destination_support = require_destination_support
+        self.terminate_on_object_dropped = terminate_on_object_dropped
         self.mimic_env_cfg_factory = mimic_env_cfg_factory
         self.events_cfg = None
         self.task_description = (
@@ -184,13 +191,14 @@ class PickAndPlaceTask(TaskBase):
                                 force_threshold=self.force_threshold,
                                 velocity_threshold=self.velocity_threshold,
                                 support_cone_half_angle_rad=self.support_cone_half_angle_rad,
+                                require_support=self.require_destination_support,
                             ),
                             required_steps=self.placement_consecutive_steps,
                         ),
                     ],
                 ),
             ],
-            failures={"object_dropped": object_dropped},
+            failures={"object_dropped": object_dropped} if self.terminate_on_object_dropped else {},
         )
 
     def get_viewer_cfg(self) -> ViewerCfg:
