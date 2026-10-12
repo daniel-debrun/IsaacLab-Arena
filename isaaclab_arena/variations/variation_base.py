@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from dataclasses import field
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from isaaclab.managers import EventTermCfg
@@ -30,6 +30,44 @@ from isaaclab_arena.variations.sampler_base import SamplerBase, SamplerBaseCfg
 
 if TYPE_CHECKING:
     import torch
+
+
+def get_variation_key(asset_name: str, variation_name: str) -> str:
+    """Return the key that names a variation in a build, in its recorded samples and in replay.
+
+    Args:
+        asset_name: Name of the asset the variation is registered on.
+        variation_name: Name of the variation on that asset.
+
+    Returns:
+        The key ``"<asset_name>.<variation_name>"``.
+    """
+    return f"{asset_name}.{variation_name}"
+
+
+@dataclass(frozen=True)
+class VariationBuildContext:
+    """Settings of the environment build a variation is configured for."""
+
+    num_envs: int
+    """Number of parallel environments in the build."""
+
+    seed: int | None
+    """Environment builder seed, or None for a build that is not reproducible."""
+
+    variation_key: str
+    """Key of the variation in this build, as returned by get_variation_key."""
+
+    def __post_init__(self) -> None:
+        assert (
+            isinstance(self.num_envs, int) and not isinstance(self.num_envs, bool) and self.num_envs > 0
+        ), f"VariationBuildContext.num_envs must be a positive int; got {self.num_envs!r}."
+        assert self.seed is None or (
+            isinstance(self.seed, int) and not isinstance(self.seed, bool)
+        ), f"VariationBuildContext.seed must be an int or None; got {self.seed!r}."
+        assert (
+            isinstance(self.variation_key, str) and self.variation_key
+        ), f"VariationBuildContext.variation_key must be a non-empty string; got {self.variation_key!r}."
 
 
 @configclass
@@ -62,6 +100,7 @@ class VariationBase(ABC):
         self._sampler: SamplerBase
         self._sample_listeners: list[Callable[[Any, Any], None]] = []
         self._replay_sampler: Callable[[int, torch.Tensor | None], list[Any] | None] | None = None
+        self._build_context: VariationBuildContext | None = None
         self.apply_cfg(cfg)
 
     @property
@@ -99,21 +138,39 @@ class VariationBase(ABC):
         self._replay_sampler = replay_sampler
         self._sampler.set_replay_sampler(replay_sampler)
 
+    @property
+    def build_context(self) -> VariationBuildContext:
+        """Settings of the build passed to the current ``configure_at_build_time`` call."""
+        assert self._build_context is not None, (
+            f"Variation '{self.name}' has no build context. ArenaEnvBuilder passes one to "
+            "configure_at_build_time(); other callers must pass a VariationBuildContext."
+        )
+        return self._build_context
+
     def _prepare_at_build_time(self) -> None:
         """Configure prerequisites required before environment construction. Default: no-op.
 
         A run-time variation overrides this when its later event needs a build-time
         precondition (e.g. forcing its camera untiled so per-env edits take effect).
+        The build's settings are available through ``build_context``.
         """
 
     def _realize_at_build_time(self) -> None:
         """Sample and mutate the bound asset config(s) in place during construction. Default: no-op.
 
         A build-time variation realises its whole effect here; a run-time variation leaves it a no-op.
+        The build's settings are available through ``build_context``.
         """
 
-    def configure_at_build_time(self) -> None:
-        """Run this variation's build-time preparation and realization, once per env build."""
+    def configure_at_build_time(self, context: VariationBuildContext | None = None) -> None:
+        """Run this variation's build-time preparation and realization, once per env build.
+
+        Args:
+            context: Settings of this build, read by the hooks through ``build_context``.
+                ArenaEnvBuilder always passes one. Without one, a hook that reads ``build_context`` fails.
+        """
+        # Replace any earlier context, so a build without one never sees a previous build's settings.
+        self._build_context = context
         self._prepare_at_build_time()
         self._realize_at_build_time()
 

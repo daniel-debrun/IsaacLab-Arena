@@ -10,7 +10,7 @@ exercise the cfg plumbing and sampler wiring, not any Isaac Sim runtime.
 """
 
 import torch
-from dataclasses import field
+from dataclasses import FrozenInstanceError, field
 
 import pytest
 from isaaclab.managers import EventTermCfg, SceneEntityCfg
@@ -18,7 +18,13 @@ from isaaclab.utils.configclass import configclass
 
 from isaaclab_arena.assets.asset import Asset
 from isaaclab_arena.variations.uniform_sampler import UniformSampler, UniformSamplerCfg
-from isaaclab_arena.variations.variation_base import RunTimeVariationBase, VariationBaseCfg
+from isaaclab_arena.variations.variation_base import (
+    BuildTimeVariationBase,
+    RunTimeVariationBase,
+    VariationBaseCfg,
+    VariationBuildContext,
+    get_variation_key,
+)
 
 
 def _noop_event(env, env_ids, asset_cfg):  # noqa: ARG001
@@ -201,3 +207,87 @@ def test_two_variations_of_same_kind_coexist_when_given_distinct_names():
     assert asset.get_variation(variation_a.name) is variation_a
     assert asset.get_variation(variation_b.name) is variation_b
     assert set(asset.variations) == {variation_a.name, variation_b.name}
+
+
+class _BuildContextReadingVariation(BuildTimeVariationBase):
+    """Build-time variation whose hooks record the build context they read."""
+
+    def __init__(self, name: str = "build_time"):
+        super().__init__(VariationBaseCfg(sampler_cfg=UniformSamplerCfg(low=[0.0], high=[1.0])), name=name)
+        self.build_steps: list[tuple[str, VariationBuildContext]] = []
+
+    def _prepare_at_build_time(self) -> None:
+        self.build_steps.append(("prepare", self.build_context))
+
+    def _realize_at_build_time(self) -> None:
+        self.build_steps.append(("realize", self.build_context))
+
+
+class _ContextFreeVariation(BuildTimeVariationBase):
+    """Build-time variation that draws a shared value without reading the build context."""
+
+    def __init__(self):
+        super().__init__(VariationBaseCfg(sampler_cfg=UniformSamplerCfg(low=[0.5], high=[0.5])), name="context_free")
+        self.realized_values: list[float] = []
+
+    def _realize_at_build_time(self) -> None:
+        self.realized_values.append(float(self.sampler.sample(num_samples=1)[0, 0]))
+
+
+def test_get_variation_key_joins_asset_and_variation_names():
+    assert get_variation_key("pickup", "asset_selection") == "pickup.asset_selection"
+
+
+def test_build_context_reaches_both_hooks():
+    variation = _BuildContextReadingVariation()
+    context = VariationBuildContext(num_envs=3, seed=17, variation_key="object.build_time")
+
+    variation.configure_at_build_time(context)
+
+    assert variation.build_steps == [("prepare", context), ("realize", context)]
+    assert variation.build_context is context
+    with pytest.raises(FrozenInstanceError):
+        context.num_envs = 4
+
+
+def test_build_context_must_be_supplied_before_it_is_read():
+    variation = _BuildContextReadingVariation()
+    with pytest.raises(AssertionError, match="has no build context"):
+        variation.build_context
+    with pytest.raises(AssertionError, match="has no build context"):
+        variation.configure_at_build_time()
+
+    variation.configure_at_build_time(VariationBuildContext(num_envs=2, seed=1, variation_key="object.build_time"))
+    # A later build without a context must not reuse the previous build's settings.
+    with pytest.raises(AssertionError, match="has no build context"):
+        variation.configure_at_build_time()
+
+
+def test_hooks_that_do_not_read_the_build_context_run_without_one():
+    variation = _ContextFreeVariation()
+
+    variation.configure_at_build_time()
+
+    assert variation.realized_values == [0.5]
+
+
+@pytest.mark.parametrize(
+    "field_values",
+    [
+        {"num_envs": 0, "seed": 1, "variation_key": "asset.variation"},
+        {"num_envs": True, "seed": 1, "variation_key": "asset.variation"},
+        {"num_envs": 2.0, "seed": 1, "variation_key": "asset.variation"},
+        {"num_envs": 2, "seed": True, "variation_key": "asset.variation"},
+        {"num_envs": 2, "seed": "1", "variation_key": "asset.variation"},
+        {"num_envs": 2, "seed": 1, "variation_key": ""},
+        {"num_envs": 2, "seed": 1, "variation_key": None},
+    ],
+)
+def test_build_context_rejects_invalid_fields(field_values):
+    with pytest.raises(AssertionError, match="VariationBuildContext"):
+        VariationBuildContext(**field_values)
+
+
+def test_build_context_requires_every_field():
+    with pytest.raises(TypeError):
+        VariationBuildContext(num_envs=2, seed=1)
