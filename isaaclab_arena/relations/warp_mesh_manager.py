@@ -42,6 +42,12 @@ def _get_single_usd_spawn(obj: CollisionObject) -> tuple[str, tuple[float, float
     spawn_cfg = obj.object_cfg.spawn
     if not isinstance(spawn_cfg, UsdFileCfg) or isinstance(spawn_cfg, MultiUsdFileCfg):
         return None
+    # TODO(cvolk, 2026.10.12): For a tuple scale, Isaac Lab replaces the USD's authored root scale,
+    # but extract_trimesh_from_usd() multiplies the scale onto it. For assets with an authored root
+    # scale, the mesh therefore differs in size from the spawned object and from its bounds. This
+    # predates spawn-based meshes. None and (1, 1, 1) also share one cache key here, although they
+    # spawn different sizes for such assets. Fix by extracting meshes in SpawnCfgGeometry with
+    # Isaac Lab's spawn scale rule and keeping None separate in the mesh and Warp cache keys.
     scale = tuple(spawn_cfg.scale) if spawn_cfg.scale is not None else (1.0, 1.0, 1.0)
     return spawn_cfg.usd_path, scale
 
