@@ -92,12 +92,11 @@ def _write_layout_variant_usd(path: Path) -> None:
     stage.GetRootLayer().Save()
 
 
-def _test_usd_bounds_and_contact_body_match_file_helpers(simulation_app, asset_dir: Path) -> bool:
+def _test_nested_usd_bounds_and_contact_body(simulation_app, asset_dir: Path) -> bool:
     from isaaclab.sim import UsdFileCfg
 
     from isaaclab_arena.assets.spawn_cfg_geometry import SpawnCfgGeometry
     from isaaclab_arena.utils.usd.helpers import compute_local_bounding_box_from_usd
-    from isaaclab_arena.utils.usd.rigid_bodies import find_shallowest_rigid_body
 
     usd_path = asset_dir / "nested.usda"
     _write_nested_body_usd(usd_path)
@@ -107,15 +106,14 @@ def _test_usd_bounds_and_contact_body_match_file_helpers(simulation_app, asset_d
     expected = compute_local_bounding_box_from_usd(str(usd_path), (2.0, 2.0, 2.0))
     assert torch.allclose(geometry.get_bounding_box().min_point, expected.min_point)
     assert torch.allclose(geometry.get_bounding_box().max_point, expected.max_point)
-    expected_body = find_shallowest_rigid_body(str(usd_path), within_default_prim=True, relative_to_default_prim=True)
-    assert geometry.get_contact_body_path() == expected_body == "/Group/Body"
+    assert geometry.get_contact_body_path() == "/Group/Body"
     assert usd_path.read_bytes() == original_content
     return True
 
 
-def test_usd_bounds_and_contact_body_match_file_helpers(tmp_path: Path):
+def test_nested_usd_bounds_and_contact_body(tmp_path: Path):
     result = run_function_with_persistent_simulation_app(
-        _test_usd_bounds_and_contact_body_match_file_helpers, headless=HEADLESS, asset_dir=tmp_path
+        _test_nested_usd_bounds_and_contact_body, headless=HEADLESS, asset_dir=tmp_path
     )
     assert result, "Test failed"
 
