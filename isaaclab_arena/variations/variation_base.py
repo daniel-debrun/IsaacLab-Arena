@@ -18,18 +18,17 @@ variations subclass one of two flavors:
 
 from __future__ import annotations
 
+import hashlib
+import torch
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from isaaclab.managers import EventTermCfg
 from isaaclab.utils.configclass import configclass
 
 from isaaclab_arena.variations.sampler_base import SamplerBase, SamplerBaseCfg
-
-if TYPE_CHECKING:
-    import torch
 
 
 def get_variation_key(asset_name: str, variation_name: str) -> str:
@@ -68,6 +67,23 @@ class VariationBuildContext:
         assert (
             isinstance(self.variation_key, str) and self.variation_key
         ), f"VariationBuildContext.variation_key must be a non-empty string; got {self.variation_key!r}."
+
+    def make_generator(self) -> torch.Generator:
+        """Return a new CPU generator for this variation's random draws in this build.
+
+        The stream depends only on seed and variation_key: a build with the same seed repeats it,
+        other variations get independent streams, and the global torch random state is neither read
+        nor advanced. A None seed seeds the generator from system entropy.
+        """
+        generator = torch.Generator(device="cpu")
+        if self.seed is None:
+            generator.seed()
+            return generator
+        seed_material = f"{self.seed}:{self.variation_key}".encode()
+        # torch generator seeds are 64-bit, so use the first 8 bytes of the digest.
+        generator_seed = int.from_bytes(hashlib.sha256(seed_material).digest()[:8], "big")
+        generator.manual_seed(generator_seed)
+        return generator
 
 
 @configclass
