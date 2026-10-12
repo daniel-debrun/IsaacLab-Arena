@@ -20,7 +20,7 @@ from isaaclab_arena.inference.backend import InferenceBackend, InferenceRequest,
 from isaaclab_arena.tests.utils.agentic_environment_generation import (
     chat_response,
     inference_backend,
-    skip_without_live_endpoint_key,
+    skip_unless_live_endpoint_tests_enabled,
 )
 
 
@@ -113,7 +113,7 @@ def test_real_sdk_serializes_text_and_images_through_one_transport():
     assert payloads[1]["messages"] == [{"role": "system", "content": "system"}, {"role": "user", "content": "user"}]
 
 
-@skip_without_live_endpoint_key()
+@skip_unless_live_endpoint_tests_enabled()
 def test_multimodal_image_against_live_endpoint():
     image_buffer = BytesIO()
     Image.new("RGB", (64, 64), color="red").save(image_buffer, format="PNG")
