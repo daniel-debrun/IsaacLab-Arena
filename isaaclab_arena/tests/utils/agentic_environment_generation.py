@@ -28,11 +28,14 @@ if TYPE_CHECKING:
         RelationCatalogue,
         TaskCatalogue,
     )
-    from isaaclab_arena.agentic_environment_generation.inference_backend import InferenceBackend
+    from isaaclab_arena.inference.backend import InferenceBackend
     from isaaclab_arena.utils.usd.prim_tree import UsdPrimRecord
 
 _TEST_DATA_DIR = Path(__file__).resolve().parent.parent / "test_data"
-_OPENAI_PATCH = "isaaclab_arena.agentic_environment_generation.inference_backend.OpenAI"
+_OPENAI_PATCH = "isaaclab_arena.inference.backend.OpenAI"
+# Live endpoint requests can take minutes each and fail on endpoint outages, so these tests
+# only run when explicitly requested, not whenever an API key happens to be set.
+_LIVE_ENDPOINT_TESTS_ENV_VAR = "ISAACLAB_ARENA_RUN_LIVE_ENDPOINT_TESTS"
 
 
 @pytest.fixture
@@ -45,22 +48,30 @@ def stub_openai():
         yield mock_cls, client
 
 
-def skip_without_live_endpoint_key() -> pytest.MarkDecorator:
-    """Return a skip marker for tests that call the selected inference endpoint for real."""
+def skip_unless_live_endpoint_tests_enabled() -> pytest.MarkDecorator:
+    """Return a skip marker for tests that call the selected inference endpoint for real.
+
+    The tests run only when ``ISAACLAB_ARENA_RUN_LIVE_ENDPOINT_TESTS=1`` and the endpoint's API key are set.
+    """
     import os
 
-    from isaaclab_arena.agentic_environment_generation.inference_backend import resolve_inference_endpoint
+    from isaaclab_arena.inference.backend import resolve_inference_endpoint
 
     endpoint = resolve_inference_endpoint()
+    live_endpoint_tests_enabled = os.environ.get(_LIVE_ENDPOINT_TESTS_ENV_VAR) == "1"
+    has_api_key = bool(os.environ.get(endpoint.api_key_env_var))
     return pytest.mark.skipif(
-        not os.environ.get(endpoint.api_key_env_var),
-        reason=f"live endpoint test requires {endpoint.api_key_env_var} for the {endpoint.name!r} endpoint",
+        not (live_endpoint_tests_enabled and has_api_key),
+        reason=(
+            f"live endpoint test requires {_LIVE_ENDPOINT_TESTS_ENV_VAR}=1 and {endpoint.api_key_env_var}"
+            f" for the {endpoint.name!r} endpoint"
+        ),
     )
 
 
 def inference_backend(stub_openai, *, model: str = "test-model", max_retries: int = 3) -> InferenceBackend:
     """Build an ``InferenceBackend`` against the patched OpenAI client from ``stub_openai``."""
-    from isaaclab_arena.agentic_environment_generation.inference_backend import InferenceBackend
+    from isaaclab_arena.inference.backend import InferenceBackend
 
     _, client = stub_openai
     backend = InferenceBackend(api_key="test-key", model=model, max_retries=max_retries)

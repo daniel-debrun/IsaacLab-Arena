@@ -12,16 +12,16 @@ import logging
 
 import pytest
 
-from isaaclab_arena.agentic_environment_generation.inference_backend import InferenceBackend
 from isaaclab_arena.agentic_environment_generation.missing_object_inference import (
     MAX_SEARCH_PHRASES,
     MissingObjectInference,
 )
+from isaaclab_arena.inference.backend import InferenceBackend
 from isaaclab_arena.tests.utils.agentic_environment_generation import catalog as make_catalog
 from isaaclab_arena.tests.utils.agentic_environment_generation import (
     chat_response,
     inference_backend,
-    skip_without_live_endpoint_key,
+    skip_unless_live_endpoint_tests_enabled,
 )
 
 INFERENCE_LOGGER = "isaaclab_arena.agentic_environment_generation.missing_object_inference"
@@ -94,7 +94,7 @@ _LIVE_CATALOG = (
 
 
 # Marked flaky to absorb intermittent wire-level hiccups on the inference endpoint.
-@skip_without_live_endpoint_key()
+@skip_unless_live_endpoint_tests_enabled()
 @pytest.mark.flaky(max_runs=3, min_passes=1)
 def test_infer_names_the_uncatalogued_object_against_live_endpoint():
     """Live test: the one object the catalog has no match for comes back as a search phrase."""
@@ -106,7 +106,7 @@ def test_infer_names_the_uncatalogued_object_against_live_endpoint():
     assert any("watering can" in phrase.lower() for phrase in phrases), f"got {phrases!r}"
 
 
-@skip_without_live_endpoint_key()
+@skip_unless_live_endpoint_tests_enabled()
 @pytest.mark.flaky(max_runs=3, min_passes=1)
 def test_infer_names_nothing_when_the_catalog_covers_the_prompt_against_live_endpoint():
     """Live test: a prompt every object of which is catalogued searches for nothing."""

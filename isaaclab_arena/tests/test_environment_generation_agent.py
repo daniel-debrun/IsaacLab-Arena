@@ -34,7 +34,7 @@ from isaaclab_arena.tests.utils.agentic_environment_generation import (
     kitchen_resolve_response,
     minimal_spec_dict,
     relation_catalog,
-    skip_without_live_endpoint_key,
+    skip_unless_live_endpoint_tests_enabled,
 )
 from isaaclab_arena.tests.utils.agentic_environment_generation import task_catalog as make_task_catalog
 
@@ -442,7 +442,7 @@ def _assert_five_bananas_parallel_pick_and_place_spec(spec: ArenaEnvGraphSpec) -
 
 # Marked flaky to absorb intermittent wire-level hiccups on the inference endpoint.
 # TODO(qianl): drop the flaky marker once production-side retry is implemented.
-@skip_without_live_endpoint_key()
+@skip_unless_live_endpoint_tests_enabled()
 @pytest.mark.flaky(max_runs=3, min_passes=1)
 def test_generate_spec_atomic_pick_and_place_against_live_endpoint():
     """Live test: avocado into bowl yields an atomic pick-and-place task."""
@@ -453,7 +453,7 @@ def test_generate_spec_atomic_pick_and_place_against_live_endpoint():
     _assert_atomic_pick_and_place_spec(spec)
 
 
-@skip_without_live_endpoint_key()
+@skip_unless_live_endpoint_tests_enabled()
 @pytest.mark.flaky(max_runs=3, min_passes=1)
 def test_generate_spec_five_bananas_parallel_pick_and_place_against_live_endpoint():
     """Live test: five bananas into one bin yields a parallel composite task."""
@@ -464,7 +464,7 @@ def test_generate_spec_five_bananas_parallel_pick_and_place_against_live_endpoin
     _assert_five_bananas_parallel_pick_and_place_spec(spec)
 
 
-@skip_without_live_endpoint_key()
+@skip_unless_live_endpoint_tests_enabled()
 @pytest.mark.flaky(max_runs=3, min_passes=1)
 def test_resolve_usd_prim_robocasa_kitchen_counter_and_fridge():
     """End-to-end pass-1 + pass-2 prim resolution for Robocasa kitchen counter and fridge."""
