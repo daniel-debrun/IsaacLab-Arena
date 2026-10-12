@@ -634,6 +634,19 @@ def _test_pick_and_place_uses_typed_success_failure_and_timeout(simulation_app):
     assert placement_parameters["force_threshold"] == held_placement_task.force_threshold
     assert placement_parameters["velocity_threshold"] == held_placement_task.velocity_threshold
     assert placement_parameters["support_cone_half_angle_rad"] == held_placement_task.support_cone_half_angle_rad
+    assert placement_parameters["require_support"] is True
+    assert set(held_placement_task.get_termination_cfg().failures) == {"object_dropped"}
+
+    relaxed_task = PickAndPlaceTask(
+        pick_up_object,
+        SimpleNamespace(name="destination", object_type=ObjectType.RIGID),
+        SimpleNamespace(object_min_z=-0.1),
+        require_destination_support=False,
+        terminate_on_object_dropped=False,
+    )
+    relaxed_termination = relaxed_task.get_termination_cfg()
+    assert relaxed_termination.success[0].predicate_sequence[-1].predicate.keywords["require_support"] is False
+    assert relaxed_termination.failures == {}
 
     for invalid_steps in (0, -1, True, 1.5):
         with pytest.raises(AssertionError, match="placement_consecutive_steps"):
