@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import torch
+import weakref
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -81,12 +82,12 @@ class VariationRecorder:
         # Records are keyed by: "{asset_name}.{variation_name}"
         self.records: dict[str, VariationRecord] = {}
         self.placement_record: VariationRecord | None = None
-        # Bound after env construction; supplies the episode index for per-env run-time draws.
+        # Non-owning reference: registered sampler callbacks must not keep a simulation alive.
         self._env: Any = None
 
     def bind_env(self, env: Any) -> None:
         """Bind the env so run-time draws can be attributed to its current episode index."""
-        self._env = env
+        self._env = weakref.proxy(env)
 
     def __getitem__(self, key: str) -> VariationRecord:
         """Return the record stored under "{asset_name}.{variation_name}"."""

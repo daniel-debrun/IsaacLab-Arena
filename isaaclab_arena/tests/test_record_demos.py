@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Verify native Lab recording exports GR1 microwave demos through Arena task success."""
+"""Verify native Lab recording preserves Arena task success, placement and variations."""
 
 from __future__ import annotations
 
@@ -24,6 +24,10 @@ CLOSED_STEPS = 5
 MAX_STEPS_PER_EPISODE = 30
 NUM_DEMOS = 2
 DOOR_METADATA_PREFIX = "RECORD_DEMOS_TEST_DOOR "
+VARIATION_ASSET_NAME = "rubiks_cube_hot3d_robolab"
+VARIATION_MASS = 0.25
+VARIATION_STEPS = 5
+VARIATION_METADATA_PREFIX = "RECORD_DEMOS_TEST_VARIATION "
 
 
 def environment_registration_callback() -> list[str]:
@@ -145,3 +149,115 @@ def test_record_demos_gr1_open_microwave(tmp_path):
                 openness = 1.0 - openness
             np.testing.assert_allclose(openness[:CLOSED_STEPS], 0.2, atol=0.02, rtol=0.0)
             assert openness[-1] >= 0.8, "The saved demo does not end with an open microwave door"
+
+
+def variation_environment_registration_callback() -> list[str]:
+    """Keep the maintained relation environment and replace only operator input and completion."""
+    import warp as wp
+    from isaaclab.devices import DeviceBase, DeviceCfg, DevicesCfg
+    from isaaclab.managers import EventTermCfg, TerminationTermCfg
+
+    from isaaclab_arena.environments.isaaclab_interop import (
+        environment_registration_callback as register_arena_environment,
+    )
+    from isaaclab_arena.relations.placement_events import get_reset_placement_results
+
+    environment = {}
+
+    def bind_environment(env, env_ids):
+        environment["env"] = env
+
+    def recording_complete(env):
+        return env.episode_length_buf >= VARIATION_STEPS
+
+    class VariationTestDevice(DeviceBase):
+        def __init__(self, cfg):
+            super().__init__()
+            self._env = environment["env"]
+            self._callbacks = {}
+            self.reset()
+
+        def reset(self):
+            self._steps = 0
+
+        def add_callback(self, key, func):
+            self._callbacks[key] = func
+
+        def advance(self):
+            self._steps += 1
+            assert self._steps <= MAX_STEPS_PER_EPISODE, "Lab did not finish the recording episode"
+            if self._steps == 1:
+                env = self._env
+                episode_index = env.get_episode_index(0)
+                record = env.variation_recorder[f"{VARIATION_ASSET_NAME}.mass"]
+                recorded_mass = record.sample_for_episode(0, episode_index)
+                assert recorded_mass is not None, "Reset variation was not recorded for this episode"
+                mass = wp.to_torch(env.scene[VARIATION_ASSET_NAME].data.body_mass)[0, 0].item()
+                assert mass == pytest.approx(VARIATION_MASS)
+                assert recorded_mass.item() == pytest.approx(mass)
+                layout = get_reset_placement_results(env)[0]
+                assert any(asset.name == VARIATION_ASSET_NAME for asset in layout.positions)
+                print(VARIATION_METADATA_PREFIX + json.dumps({"episode": episode_index, "mass": mass}), flush=True)
+            return torch.zeros(self._env.action_manager.total_action_dim, device=self._env.device)
+
+    remaining_args = register_arena_environment()
+    cfg = gym.spec("pick_and_place_maple_table").kwargs["env_cfg_entry_point"]
+    cfg.teleop_devices = DevicesCfg(devices={"keyboard": DeviceCfg(class_type=VariationTestDevice)})
+    cfg.events.bind_record_demos_test_environment = EventTermCfg(func=bind_environment, mode="startup")
+    # End short demos without a human policy; placement, reset variation and native export stay real.
+    cfg.terminations.success = TerminationTermCfg(func=recording_complete)
+    return remaining_args
+
+
+@pytest.mark.with_subprocess
+def test_record_demos_with_placement_and_variation(tmp_path):
+    """Hydra enables reset-time sampling and native Lab exports both reset-separated demos."""
+    import isaaclab
+
+    record_script = Path(isaaclab.__file__).resolve().parents[3] / "scripts/tools/record_demos.py"
+    dataset_path = tmp_path / "placement_variation.hdf5"
+    result = run_subprocess(
+        [
+            TestConstants.python_path,
+            str(record_script),
+            "--visualizer",
+            "kit",
+            "--device",
+            "cpu",
+            "--disable_external_cameras",
+            "--task",
+            "pick_and_place_maple_table",
+            "--embodiment",
+            "franka_ik",
+            "--teleop_device",
+            "keyboard",
+            "--step_hz",
+            "50",
+            "--num_success_steps",
+            "1",
+            "--num_demos",
+            str(NUM_DEMOS),
+            "--dataset_file",
+            str(dataset_path),
+            "--external_callback",
+            "isaaclab_arena.tests.test_record_demos.variation_environment_registration_callback",
+            f"{VARIATION_ASSET_NAME}.mass.enabled=true",
+            f"{VARIATION_ASSET_NAME}.mass.sampler_cfg.low=[{VARIATION_MASS}]",
+            f"{VARIATION_ASSET_NAME}.mass.sampler_cfg.high=[{VARIATION_MASS}]",
+        ],
+        capture_output=True,
+    )
+    reset_samples = [
+        json.loads(line.removeprefix(VARIATION_METADATA_PREFIX))
+        for line in result.stdout.splitlines()
+        if line.startswith(VARIATION_METADATA_PREFIX)
+    ]
+    assert [sample["episode"] for sample in reset_samples] == [0, 1]
+    assert [sample["mass"] for sample in reset_samples] == pytest.approx([VARIATION_MASS] * NUM_DEMOS)
+    with h5py.File(dataset_path, "r") as dataset:
+        assert len(dataset["data"]) == NUM_DEMOS
+        for episode in dataset["data"].values():
+            assert episode.attrs["success"]
+            assert len(episode["actions"]) == VARIATION_STEPS
+            actions = episode["actions"][:]
+            np.testing.assert_array_equal(actions, np.zeros_like(actions))
