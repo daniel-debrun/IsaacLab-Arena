@@ -4,17 +4,15 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import torch
+from copy import deepcopy
 
 import isaaclab.sim as sim_utils
-from isaaclab.assets import RigidObjectCfg
 
 from isaaclab_arena.assets.object import Object
 from isaaclab_arena.assets.object_type import ObjectType
-from isaaclab_arena.assets.object_utils import detect_object_type
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 from isaaclab_arena.utils.pose import Pose
-from isaaclab_arena.utils.usd.object_set_utils import rescale_rename_rigid_body_and_save_to_cache
-from isaaclab_arena.utils.usd.rigid_bodies import find_shallowest_rigid_body
+from isaaclab_arena.utils.usd.rigid_asset_preparation import align_rigid_body_paths
 
 
 class RigidObjectSet(Object):
@@ -32,7 +30,8 @@ class RigidObjectSet(Object):
         """
         Args:
             name: The name of the object set.
-            objects: The list of objects to be included in the object set.
+            objects: The list of objects to be included in the object set. Each member spawns from a copy
+                of its own object_cfg.spawn, taken when the set is built.
             prim_path: The prim path of the object set. Note that for all environments, the object set
                 prim path must be the same.
             random_choice: Whether to randomly choose an object from the object set to spawn in
@@ -41,22 +40,25 @@ class RigidObjectSet(Object):
             initial_pose: The initial pose of the object from this object set.
         """
         assert len(objects) >= 1, f"Object set {name} must contain at least 1 object."
-        assert self._are_all_objects_type_rigid(objects), f"Object set {name} must contain only rigid objects."
+        for member in objects:
+            assert not isinstance(
+                member, RigidObjectSet
+            ), f"Object set {name} cannot contain another object set ({member.name}); add its members instead."
+            assert member.object_type == ObjectType.RIGID, f"Object set {name} must contain only rigid objects."
 
-        # Isaac Lab support for MultiUsdFileCfg is limited. It applies the same scale and pose to all objects.
-        # Furthermore it relies on the rigid body being at the root of the USD file, or at the same
-        # path in all files. To expand our support in Arena, we modify the USDs to be compatible with each other.
-        # In particular, we rescale the assets, rename the rigid bodies to have the same name, and
-        # move a root-level rigid body under a container so members that nest theirs at different
-        # depths still end up at the same path. We save the resulting modified USDs to a cache.
-        if self._is_asset_modification_needed(objects):
-            self.member_usd_paths: list[str] = self._modify_assets(objects)
-            print(f"Modified object USD paths: {self.member_usd_paths}")
+        # Isaac Lab finds the rigid body in one environment and uses its path in all of them,
+        # so the members' spawn configurations are aligned to one rigid-body path.
+        member_spawn_cfgs = align_rigid_body_paths([member.object_cfg.spawn for member in objects])
+        if len(member_spawn_cfgs) == 1:
+            spawn_cfg = member_spawn_cfgs[0]
         else:
-            self.member_usd_paths = []
-            for obj in objects:
-                assert obj.usd_path is not None
-                self.member_usd_paths.append(obj.usd_path)
+            spawn_cfg = sim_utils.MultiAssetSpawnerCfg(
+                assets_cfg=member_spawn_cfgs,
+                # Arena assigns members to environments. Isaac Lab ignores this flag and warns when it is True.
+                random_choice=False,
+                # A value here would replace every member's own setting.
+                activate_contact_sensors=None,
+            )
 
         self.objects: list[Object] = objects
         self.random_choice = random_choice
@@ -68,23 +70,11 @@ class RigidObjectSet(Object):
         super().__init__(
             name=name,
             object_type=ObjectType.RIGID,
-            usd_path="",
+            spawner_cfg=spawn_cfg,
             prim_path=prim_path,
-            scale=(1.0, 1.0, 1.0),  # We rewrite the USDs to handle scaling.
             initial_pose=initial_pose,
             **kwargs,
         )
-
-    @property
-    def object_usd_paths(self) -> list[str]:
-        """USD paths passed to MultiUsdFileCfg.
-
-        Before assignment this is the member USD list. After assignment this
-        returns one USD path per environment based on variant_indices_by_env.
-        """
-        if self.variant_indices_by_env is not None:
-            return [self.member_usd_paths[idx] for idx in self.variant_indices_by_env]
-        return self.member_usd_paths
 
     def get_bounding_box(self) -> AxisAlignedBoundingBox:
         """Return one local bbox for callers that cannot vary by env.
@@ -149,18 +139,13 @@ class RigidObjectSet(Object):
         return AxisAlignedBoundingBox(min_point=min_pts, max_point=max_pts)
 
     def get_contact_sensor_prim_path(self) -> str:
-        """Return the contact-sensor path shared by all normalized member USDs."""
-        variants = (self.spawn_cfg_addon or {}).get("variants")
-        member_prim_paths = []
-        for usd_path in self.member_usd_paths:
-            member_spawn_cfg = sim_utils.UsdFileCfg(usd_path=usd_path, variants=variants)
-            member_body_path = self._get_spawn_cfg_geometry(member_spawn_cfg).get_contact_body_path()
-            member_prim_paths.append(self.prim_path + member_body_path)
-        assert len(set(member_prim_paths)) == 1, (
-            f"RigidObjectSet '{self.name}' member USDs must have the same contact-sensor prim path; "
-            f"got {member_prim_paths}."
-        )
-        return member_prim_paths[0]
+        """Return the contact-sensor path shared by all spawn entries of the set."""
+        spawn_cfg = self.object_cfg.spawn
+        if isinstance(spawn_cfg, sim_utils.MultiAssetSpawnerCfg):
+            member_spawn_cfgs = spawn_cfg.assets_cfg
+        else:
+            member_spawn_cfgs = [spawn_cfg]
+        return self.prim_path + self._get_shared_contact_body_path(member_spawn_cfgs)
 
     def _generate_variant_indices(self, num_envs: int, variant_seed: int | None = None) -> list[int]:
         """Return one member index per env.
@@ -178,39 +163,19 @@ class RigidObjectSet(Object):
         return torch.randint(low=0, high=n, size=(num_envs,), generator=generator).tolist()
 
     def _set_variant_indices_by_env(self, variant_indices_by_env: list[int]) -> None:
-        """Validate and store variant indices, then sync spawn config when it exists."""
+        """Validate and store each environment's member index, then give each environment its member's spawn entry."""
         n = len(self.objects)
         assert all(
             0 <= idx < n for idx in variant_indices_by_env
         ), f"RigidObjectSet '{self.name}' variant indices must be in [0, {n}); got {variant_indices_by_env}."
         self.variant_indices_by_env = variant_indices_by_env
-        # During __init__, Object.object_cfg has not been built yet; _generate_rigid_cfg()
-        # reads object_usd_paths after this assignment.
-        spawn_cfg = self.object_cfg.spawn if getattr(self, "object_cfg", None) is not None else None
-        if isinstance(spawn_cfg, sim_utils.MultiUsdFileCfg):
-            spawn_cfg.usd_path = self.object_usd_paths
-
-    def _are_all_objects_type_rigid(self, objects: list[Object]) -> bool:
-        for obj in objects:
-            assert obj.usd_path is not None
-            if detect_object_type(usd_path=obj.usd_path) != ObjectType.RIGID:
-                return False
-        return True
-
-    def _generate_rigid_cfg(self) -> RigidObjectCfg:
-        assert self.object_type == ObjectType.RIGID
-        object_cfg = RigidObjectCfg(
-            prim_path=self.prim_path,
-            spawn=sim_utils.MultiUsdFileCfg(
-                usd_path=self.object_usd_paths,
-                # Arena owns per-env variant assignment so bbox selection and
-                # spawned USDs stay aligned.
-                random_choice=False,
-                activate_contact_sensors=True,
-            ),
-        )
-        object_cfg = self._add_initial_pose_to_cfg(object_cfg)
-        return object_cfg
+        if isinstance(self.spawner_cfg, sim_utils.MultiAssetSpawnerCfg):
+            # With one spawn entry per environment, Isaac Lab's default sequential cloning gives environment i
+            # the entry i. Entries come from the declared members, so a second assignment does not compound;
+            # set-wide settings made on the live config are kept.
+            member_spawn_cfgs = self.spawner_cfg.assets_cfg
+            spawn_cfgs_by_env = [deepcopy(member_spawn_cfgs[idx]) for idx in variant_indices_by_env]
+            self.object_cfg.spawn = self.object_cfg.spawn.replace(assets_cfg=spawn_cfgs_by_env)
 
     def _generate_articulation_cfg(self):
         raise NotImplementedError("Articulation configuration is not supported for object sets")
@@ -220,31 +185,3 @@ class RigidObjectSet(Object):
 
     def _generate_spawner_cfg(self):
         raise NotImplementedError("Spawner configuration is not supported for object sets")
-
-    def _is_asset_modification_needed(self, objects: list[Object]) -> bool:
-        # If any asset is scaled, we need to modify the assets
-        for asset in objects:
-            if asset.scale != (1.0, 1.0, 1.0):
-                return True
-        # If all assets have rigid bodies at the root, we don't need to modify the assets
-        depths = self._get_all_rigid_body_depths(objects)
-        if all(depth == 0 for depth in depths):
-            return False
-        # Otherwise, we need to modify the assets
-        return True
-
-    def _get_all_rigid_body_depths(self, objects: list[Object]) -> list[int]:
-        depths = []
-        for asset in objects:
-            assert asset.usd_path is not None
-            shallowest_rigid_body = find_shallowest_rigid_body(asset.usd_path, within_default_prim=True)
-            depth = shallowest_rigid_body.count("/") - 1 if shallowest_rigid_body else -1
-            depths.append(depth)
-        return depths
-
-    def _modify_assets(self, objects: list[Object]) -> list[str]:
-        new_usd_paths = []
-        for asset in objects:
-            new_usd_path = rescale_rename_rigid_body_and_save_to_cache(asset)
-            new_usd_paths.append(new_usd_path)
-        return new_usd_paths

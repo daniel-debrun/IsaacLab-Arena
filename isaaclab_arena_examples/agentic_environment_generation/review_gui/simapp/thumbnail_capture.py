@@ -77,8 +77,7 @@ def render_thumbnails_with_app(
     assets_by_node_id.pop(spec.embodiment.id)
     asset_node_ids = [spec.background.id, *(obj.id for obj in spec.objects)]
     asset_paths = resolve_node_usd_paths(assets_by_node_id, asset_node_ids)
-    # Object sets hold one USD per member rather than a single usd_path, so resolve them separately
-    # and snapshot every member.
+    # Object sets have no usd_path of their own, so snapshot every member's USD separately.
     member_paths, member_dimensions = _resolve_object_set_members(spec, assets_by_node_id)
     asset_paths.update(member_paths)
     background_viewer_cfg = assets_by_node_id[spec.background.id].get_viewer_cfg()
@@ -163,17 +162,17 @@ def _resolve_object_set_members(
 ) -> tuple[dict[str, str], dict[str, AabbDimensionsM]]:
     """Return the USD path and AABB of every object-set member, keyed so each gets its own card.
 
-    Member USD paths follow the order the members were declared in, and may point at the rescaled
-    copies RigidObjectSet writes to its cache.
+    Each member's thumbnail shows the member object's own USD file. Members spawned from a custom
+    spawner config have no USD file and get no thumbnail.
     """
     usd_paths: dict[str, str] = {}
     dimensions: dict[str, AabbDimensionsM] = {}
     for object_set in spec.object_sets or []:
         live_object_set = assets_by_node_id[object_set.id]
-        members = zip(object_set.members, live_object_set.member_usd_paths, live_object_set.objects)
-        for registry_name, usd_path, member_asset in members:
+        for registry_name, member_asset in zip(object_set.members, live_object_set.objects):
             member_key = object_set_member_key(object_set.id, registry_name)
-            usd_paths[member_key] = usd_path
+            if member_asset.usd_path:
+                usd_paths[member_key] = member_asset.usd_path
             member_dimensions = aabb_dimensions_from_asset(member_asset)
             if member_dimensions is not None:
                 dimensions[member_key] = member_dimensions

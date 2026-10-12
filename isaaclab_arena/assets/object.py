@@ -147,6 +147,25 @@ class Object(RootedObjectBase):
             self._spawn_cfg_geometry_by_key[key] = SpawnCfgGeometry(spawn_cfg)
         return self._spawn_cfg_geometry_by_key[key]
 
+    def _get_shared_contact_body_path(self, spawn_cfgs: list[SpawnerCfg]) -> str:
+        """Return the rigid-body path that all given spawn configurations share.
+
+        Isaac Lab finds a rigid object's body in one environment and uses that path in every environment,
+        so all spawn entries of one object must agree on it.
+
+        Args:
+            spawn_cfgs: The object's spawn entries, each one concrete native spawn configuration.
+
+        Returns:
+            The body path relative to the spawned root, or "" when the body is the root.
+        """
+        body_paths = {self._get_spawn_cfg_geometry(spawn_cfg).get_contact_body_path() for spawn_cfg in spawn_cfgs}
+        assert len(body_paths) == 1, (
+            f"Object '{self.name}' spawn entries must have the same contact-sensor prim path; "
+            f"got rigid-body paths {sorted(body_paths)}."
+        )
+        return body_paths.pop()
+
     def _get_spawn_cfg(self, activate_contact_sensors: bool = False) -> SpawnerCfg:
         """Return the custom spawn config if set, otherwise a USD spawn config with addons."""
         if self.spawner_cfg is not None:

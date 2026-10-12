@@ -905,6 +905,7 @@ def test_real_rigid_object_set_through_pooled_placer():
     from isaaclab_arena.assets.object import Object
     from isaaclab_arena.assets.object_set import RigidObjectSet
     from isaaclab_arena.assets.object_type import ObjectType
+    from isaaclab_arena.assets.spawn_cfg_geometry import SpawnCfgGeometry
     from isaaclab_arena.relations.bounding_box_helpers import has_heterogeneous_objects
 
     desk = _make_desk()
@@ -914,10 +915,8 @@ def test_real_rigid_object_set_through_pooled_placer():
     can_a.bounding_box = AxisAlignedBoundingBox(min_point=(0.0, 0.0, 0.0), max_point=(0.1, 0.1, 0.15))
     can_b.bounding_box = AxisAlignedBoundingBox(min_point=(0.0, 0.0, 0.0), max_point=(0.15, 0.15, 0.2))
 
-    with (
-        patch("isaaclab_arena.assets.object_set.detect_object_type", return_value=ObjectType.RIGID),
-        patch("isaaclab_arena.assets.object_set.find_shallowest_rigid_body", return_value="/rigid"),
-    ):
+    # The members' USD paths are placeholders, so contact-body discovery must not open them.
+    with patch.object(SpawnCfgGeometry, "get_contact_body_path", return_value="/rigid"):
         obj_set = RigidObjectSet(name="cans", objects=[can_a, can_b])
 
     obj_set.add_relation(On(desk, clearance_m=0.01))
