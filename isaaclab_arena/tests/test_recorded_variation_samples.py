@@ -18,6 +18,7 @@ from isaaclab_arena.variations.recorded_variation_replay import (
     _bind_variation_replay_samplers,
     _enabled_variations_by_key,
     _validate_variation_replay,
+    configure_recorded_variation_replay,
 )
 from isaaclab_arena.variations.recorded_variation_samples import (
     EpisodeVariationRecord,
@@ -316,6 +317,21 @@ def test_variation_replay_rejects_wrong_variation_lifecycle(recorded_at_runtime:
             _enabled_variations_by_key({"asset": [variation]}),
             variation_record,
         )
+
+
+def test_build_time_replay_rejects_per_env_draws(tmp_path: Path) -> None:
+    """Equal recorded values load as one shared value; a per-env draw against it is rejected."""
+    variation = _BuildTimeTestVariation("value", live_value=0.0)
+    jsonl_path = _write_jsonl(
+        tmp_path,
+        [{"variations": {"asset.value": [0.1]}}, {"variations": {"asset.value": [0.1]}}],
+    )
+
+    configure_recorded_variation_replay(str(jsonl_path), {"asset": [variation]})
+
+    torch.testing.assert_close(variation.sampler.sample(1), torch.tensor([[0.1]]))
+    with pytest.raises(AssertionError, match="received per-env ids"):
+        variation.sampler.sample(2, env_ids=torch.tensor([0, 1]))
 
 
 class _RunTimeTestVariation(RunTimeVariationBase):

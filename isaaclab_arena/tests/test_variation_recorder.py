@@ -10,6 +10,7 @@ records a real HDR draw runs inside ``run_function_with_persistent_simulation_ap
 light via the registry pulls in ``isaaclab.sim``.
 """
 
+import json
 import torch
 from dataclasses import field
 
@@ -396,6 +397,35 @@ def test_build_time_record_rejects_per_env_draw_after_shared_draw():
     # A repeated shared draw replaces the earlier one, as on main.
     record.record_buildtime_sample(torch.tensor([[3.0]]))
     assert record.sample_for_episode(0, 0).tolist() == [3.0]
+
+
+def test_replay_rejects_a_recording_with_per_env_build_time_values(tmp_path):
+    """Episode records written for a per-env build-time variation cannot be replayed."""
+    from isaaclab_arena.recording.common_terms import record_variation_samples
+    from isaaclab_arena.variations.recorded_variation_replay import configure_recorded_variation_replay
+
+    variation = _PerEnvRecorderTestVariation()
+    variation.enable()
+    recorder = VariationRecorder()
+    recorder.attach({"asset": [variation]})
+    # Fixed CPU seed, so the two uniform draws are reproducible and differ. UniformSampler draws
+    # from the default CPU generator. torch.manual_seed would also reseed CUDA, which
+    # fork_rng(devices=[]) does not restore.
+    with torch.random.fork_rng(devices=[]):
+        torch.random.default_generator.manual_seed(0)
+        variation.configure_at_build_time(
+            VariationBuildContext(num_envs=2, seed=0, variation_key="asset.per_env_recorder_test")
+        )
+    env = _FakeEnv(recorder, episode_index=0)
+    recorder.bind_env(env)
+    episode_rows = [record_variation_samples(env, env_id=env_id) for env_id in (0, 1)]
+    recorded_values = [row["variations"]["asset.per_env_recorder_test"] for row in episode_rows]
+    assert recorded_values[0] != recorded_values[1]
+    jsonl_path = tmp_path / "episodes.jsonl"
+    jsonl_path.write_text("".join(json.dumps(row) + "\n" for row in episode_rows))
+
+    with pytest.raises(AssertionError, match="changes across episodes"):
+        configure_recorded_variation_replay(str(jsonl_path), {"asset": [variation]})
 
 
 def _test_hdr_variation_recorder_captures_chosen_hdr_name(simulation_app):
