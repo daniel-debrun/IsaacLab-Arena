@@ -69,7 +69,12 @@ from isaaclab_arena.utils.multiprocess import get_local_rank
 from isaaclab_arena.utils.physics_backend import PhysicsBackend
 from isaaclab_arena.variations import variations_hydra, variations_printing
 from isaaclab_arena.variations.recorded_variation_replay import configure_recorded_variation_replay
-from isaaclab_arena.variations.variation_base import RunTimeVariationBase, VariationBase
+from isaaclab_arena.variations.variation_base import (
+    RunTimeVariationBase,
+    VariationBase,
+    VariationBuildContext,
+    get_variation_key,
+)
 from isaaclab_arena.variations.variation_recorder import VariationRecorder
 from isaaclab_arena.variations.variation_replay_scheduler import VariationReplayScheduler
 
@@ -221,14 +226,20 @@ class ArenaEnvBuilder:
     def _apply_build_time_variations(self) -> None:
         """Configure every enabled variation at build time before ``scene_cfg`` is materialised.
 
-        These mutate asset configs in place (e.g. a dome light's spawner
+        Each variation receives a VariationBuildContext with this build's ``num_envs``, seed and
+        its variation key. These mutate asset configs in place (e.g. a dome light's spawner
         texture), so this must run before ``scene_cfg`` is materialised.
         """
-        for asset_variations in self.get_all_variations().values():
+        for asset_name, asset_variations in self.get_all_variations().items():
             for variation in asset_variations:
                 if not variation.enabled:
                     continue
-                variation.configure_at_build_time()
+                build_context = VariationBuildContext(
+                    num_envs=self.cfg.num_envs,
+                    seed=self.cfg.seed,
+                    variation_key=get_variation_key(asset_name, variation.name),
+                )
+                variation.configure_at_build_time(build_context)
 
     def _modify_recorder_cfg_dataset_filename(self, recorder_cfg: RecorderManagerBaseCfg) -> RecorderManagerBaseCfg:
         """Modify the recorder dataset filename to include the timestamp and rank."""
