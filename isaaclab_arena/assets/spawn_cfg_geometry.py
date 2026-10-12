@@ -43,7 +43,7 @@ def get_geometry_key(spawn_cfg: SpawnerCfg) -> tuple:
     _assert_single_spawn_cfg(spawn_cfg)
     if isinstance(spawn_cfg, UsdFileCfg):
         scale = tuple(spawn_cfg.scale) if spawn_cfg.scale is not None else None
-        variant_selections = tuple(sorted(_get_variant_selections(spawn_cfg).items()))
+        variant_selections = tuple(sorted(_get_usd_variant_selections(spawn_cfg).items()))
         return ("UsdFileCfg", str(spawn_cfg.usd_path), scale, variant_selections)
     if isinstance(spawn_cfg, ShapeCfg):
         has_rigid_body = spawn_cfg.rigid_props is not None
@@ -103,7 +103,7 @@ class SpawnCfgGeometry:
         return self._contact_body_path
 
     def open_usd_stage(self) -> Usd.Stage:
-        """Reference the USD asset at /Asset in a new in-memory stage with its variants selected.
+        """Reference the USD asset at /Asset in a new in-memory stage with its USD variant selections applied.
 
         The source file is never edited.
         """
@@ -115,14 +115,16 @@ class SpawnCfgGeometry:
         root = stage.DefinePrim("/Asset")
         root.GetReferences().AddReference(usd_path)
         stage.SetDefaultPrim(root)
-        apply_usd_variant_selections(stage, _get_variant_selections(self.spawn_cfg))
+        apply_usd_variant_selections(stage, _get_usd_variant_selections(self.spawn_cfg))
         return stage
 
 
-def _get_variant_selections(spawn_cfg: UsdFileCfg) -> dict[str, str]:
-    """Return the variant selections of a USD spawn configuration, empty when none are set.
+def _get_usd_variant_selections(spawn_cfg: UsdFileCfg) -> dict[str, str]:
+    """Return the USD variant selections in ``spawn_cfg.variants``, empty when none are set.
 
-    Isaac Lab accepts the selections as a dictionary or as a configclass with one field per variant set.
+    A USD variant set holds named alternatives of a prim, and a selection picks one of them. For example,
+    SimReady props have no physics unless the ``physics`` variant of their ``Physics`` set is selected.
+    Isaac Lab accepts the selections as a dictionary or as a configclass with one field per set.
     """
     variants = spawn_cfg.variants
     if variants is None:
