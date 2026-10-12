@@ -15,7 +15,7 @@ from isaaclab_arena.variations.recorded_variation_samples import (
     load_rebuild_variation_record,
     validate_recorded_variation_sample_keys,
 )
-from isaaclab_arena.variations.variation_base import BuildTimeVariationBase, RunTimeVariationBase
+from isaaclab_arena.variations.variation_base import BuildTimeVariationBase, RunTimeVariationBase, get_variation_key
 from isaaclab_arena.variations.variation_replay_scheduler import VariationReplayScheduler
 
 if TYPE_CHECKING:
@@ -123,7 +123,7 @@ def _enabled_variations_by_key(
         for variation in asset_variations:
             if not variation.enabled:
                 continue
-            key = f"{asset_name}.{variation.name}"
+            key = get_variation_key(asset_name, variation.name)
             assert key not in enabled, f"Duplicate enabled variation record key: {key!r}"
             enabled[key] = variation
     return enabled
