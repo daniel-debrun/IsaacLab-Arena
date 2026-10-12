@@ -59,7 +59,8 @@ class SpawnCfgGeometry:
     reports the live geometry of the spawned scene instead.
 
     USD bounds are measured from the default prim's origin with its authored rotation kept.
-    A tuple spawn scale replaces the authored root scale and None keeps it.
+    A tuple spawn scale takes the place of the authored root scale, which matches Isaac Lab's spawn
+    for a uniform authored scale or an unrotated root. None keeps the authored scale.
     """
 
     def __init__(self, spawn_cfg: SpawnerCfg):

@@ -201,7 +201,8 @@ def compute_local_bounding_box_from_usd(
 ) -> AxisAlignedBoundingBox:
     """Compute the local bounding box matching Isaac Lab ``UsdFileCfg`` spawn size.
 
-    A spawn scale replaces the default prim's authored root scale, as ``UsdFileCfg.scale`` does at spawn time.
+    A spawn scale takes the place of the default prim's authored root scale, which matches Isaac Lab's
+    spawn for a uniform authored scale or an unrotated root.
 
     Args:
         usd_path: Path to the USD file.
@@ -226,8 +227,10 @@ def compute_local_bounding_box_from_stage(
 ) -> AxisAlignedBoundingBox:
     """Compute the local bounding box of a stage's default prim as Isaac Lab spawns it.
 
-    A spawn scale replaces the default prim's authored root ``xformOp:scale``, as
-    ``UsdFileCfg.scale`` does at spawn time. ``None`` keeps the authored root scale.
+    A spawn scale stands in for the default prim's authored ``xformOp:scale``: the bounds are divided by
+    the authored scale and multiplied by the spawn scale along each world axis. This matches
+    ``UsdFileCfg.scale`` at spawn time when the authored scale is uniform or the root is not rotated.
+    ``None`` keeps the authored root scale.
 
     Args:
         stage: Stage whose default prim is the asset root.
