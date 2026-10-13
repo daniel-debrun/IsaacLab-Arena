@@ -10,7 +10,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import omni.usd
 from omni.kit.viewport.utility import frame_viewport_prims, get_active_viewport
@@ -21,7 +21,6 @@ from isaaclab_arena.environment_spec.arena_env_graph_conversion_utils import ins
 from isaaclab_arena.environment_spec.arena_env_graph_spec import ArenaEnvGraphSpec
 from isaaclab_arena_examples.agentic_environment_generation.review_gui.simapp.asset_usd import (
     AabbDimensionsM,
-    aabb_dimensions_from_asset,
     absolute_prim_path,
     object_reference_cache_key,
     resolve_aabb_dimensions_m,
@@ -44,6 +43,9 @@ from isaaclab_arena_examples.agentic_environment_generation.review_gui.simapp.ki
 from isaaclab_arena_examples.agentic_environment_generation.review_gui.spec_visualization.asset_cards import (
     object_set_member_key,
 )
+
+if TYPE_CHECKING:
+    from isaaclab_arena.assets.object import Object
 
 PANORAMA_CAMERA_PRIM_PATH = "/World/_ReviewPanoramaCamera"
 PANORAMA_EYE_HEIGHT_M = 1.55
@@ -78,8 +80,8 @@ def render_thumbnails_with_app(
     asset_node_ids = [spec.background.id, *(obj.id for obj in spec.objects)]
     asset_paths = resolve_node_usd_paths(assets_by_node_id, asset_node_ids)
     # Object sets have no usd_path of their own, so snapshot every member's USD separately.
-    member_paths, member_dimensions = _resolve_object_set_members(spec, assets_by_node_id)
-    asset_paths.update(member_paths)
+    members_by_key = _object_set_members_by_key(spec, assets_by_node_id)
+    asset_paths.update(resolve_node_usd_paths(members_by_key, list(members_by_key)))
     background_viewer_cfg = assets_by_node_id[spec.background.id].get_viewer_cfg()
 
     cache_dir = thumbnail_cache_dir()
@@ -153,30 +155,22 @@ def render_thumbnails_with_app(
         print(f"[thumbnail_capture] all {len(thumbnail_paths)} thumbnail(s) served from cache.", file=sys.stderr)
 
     aabb_dimensions_m = resolve_aabb_dimensions_m(assets_by_node_id)
-    aabb_dimensions_m.update(member_dimensions)
+    aabb_dimensions_m.update(resolve_aabb_dimensions_m(members_by_key))
     return thumbnail_paths, aabb_dimensions_m
 
 
-def _resolve_object_set_members(
-    spec: ArenaEnvGraphSpec, assets_by_node_id: dict[str, Any]
-) -> tuple[dict[str, str], dict[str, AabbDimensionsM]]:
-    """Return the USD path and AABB of every object-set member, keyed so each gets its own card.
+def _object_set_members_by_key(spec: ArenaEnvGraphSpec, assets_by_node_id: dict[str, Any]) -> dict[str, Object]:
+    """Return every object-set member object, keyed so each gets its own card.
 
     Each member's thumbnail shows the member object's own usd_path. Members built from a spawner config
     have no usd_path and get no thumbnail, even when that spawner is a UsdFileCfg.
     """
-    usd_paths: dict[str, str] = {}
-    dimensions: dict[str, AabbDimensionsM] = {}
+    members_by_key: dict[str, Object] = {}
     for object_set in spec.object_sets or []:
         live_object_set = assets_by_node_id[object_set.id]
         for registry_name, member_asset in zip(object_set.members, live_object_set.objects):
-            member_key = object_set_member_key(object_set.id, registry_name)
-            if member_asset.usd_path:
-                usd_paths[member_key] = member_asset.usd_path
-            member_dimensions = aabb_dimensions_from_asset(member_asset)
-            if member_dimensions is not None:
-                dimensions[member_key] = member_dimensions
-    return usd_paths, dimensions
+            members_by_key[object_set_member_key(object_set.id, registry_name)] = member_asset
+    return members_by_key
 
 
 # Capture orchestration — open each queued USD stage once and write PNGs.
