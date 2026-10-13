@@ -10,7 +10,7 @@ import pytest
 from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
 
 HEADLESS = True
-CACHE_DIR_TARGET = "isaaclab_arena.utils.usd.rigid_asset_preparation.get_arena_asset_cache_dir"
+CACHE_DIR_TARGET = "isaaclab_arena.utils.usd.rigid_body_path_alignment.get_arena_asset_cache_dir"
 PATH_KEYED_OVERRIDES = [
     "prim_physics",
     "rigid_props_fragment",
@@ -55,7 +55,7 @@ def _write_asset(
     shader.CreateIdAttr("UsdPreviewSurface")
     material.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
     UsdShade.MaterialBindingAPI.Apply(root).Bind(material)
-    # Unreferenced top-level content must never enter the relocated asset.
+    # Unreferenced top-level content must never enter the copy.
     auxiliary = UsdGeom.Xform.Define(stage, "/Unrelated").GetPrim()
     UsdPhysics.RigidBodyAPI.Apply(auxiliary)
     stage.GetRootLayer().Save()
@@ -110,7 +110,7 @@ def _test_matching_body_paths_return_copies_without_writing(simulation_app, tmp_
     import isaaclab.sim as sim_utils
 
     from isaaclab_arena.assets.spawn_cfg_geometry import SpawnCfgGeometry
-    from isaaclab_arena.utils.usd.rigid_asset_preparation import align_rigid_body_paths
+    from isaaclab_arena.utils.usd.rigid_body_path_alignment import align_rigid_body_paths
 
     source_path = tmp_path / "root_body.usda"
     _write_asset(source_path, "/Asset")
@@ -136,7 +136,7 @@ def _test_matching_body_paths_return_copies_without_writing(simulation_app, tmp_
 
 
 def _test_matching_body_paths_keep_path_keyed_overrides(simulation_app, tmp_path, override_name):
-    from isaaclab_arena.utils.usd.rigid_asset_preparation import align_rigid_body_paths
+    from isaaclab_arena.utils.usd.rigid_body_path_alignment import align_rigid_body_paths
 
     source_path = tmp_path / "root_body.usda"
     _write_asset(source_path, "/Asset")
@@ -153,13 +153,13 @@ def _test_matching_body_paths_keep_path_keyed_overrides(simulation_app, tmp_path
     return True
 
 
-def _test_relocation_preserves_bounds_and_materials(simulation_app, tmp_path):
+def _test_moved_body_copy_keeps_bounds_and_materials(simulation_app, tmp_path):
     import torch
 
     from pxr import Sdf, Usd, UsdGeom, UsdPhysics, UsdShade
 
     from isaaclab_arena.assets.spawn_cfg_geometry import SpawnCfgGeometry
-    from isaaclab_arena.utils.usd.rigid_asset_preparation import align_rigid_body_paths
+    from isaaclab_arena.utils.usd.rigid_body_path_alignment import align_rigid_body_paths
 
     source_paths = [
         tmp_path / "root.usda",
@@ -201,11 +201,11 @@ def _test_relocation_preserves_bounds_and_materials(simulation_app, tmp_path):
     ):
         assert source_path.read_bytes() == content
         assert spawn_cfg.scale == (2.0, 2.0, 2.0)
-        relocated_geometry = SpawnCfgGeometry(spawn_cfg)
-        assert relocated_geometry.get_contact_body_path() == "/rigid_body"
-        relocated_bound = relocated_geometry.get_bounding_box()
-        assert torch.allclose(original_bound.min_point, relocated_bound.min_point)
-        assert torch.allclose(original_bound.max_point, relocated_bound.max_point)
+        copy_geometry = SpawnCfgGeometry(spawn_cfg)
+        assert copy_geometry.get_contact_body_path() == "/rigid_body"
+        copy_bound = copy_geometry.get_bounding_box()
+        assert torch.allclose(original_bound.min_point, copy_bound.min_point)
+        assert torch.allclose(original_bound.max_point, copy_bound.max_point)
         stage = Usd.Stage.CreateInMemory()
         holder = UsdGeom.Xform.Define(stage, "/World/Object").GetPrim()
         holder.GetReferences().AddReference(spawn_cfg.usd_path)
@@ -217,17 +217,17 @@ def _test_relocation_preserves_bounds_and_materials(simulation_app, tmp_path):
         assert stage.GetPropertyAtPath(connection)
         if source_path == source_paths[1]:
             assert stage.GetPrimAtPath("/World/Object/rigid_body/ReferencedCube")
-            relocated_shader = UsdShade.Shader(stage.GetPrimAtPath(connection.GetPrimPath()))
-            assert relocated_shader.GetInput("texture").Get().resolvedPath == str(texture_path)
-            relocated_cube = stage.GetPrimAtPath("/World/Object/rigid_body/Cube")
-            assert UsdShade.MaterialBindingAPI(relocated_cube).ComputeBoundMaterial()[0].GetPath() == material.GetPath()
+            copied_shader = UsdShade.Shader(stage.GetPrimAtPath(connection.GetPrimPath()))
+            assert copied_shader.GetInput("texture").Get().resolvedPath == str(texture_path)
+            copied_cube = stage.GetPrimAtPath("/World/Object/rigid_body/Cube")
+            assert UsdShade.MaterialBindingAPI(copied_cube).ComputeBoundMaterial()[0].GetPath() == material.GetPath()
     return True
 
 
-def _test_relocation_redirects_paths_from_outside_into_the_moved_body(simulation_app, tmp_path):
+def _test_moved_body_copy_redirects_paths_from_outside_into_the_body(simulation_app, tmp_path):
     from pxr import Sdf, Usd, UsdGeom
 
-    from isaaclab_arena.utils.usd.rigid_asset_preparation import align_rigid_body_paths
+    from isaaclab_arena.utils.usd.rigid_body_path_alignment import align_rigid_body_paths
 
     root_path = tmp_path / "root.usda"
     nested_path = tmp_path / "nested.usda"
@@ -244,25 +244,25 @@ def _test_relocation_redirects_paths_from_outside_into_the_moved_body(simulation
     stage = Usd.Stage.CreateInMemory()
     holder = UsdGeom.Xform.Define(stage, "/World/Object").GetPrim()
     holder.GetReferences().AddReference(aligned[1].usd_path)
-    relocated_helpers = [prim for prim in stage.Traverse() if prim.GetName() == "Helper"]
-    assert len(relocated_helpers) == 1
-    relocated_helper = relocated_helpers[0]
-    assert not relocated_helper.GetPath().HasPrefix("/World/Object/rigid_body")
-    body_targets = relocated_helper.GetRelationship("bodyTargets").GetTargets()
+    copied_helpers = [prim for prim in stage.Traverse() if prim.GetName() == "Helper"]
+    assert len(copied_helpers) == 1
+    copied_helper = copied_helpers[0]
+    assert not copied_helper.GetPath().HasPrefix("/World/Object/rigid_body")
+    body_targets = copied_helper.GetRelationship("bodyTargets").GetTargets()
     assert body_targets == [Sdf.Path("/World/Object/rigid_body"), Sdf.Path("/World/Object/rigid_body/Cube")]
     for target in body_targets:
         assert stage.GetPrimAtPath(target), target
-    size_connections = relocated_helper.GetAttribute("cubeSize").GetConnections()
+    size_connections = copied_helper.GetAttribute("cubeSize").GetConnections()
     assert size_connections == [Sdf.Path("/World/Object/rigid_body/Cube.size")]
     assert stage.GetPropertyAtPath(size_connections[0])
     return True
 
 
-def _test_relocation_keeps_authored_root_scale_when_spawn_scale_is_none(simulation_app, tmp_path):
+def _test_moved_body_copy_keeps_authored_root_scale_when_spawn_scale_is_none(simulation_app, tmp_path):
     import torch
 
     from isaaclab_arena.assets.spawn_cfg_geometry import SpawnCfgGeometry
-    from isaaclab_arena.utils.usd.rigid_asset_preparation import align_rigid_body_paths
+    from isaaclab_arena.utils.usd.rigid_body_path_alignment import align_rigid_body_paths
 
     root_path = tmp_path / "root.usda"
     nested_path = tmp_path / "nested.usda"
@@ -274,21 +274,21 @@ def _test_relocation_keeps_authored_root_scale_when_spawn_scale_is_none(simulati
         aligned = align_rigid_body_paths(spawn_cfgs)
     for spawn_cfg, original_bound in zip(aligned, original_bounds):
         assert spawn_cfg.scale is None
-        relocated_bound = SpawnCfgGeometry(spawn_cfg).get_bounding_box()
-        # The authored root scale of 3 applies exactly once in the relocated copy.
-        assert torch.allclose(original_bound.min_point, relocated_bound.min_point)
-        assert torch.allclose(original_bound.max_point, relocated_bound.max_point)
+        copy_bound = SpawnCfgGeometry(spawn_cfg).get_bounding_box()
+        # The authored root scale of 3 applies exactly once in the copy.
+        assert torch.allclose(original_bound.min_point, copy_bound.min_point)
+        assert torch.allclose(original_bound.max_point, copy_bound.max_point)
     return True
 
 
-def _test_relocation_drops_the_authored_root_translation_and_rotation(simulation_app, tmp_path):
+def _test_moved_body_copy_drops_the_authored_root_translation_and_rotation(simulation_app, tmp_path):
     import numpy as np
 
     from isaaclab.sim.utils import use_stage
     from isaaclab.utils.string import string_to_callable
     from pxr import Usd, UsdGeom
 
-    from isaaclab_arena.utils.usd.rigid_asset_preparation import align_rigid_body_paths
+    from isaaclab_arena.utils.usd.rigid_body_path_alignment import align_rigid_body_paths
 
     root_path = tmp_path / "root.usda"
     nested_path = tmp_path / "nested.usda"
@@ -299,20 +299,20 @@ def _test_relocation_drops_the_authored_root_translation_and_rotation(simulation
     with patch(CACHE_DIR_TARGET, return_value=tmp_path):
         aligned = align_rigid_body_paths(spawn_cfgs)
     # Isaac Lab's spawn replaces the root translation and orientation with the spawn pose, so a body spawned from
-    # the source and one spawned from the relocated copy at the same pose must end up at the same world transform.
+    # the source and one spawned from the copy at the same pose must end up at the same world transform.
     spawn_pose = {"translation": (1.0, 2.0, 0.5), "orientation": (0.0, 0.0, 0.3826834, 0.9238795)}
     stage = Usd.Stage.CreateInMemory()
     with use_stage(stage):
         for member_index, (spawn_cfg, aligned_cfg) in enumerate(zip(spawn_cfgs, aligned)):
             string_to_callable(spawn_cfg.func)(f"/World/source_{member_index}", spawn_cfg, **spawn_pose)
-            string_to_callable(aligned_cfg.func)(f"/World/relocated_{member_index}", aligned_cfg, **spawn_pose)
+            string_to_callable(aligned_cfg.func)(f"/World/moved_body_copy_{member_index}", aligned_cfg, **spawn_pose)
     source_body_paths = ["/World/source_0", "/World/source_1/Group/Body"]
     for member_index, source_body_path in enumerate(source_body_paths):
         source_body = stage.GetPrimAtPath(source_body_path)
-        relocated_body = stage.GetPrimAtPath(f"/World/relocated_{member_index}/rigid_body")
+        copy_body = stage.GetPrimAtPath(f"/World/moved_body_copy_{member_index}/rigid_body")
         source_transform = UsdGeom.Xformable(source_body).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
-        relocated_transform = UsdGeom.Xformable(relocated_body).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
-        assert np.allclose(np.array(source_transform), np.array(relocated_transform), atol=1e-5), source_body_path
+        copy_transform = UsdGeom.Xformable(copy_body).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+        assert np.allclose(np.array(source_transform), np.array(copy_transform), atol=1e-5), source_body_path
     return True
 
 
@@ -349,14 +349,14 @@ def _write_asset_with_instanced_visuals(source_path, geometry_path):
     stage.GetRootLayer().Save()
 
 
-def _test_relocation_keeps_instanced_geometry_below_the_body(simulation_app, tmp_path, nested_instance):
+def _test_moved_body_copy_keeps_instanced_geometry_below_the_body(simulation_app, tmp_path, nested_instance):
     import torch
 
     from pxr import Usd, UsdGeom
 
     from isaaclab_arena.assets.spawn_cfg_geometry import SpawnCfgGeometry
-    from isaaclab_arena.utils.usd.rigid_asset_preparation import align_rigid_body_paths
     from isaaclab_arena.utils.usd.rigid_bodies import get_all_rigid_body_prim_paths_from_stage
+    from isaaclab_arena.utils.usd.rigid_body_path_alignment import align_rigid_body_paths
 
     geometry_path = tmp_path / "geometry.usda"
     referenced_cube_path = "Visuals/ReferencedCube"
@@ -375,9 +375,9 @@ def _test_relocation_keeps_instanced_geometry_below_the_body(simulation_app, tmp
     original_bound = SpawnCfgGeometry(spawn_cfgs[1]).get_bounding_box()
     with patch(CACHE_DIR_TARGET, return_value=tmp_path):
         aligned = align_rigid_body_paths(spawn_cfgs)
-    relocated_bound = SpawnCfgGeometry(aligned[1]).get_bounding_box()
-    assert torch.allclose(original_bound.min_point, relocated_bound.min_point)
-    assert torch.allclose(original_bound.max_point, relocated_bound.max_point)
+    copy_bound = SpawnCfgGeometry(aligned[1]).get_bounding_box()
+    assert torch.allclose(original_bound.min_point, copy_bound.min_point)
+    assert torch.allclose(original_bound.max_point, copy_bound.max_point)
     stage = Usd.Stage.CreateInMemory()
     holder = UsdGeom.Xform.Define(stage, "/World/Object").GetPrim()
     holder.GetReferences().AddReference(aligned[1].usd_path)
@@ -386,8 +386,8 @@ def _test_relocation_keeps_instanced_geometry_below_the_body(simulation_app, tmp
     return True
 
 
-def _test_relocation_finds_rigid_bodies_inside_instances(simulation_app, tmp_path):
-    from isaaclab_arena.utils.usd.rigid_asset_preparation import align_rigid_body_paths
+def _test_moving_the_body_finds_rigid_bodies_inside_instances(simulation_app, tmp_path):
+    from isaaclab_arena.utils.usd.rigid_body_path_alignment import align_rigid_body_paths
 
     geometry_path = tmp_path / "geometry.usda"
     _write_instanceable_geometry(geometry_path, rigid_cube=True)
@@ -405,10 +405,10 @@ def _test_relocation_finds_rigid_bodies_inside_instances(simulation_app, tmp_pat
     return True
 
 
-def _test_relocated_cache_files_are_named_by_content(simulation_app, tmp_path):
+def _test_moved_body_copies_are_named_by_content(simulation_app, tmp_path):
     import re
 
-    from isaaclab_arena.utils.usd.rigid_asset_preparation import align_rigid_body_paths
+    from isaaclab_arena.utils.usd.rigid_body_path_alignment import align_rigid_body_paths
 
     copy_dir = tmp_path / "copy"
     copy_dir.mkdir()
@@ -444,13 +444,13 @@ def _test_relocated_cache_files_are_named_by_content(simulation_app, tmp_path):
     return True
 
 
-def _test_relocation_bakes_usd_variant_selections(simulation_app, tmp_path):
+def _test_moved_body_copy_bakes_usd_variant_selections(simulation_app, tmp_path):
     import torch
 
     from pxr import Usd
 
     from isaaclab_arena.assets.spawn_cfg_geometry import SpawnCfgGeometry
-    from isaaclab_arena.utils.usd.rigid_asset_preparation import align_rigid_body_paths
+    from isaaclab_arena.utils.usd.rigid_body_path_alignment import align_rigid_body_paths
 
     variant_path = tmp_path / "variants.usda"
     nested_path = tmp_path / "nested.usda"
@@ -472,15 +472,15 @@ def _test_relocation_bakes_usd_variant_selections(simulation_app, tmp_path):
     assert aligned[0].variants is None
     assert spawn_cfgs[0].variants == {"size": "large"}
     assert torch.allclose(SpawnCfgGeometry(aligned[0]).get_bounding_box().size, torch.tensor([[4.0, 4.0, 4.0]]))
-    relocated_stage = Usd.Stage.Open(aligned[0].usd_path)
-    for prim in relocated_stage.Traverse():
+    copy_stage = Usd.Stage.Open(aligned[0].usd_path)
+    for prim in copy_stage.Traverse():
         assert not prim.GetVariantSets().GetNames(), prim.GetPath()
     assert variant_path.read_bytes() == source_content
     return True
 
 
-def _test_relocation_rejects_path_keyed_overrides(simulation_app, tmp_path, override_name):
-    from isaaclab_arena.utils.usd.rigid_asset_preparation import align_rigid_body_paths
+def _test_moving_the_body_rejects_path_keyed_overrides(simulation_app, tmp_path, override_name):
+    from isaaclab_arena.utils.usd.rigid_body_path_alignment import align_rigid_body_paths
 
     root_path = tmp_path / "root.usda"
     nested_path = tmp_path / "nested.usda"
@@ -490,20 +490,20 @@ def _test_relocation_rejects_path_keyed_overrides(simulation_app, tmp_path, over
     cache_dir.mkdir()
     spawn_cfgs = [_make_spawn_cfg(root_path), _make_spawn_cfg_with_path_keyed_override(override_name, nested_path)]
     with patch(CACHE_DIR_TARGET, return_value=cache_dir):
-        with pytest.raises(AssertionError, match="Cannot relocate"):
+        with pytest.raises(AssertionError, match="Cannot move the rigid body of"):
             align_rigid_body_paths(spawn_cfgs)
     # Every member is checked before the first file is written.
     assert not list(cache_dir.iterdir())
     return True
 
 
-def _test_legacy_physics_cfgs_apply_to_relocated_body(simulation_app, tmp_path):
+def _test_legacy_physics_cfgs_apply_to_moved_body(simulation_app, tmp_path):
     import isaaclab.sim as sim_utils
     from isaaclab.sim.utils import use_stage
     from isaaclab.utils.string import string_to_callable
     from pxr import Usd, UsdPhysics
 
-    from isaaclab_arena.utils.usd.rigid_asset_preparation import align_rigid_body_paths
+    from isaaclab_arena.utils.usd.rigid_body_path_alignment import align_rigid_body_paths
 
     root_path = tmp_path / "root.usda"
     nested_path = tmp_path / "nested.usda"
@@ -541,7 +541,7 @@ def _test_legacy_physics_cfgs_apply_to_relocated_body(simulation_app, tmp_path):
 def _test_differing_body_paths_require_usd_members(simulation_app, tmp_path):
     import isaaclab.sim as sim_utils
 
-    from isaaclab_arena.utils.usd.rigid_asset_preparation import align_rigid_body_paths
+    from isaaclab_arena.utils.usd.rigid_body_path_alignment import align_rigid_body_paths
 
     nested_path = tmp_path / "nested.usda"
     _write_asset(nested_path, "/Asset/Group/Body")
@@ -556,10 +556,10 @@ def _test_differing_body_paths_require_usd_members(simulation_app, tmp_path):
     return True
 
 
-def _test_relocation_requires_exactly_one_rigid_body(simulation_app, tmp_path):
+def _test_moving_the_body_requires_exactly_one_rigid_body(simulation_app, tmp_path):
     from pxr import UsdGeom, UsdPhysics
 
-    from isaaclab_arena.utils.usd.rigid_asset_preparation import align_rigid_body_paths
+    from isaaclab_arena.utils.usd.rigid_body_path_alignment import align_rigid_body_paths
 
     two_body_path = tmp_path / "two_bodies.usda"
     nested_path = tmp_path / "nested.usda"
@@ -570,15 +570,15 @@ def _test_relocation_requires_exactly_one_rigid_body(simulation_app, tmp_path):
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
     with patch(CACHE_DIR_TARGET, return_value=cache_dir):
-        # Matching body paths take the fast path, which picks the shallowest rigid body and does not require exactly
+        # When the body paths already match, nothing is copied: the shallowest rigid body is used, and exactly one is not
         # one.
         aligned = align_rigid_body_paths([_make_spawn_cfg(two_body_path), _make_spawn_cfg(two_body_path)])
         assert [spawn_cfg.usd_path for spawn_cfg in aligned] == [str(two_body_path)] * 2
-        # In the second order the nested member relocates fine before the two-body member is rejected.
+        # In the second order the nested member's body is moved before the two-body member is rejected.
         for member_paths in ((two_body_path, nested_path), (nested_path, two_body_path)):
             with pytest.raises(AssertionError, match="exactly one rigid body"):
                 align_rigid_body_paths([_make_spawn_cfg(path) for path in member_paths])
-    # Every relocated layer is built before the first file is written.
+    # Every copy is built before the first file is written.
     assert not list(cache_dir.iterdir())
     return True
 
@@ -599,71 +599,71 @@ def test_matching_body_paths_keep_path_keyed_overrides(tmp_path, override_name):
     )
 
 
-def test_relocation_preserves_bounds_and_materials(tmp_path):
+def test_moved_body_copy_keeps_bounds_and_materials(tmp_path):
     assert run_function_with_persistent_simulation_app(
-        _test_relocation_preserves_bounds_and_materials, headless=HEADLESS, tmp_path=tmp_path
+        _test_moved_body_copy_keeps_bounds_and_materials, headless=HEADLESS, tmp_path=tmp_path
     )
 
 
-def test_relocation_redirects_paths_from_outside_into_the_moved_body(tmp_path):
+def test_moved_body_copy_redirects_paths_from_outside_into_the_body(tmp_path):
     assert run_function_with_persistent_simulation_app(
-        _test_relocation_redirects_paths_from_outside_into_the_moved_body, headless=HEADLESS, tmp_path=tmp_path
+        _test_moved_body_copy_redirects_paths_from_outside_into_the_body, headless=HEADLESS, tmp_path=tmp_path
     )
 
 
-def test_relocation_keeps_authored_root_scale_when_spawn_scale_is_none(tmp_path):
+def test_moved_body_copy_keeps_authored_root_scale_when_spawn_scale_is_none(tmp_path):
     assert run_function_with_persistent_simulation_app(
-        _test_relocation_keeps_authored_root_scale_when_spawn_scale_is_none, headless=HEADLESS, tmp_path=tmp_path
+        _test_moved_body_copy_keeps_authored_root_scale_when_spawn_scale_is_none, headless=HEADLESS, tmp_path=tmp_path
     )
 
 
-def test_relocation_drops_the_authored_root_translation_and_rotation(tmp_path):
+def test_moved_body_copy_drops_the_authored_root_translation_and_rotation(tmp_path):
     assert run_function_with_persistent_simulation_app(
-        _test_relocation_drops_the_authored_root_translation_and_rotation, headless=HEADLESS, tmp_path=tmp_path
+        _test_moved_body_copy_drops_the_authored_root_translation_and_rotation, headless=HEADLESS, tmp_path=tmp_path
     )
 
 
 @pytest.mark.parametrize("nested_instance", [False, True])
-def test_relocation_keeps_instanced_geometry_below_the_body(tmp_path, nested_instance):
+def test_moved_body_copy_keeps_instanced_geometry_below_the_body(tmp_path, nested_instance):
     assert run_function_with_persistent_simulation_app(
-        _test_relocation_keeps_instanced_geometry_below_the_body,
+        _test_moved_body_copy_keeps_instanced_geometry_below_the_body,
         headless=HEADLESS,
         tmp_path=tmp_path,
         nested_instance=nested_instance,
     )
 
 
-def test_relocation_finds_rigid_bodies_inside_instances(tmp_path):
+def test_moving_the_body_finds_rigid_bodies_inside_instances(tmp_path):
     assert run_function_with_persistent_simulation_app(
-        _test_relocation_finds_rigid_bodies_inside_instances, headless=HEADLESS, tmp_path=tmp_path
+        _test_moving_the_body_finds_rigid_bodies_inside_instances, headless=HEADLESS, tmp_path=tmp_path
     )
 
 
-def test_relocated_cache_files_are_named_by_content(tmp_path):
+def test_moved_body_copies_are_named_by_content(tmp_path):
     assert run_function_with_persistent_simulation_app(
-        _test_relocated_cache_files_are_named_by_content, headless=HEADLESS, tmp_path=tmp_path
+        _test_moved_body_copies_are_named_by_content, headless=HEADLESS, tmp_path=tmp_path
     )
 
 
-def test_relocation_bakes_usd_variant_selections(tmp_path):
+def test_moved_body_copy_bakes_usd_variant_selections(tmp_path):
     assert run_function_with_persistent_simulation_app(
-        _test_relocation_bakes_usd_variant_selections, headless=HEADLESS, tmp_path=tmp_path
+        _test_moved_body_copy_bakes_usd_variant_selections, headless=HEADLESS, tmp_path=tmp_path
     )
 
 
 @pytest.mark.parametrize("override_name", PATH_KEYED_OVERRIDES)
-def test_relocation_rejects_path_keyed_overrides(tmp_path, override_name):
+def test_moving_the_body_rejects_path_keyed_overrides(tmp_path, override_name):
     assert run_function_with_persistent_simulation_app(
-        _test_relocation_rejects_path_keyed_overrides,
+        _test_moving_the_body_rejects_path_keyed_overrides,
         headless=HEADLESS,
         tmp_path=tmp_path,
         override_name=override_name,
     )
 
 
-def test_legacy_physics_cfgs_apply_to_relocated_body(tmp_path):
+def test_legacy_physics_cfgs_apply_to_copy_body(tmp_path):
     assert run_function_with_persistent_simulation_app(
-        _test_legacy_physics_cfgs_apply_to_relocated_body, headless=HEADLESS, tmp_path=tmp_path
+        _test_legacy_physics_cfgs_apply_to_moved_body, headless=HEADLESS, tmp_path=tmp_path
     )
 
 
@@ -673,7 +673,7 @@ def test_differing_body_paths_require_usd_members(tmp_path):
     )
 
 
-def test_relocation_requires_exactly_one_rigid_body(tmp_path):
+def test_moving_the_body_requires_exactly_one_rigid_body(tmp_path):
     assert run_function_with_persistent_simulation_app(
-        _test_relocation_requires_exactly_one_rigid_body, headless=HEADLESS, tmp_path=tmp_path
+        _test_moving_the_body_requires_exactly_one_rigid_body, headless=HEADLESS, tmp_path=tmp_path
     )

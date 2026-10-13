@@ -3,7 +3,11 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Give the spawn configurations of one multi-asset object a common rigid-body path."""
+"""Move rigid bodies to one common prim path, so several assets can spawn as one Isaac Lab rigid object.
+
+Isaac Lab finds a rigid object's body through one prim path in all environments. When the assets keep their rigid
+body at different paths, a copy of each USD file is written with the body at /rigid_body.
+"""
 
 from __future__ import annotations
 
@@ -30,17 +34,17 @@ from isaaclab_arena.utils.usd.rigid_bodies import get_all_rigid_body_prim_paths_
 _SOURCE_ROOT = Sdf.Path("/Asset")
 """Where SpawnCfgGeometry.open_usd_stage() references the source asset."""
 
-_PREPARED_ROOT = Sdf.Path("/Prepared")
-"""Default prim of a relocated asset."""
+_COPY_ROOT = Sdf.Path("/Prepared")
+"""Default prim of a written copy."""
 
-_PREPARED_SOURCE = _PREPARED_ROOT.AppendChild("source")
-"""The source asset without its rigid body."""
+_COPY_REST_OF_ASSET = _COPY_ROOT.AppendChild("source")
+"""Everything from the source asset except its rigid body."""
 
-_PREPARED_BODY = _PREPARED_ROOT.AppendChild("rigid_body")
+_COPY_BODY = _COPY_ROOT.AppendChild("rigid_body")
 """The moved rigid body, at /rigid_body relative to the spawn root."""
 
 _CACHE_LAYOUT_VERSION = "rigid-layout-v1"
-"""Part of every cache hash. Change it when the relocated layout changes."""
+"""Part of every cache hash. Change it when the layout of the written copies changes."""
 
 
 def align_rigid_body_paths(spawn_cfgs: Sequence[SpawnerCfg]) -> list[SpawnerCfg]:
@@ -66,43 +70,40 @@ def align_rigid_body_paths(spawn_cfgs: Sequence[SpawnerCfg]) -> list[SpawnerCfg]
             "Spawn configurations with different rigid-body paths must be USD assets, so their bodies can be moved "
             f"to one path; got {type(spawn_cfg).__name__} and rigid-body paths {body_paths}."
         )
-        _assert_relocatable(spawn_cfg)
-    # Build every relocated layer before writing any file, so a rejected spawn configuration leaves no cache files
-    # behind.
-    relocated_layers = [
-        _relocate_rigid_body(geometry, body_path) for geometry, body_path in zip(geometries, body_paths)
+        _assert_no_settings_name_asset_prims(spawn_cfg)
+    # Build every copy before writing any file, so a rejected spawn configuration leaves no cache files behind.
+    copied_layers = [
+        _copy_asset_with_body_at_common_path(geometry, body_path) for geometry, body_path in zip(geometries, body_paths)
     ]
     aligned_spawn_cfgs = []
-    for spawn_cfg, relocated_layer in zip(spawn_cfgs, relocated_layers):
+    for spawn_cfg, copied_layer in zip(spawn_cfgs, copied_layers):
         aligned_spawn_cfg = deepcopy(spawn_cfg)
-        aligned_spawn_cfg.usd_path = str(_write_layer_to_cache(relocated_layer))
+        aligned_spawn_cfg.usd_path = str(_write_layer_to_cache(copied_layer))
         # The copy has the selections baked in and has no variant sets of its own.
         aligned_spawn_cfg.variants = None
         aligned_spawn_cfgs.append(aligned_spawn_cfg)
     return aligned_spawn_cfgs
 
 
-def _assert_relocatable(spawn_cfg: UsdFileCfg) -> None:
-    """Reject spawn settings that name or select prims inside the source asset, whose layout relocation changes."""
-    source = spawn_cfg.usd_path
-    assert not getattr(spawn_cfg, "prim_physics", None), f"Cannot relocate {source}: prim_physics names source prims."
+def _assert_no_settings_name_asset_prims(spawn_cfg: UsdFileCfg) -> None:
+    """Reject spawn settings that name or select prims inside the source asset, because those prims move in the copy."""
+    cannot_move = f"Cannot move the rigid body of {spawn_cfg.usd_path} to a common path"
+    assert not getattr(spawn_cfg, "prim_physics", None), f"{cannot_move}: prim_physics names source prims."
     for spawn_field in fields(spawn_cfg):
         if not spawn_field.name.endswith("_props"):
             continue
         assert not _selects_prims_by_path(getattr(spawn_cfg, spawn_field.name)), (
-            f"Cannot relocate {source}: {spawn_field.name} uses schema fragments or target patterns. "
+            f"{cannot_move}: {spawn_field.name} uses schema fragments or target patterns. "
             "Use a properties config such as MassPropertiesCfg, or spawn configurations with the same rigid-body path."
         )
-    assert (
-        not spawn_cfg.visual_material_bindings
-    ), f"Cannot relocate {source}: visual_material_bindings name source prims."
+    assert not spawn_cfg.visual_material_bindings, f"{cannot_move}: visual_material_bindings name source prims."
     # Isaac Lab reads visual_material_path only when visual_material is set.
     assert spawn_cfg.visual_material is None or spawn_cfg.visual_material_path.startswith(
         "/"
-    ), f"Cannot relocate {source}: visual_material_path is relative to the asset root."
+    ), f"{cannot_move}: visual_material_path is relative to the asset root."
     assert (
         getattr(spawn_cfg, "physics_material_prim_path", None) is None
-    ), f"Cannot relocate {source}: physics_material_prim_path names source prims."
+    ), f"{cannot_move}: physics_material_prim_path names source prims."
 
 
 def _selects_prims_by_path(props: Any) -> bool:
@@ -119,7 +120,7 @@ def _selects_prims_by_path(props: Any) -> bool:
 def _redirect_into_moved_body(path: Sdf.Path, copied_body: Sdf.Path) -> Sdf.Path:
     """Map a path below the body's copy in /Prepared/source to /Prepared/rigid_body; return other paths unchanged."""
     if path.HasPrefix(copied_body):
-        return path.ReplacePrefix(copied_body, _PREPARED_BODY)
+        return path.ReplacePrefix(copied_body, _COPY_BODY)
     return path
 
 
@@ -146,7 +147,7 @@ def _redirect_paths_into_moved_body(layer: Sdf.Layer, copied_body: Sdf.Path) -> 
             property_spec.connectionPathList.ModifyItemEdits(redirect_into_moved_body)
 
 
-def _relocate_rigid_body(geometry: SpawnCfgGeometry, body_path: str) -> Sdf.Layer:
+def _copy_asset_with_body_at_common_path(geometry: SpawnCfgGeometry, body_path: str) -> Sdf.Layer:
     """Return a flattened copy of one USD asset with its rigid body moved to /rigid_body.
 
     Args:
@@ -154,7 +155,7 @@ def _relocate_rigid_body(geometry: SpawnCfgGeometry, body_path: str) -> Sdf.Laye
         body_path: Its rigid-body path relative to the default prim, "" for the default prim.
 
     Returns:
-        The relocated layer, not yet written to the cache.
+        The copy as a layer, not yet written to the cache.
     """
     spawn_cfg = geometry.spawn_cfg
     stage = geometry.open_usd_stage()
@@ -189,20 +190,20 @@ def _relocate_rigid_body(geometry: SpawnCfgGeometry, body_path: str) -> Sdf.Laye
     # may sit outside the body.
     layer = stage.Flatten(addSourceFileComment=False)
     prepared_stage = Usd.Stage.Open(layer)
-    prepared_root = UsdGeom.Xform.Define(prepared_stage, _PREPARED_ROOT).GetPrim()
-    assert Sdf.CopySpec(layer, _SOURCE_ROOT, layer, _PREPARED_SOURCE)
-    copied_body = original_body.ReplacePrefix(_SOURCE_ROOT, _PREPARED_SOURCE)
-    assert Sdf.CopySpec(layer, copied_body, layer, _PREPARED_BODY)
+    prepared_root = UsdGeom.Xform.Define(prepared_stage, _COPY_ROOT).GetPrim()
+    assert Sdf.CopySpec(layer, _SOURCE_ROOT, layer, _COPY_REST_OF_ASSET)
+    copied_body = original_body.ReplacePrefix(_SOURCE_ROOT, _COPY_REST_OF_ASSET)
+    assert Sdf.CopySpec(layer, copied_body, layer, _COPY_BODY)
     prepared_stage.RemovePrim(copied_body)
     prepared_stage.RemovePrim(_SOURCE_ROOT)
     prepared_stage.SetDefaultPrim(prepared_root)
     _redirect_paths_into_moved_body(layer, copied_body)
 
-    prepared_body = prepared_stage.GetPrimAtPath(_PREPARED_BODY)
+    prepared_body = prepared_stage.GetPrimAtPath(_COPY_BODY)
     UsdGeom.Xformable(prepared_body).MakeMatrixXform().Set(body_transform)
     for purpose, material_path, binding_strength in inherited_materials:
         prepared_material_path = _redirect_into_moved_body(
-            material_path.ReplacePrefix(_SOURCE_ROOT, _PREPARED_SOURCE), copied_body
+            material_path.ReplacePrefix(_SOURCE_ROOT, _COPY_REST_OF_ASSET), copied_body
         )
         material = UsdShade.Material(prepared_stage.GetPrimAtPath(prepared_material_path))
         UsdShade.MaterialBindingAPI.Apply(prepared_body).Bind(

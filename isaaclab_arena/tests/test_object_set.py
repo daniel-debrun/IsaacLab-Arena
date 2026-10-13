@@ -121,7 +121,7 @@ def _test_object_set_samples_and_stores_variant_indices(simulation_app):
 
 
 def _test_two_object_sets_resolve_normalized_usd_contact_paths(simulation_app, tmp_path):
-    """Task sensor and filter paths must resolve for every pair of members, with and without relocated bodies."""
+    """Task sensor and filter paths must resolve for every pair of members, with and without moved bodies."""
     from pxr import Usd, UsdPhysics
 
     from isaaclab_arena.assets.object import Object
@@ -141,7 +141,7 @@ def _test_two_object_sets_resolve_normalized_usd_contact_paths(simulation_app, t
         make_member("bin_shallow", "/Bin", "/Bin/Body"),
         make_member("bin_deep", "/Outer/Bin", "/Outer/Bin/Geometry/Body"),
     ]
-    with patch("isaaclab_arena.utils.usd.rigid_asset_preparation.get_arena_asset_cache_dir", return_value=tmp_path):
+    with patch("isaaclab_arena.utils.usd.rigid_body_path_alignment.get_arena_asset_cache_dir", return_value=tmp_path):
         pickup = RigidObjectSet(name="pickup", objects=pickup_members)
         destination = RigidObjectSet(name="destination", objects=destination_members)
 
@@ -149,7 +149,7 @@ def _test_two_object_sets_resolve_normalized_usd_contact_paths(simulation_app, t
     destination_entry_paths = [entry.usd_path for entry in destination.object_cfg.spawn.assets_cfg]
     # Pickup members have their bodies at the default prim, so they spawn their own files.
     assert pickup_entry_paths == [obj.usd_path for obj in pickup_members]
-    # Destination bodies sit at different depths, so they spawn relocated copies.
+    # Destination bodies sit at different depths, so they spawn copies with the body moved to a common path.
     assert {obj.usd_path for obj in destination_members}.isdisjoint(destination_entry_paths)
     task = PickAndPlaceTask(pick_up_object=pickup, destination_location=destination, background_scene=destination)
     sensor_cfg = getattr(task.get_scene_cfg(), task.contact_sensor_name)
@@ -447,7 +447,7 @@ def _test_live_object_set_keeps_member_mass_and_scale(simulation_app, tmp_path):
     )
     light_member.object_cfg.spawn.mass_props = sim_utils.MassPropertiesCfg(mass=0.5)
     heavy_member.object_cfg.spawn.mass_props = sim_utils.MassPropertiesCfg(mass=2.0)
-    with patch("isaaclab_arena.utils.usd.rigid_asset_preparation.get_arena_asset_cache_dir", return_value=tmp_path):
+    with patch("isaaclab_arena.utils.usd.rigid_body_path_alignment.get_arena_asset_cache_dir", return_value=tmp_path):
         object_set = RigidObjectSet(
             name="weighted_set",
             objects=[light_member, heavy_member],

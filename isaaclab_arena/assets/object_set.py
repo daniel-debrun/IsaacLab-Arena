@@ -12,7 +12,7 @@ from isaaclab_arena.assets.object import Object
 from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 from isaaclab_arena.utils.pose import Pose
-from isaaclab_arena.utils.usd.rigid_asset_preparation import align_rigid_body_paths
+from isaaclab_arena.utils.usd.rigid_body_path_alignment import align_rigid_body_paths
 
 
 class RigidObjectSet(Object):
