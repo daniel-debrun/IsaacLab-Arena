@@ -68,8 +68,17 @@ def _make_spawn_cfg(source_path, scale=(1.0, 1.0, 1.0), **spawn_options):
     return UsdFileCfg(usd_path=str(source_path), scale=scale, **spawn_options)
 
 
-def _make_spawn_cfg_with_path_keyed_override(override_name, source_path):
-    """Return a USD spawn config whose settings name or select prims inside the source asset."""
+def _make_spawn_cfg_with_path_keyed_override(override_name, source_path, cube_path="Group/Body/Cube"):
+    """Return a USD spawn config whose settings name or select prims inside the source asset.
+
+    Args:
+        override_name: The setting to add, one of PATH_KEYED_OVERRIDES.
+        source_path: The USD asset to spawn.
+        cube_path: Path of the asset's cube relative to its default prim, used by settings that name prims.
+
+    Returns:
+        The spawn configuration.
+    """
     import isaaclab.sim as sim_utils
     from isaaclab.sim.schemas import MassCfg, UsdPhysicsRigidBodyCfg
 
@@ -79,7 +88,7 @@ def _make_spawn_cfg_with_path_keyed_override(override_name, source_path):
     usd_path = str(source_path)
     if override_name == "prim_physics":
         return make_usd_spawn_cfg_with_prim_physics(
-            sim_utils.UsdFileCfg(usd_path=usd_path), {"Group/Body": UsdPrimSpawnPhysicsCfg()}
+            sim_utils.UsdFileCfg(usd_path=usd_path), {cube_path: UsdPrimSpawnPhysicsCfg()}
         )
     if override_name == "rigid_props_fragment":
         return sim_utils.UsdFileCfg(usd_path=usd_path, rigid_props=UsdPhysicsRigidBodyCfg())
@@ -88,11 +97,11 @@ def _make_spawn_cfg_with_path_keyed_override(override_name, source_path):
     if override_name == "mass_props_pattern":
         return sim_utils.UsdFileCfg(usd_path=usd_path, mass_props={"/.*": [MassCfg(mass=1.0)]})
     if override_name == "visual_material_bindings":
-        return sim_utils.UsdFileCfg(usd_path=usd_path, visual_material_bindings={"Group/Body/Cube": "Looks/Material"})
+        return sim_utils.UsdFileCfg(usd_path=usd_path, visual_material_bindings={cube_path: "Looks/Material"})
     if override_name == "relative_visual_material_path":
         return sim_utils.UsdFileCfg(usd_path=usd_path, visual_material=sim_utils.PreviewSurfaceCfg())
     assert override_name == "physics_material_prim_path", f"Unknown override {override_name}."
-    return sim_utils.UsdFileWithCompliantContactCfg(usd_path=usd_path, physics_material_prim_path="Group/Body/Cube")
+    return sim_utils.UsdFileWithCompliantContactCfg(usd_path=usd_path, physics_material_prim_path=cube_path)
 
 
 def _test_matching_body_paths_return_copies_without_writing(simulation_app, tmp_path):
@@ -123,6 +132,24 @@ def _test_matching_body_paths_return_copies_without_writing(simulation_app, tmp_
     aligned[1].semantic_tags.append(("color", "red"))
     assert spawn_cfgs[1].semantic_tags == [("class", "large")]
     assert torch.allclose(SpawnCfgGeometry(aligned[1]).get_bounding_box().size, torch.tensor([[4.0, 6.0, 8.0]]))
+    return True
+
+
+def _test_matching_body_paths_keep_path_keyed_overrides(simulation_app, tmp_path, override_name):
+    from isaaclab_arena.utils.usd.rigid_asset_preparation import align_rigid_body_paths
+
+    source_path = tmp_path / "root_body.usda"
+    _write_asset(source_path, "/Asset")
+    override_spawn_cfg = _make_spawn_cfg_with_path_keyed_override(override_name, source_path, cube_path="Cube")
+    spawn_cfgs = [_make_spawn_cfg(source_path), override_spawn_cfg]
+    # Settings that name source prims stay valid when no body moves, so they are accepted and kept.
+    with patch(CACHE_DIR_TARGET) as get_cache_dir:
+        aligned = align_rigid_body_paths(spawn_cfgs)
+    get_cache_dir.assert_not_called()
+    aligned_override_spawn_cfg = aligned[1]
+    assert aligned_override_spawn_cfg is not override_spawn_cfg
+    assert type(aligned_override_spawn_cfg) is type(override_spawn_cfg)
+    assert aligned_override_spawn_cfg == override_spawn_cfg
     return True
 
 
@@ -558,6 +585,16 @@ def _test_relocation_requires_exactly_one_rigid_body(simulation_app, tmp_path):
 def test_matching_body_paths_return_copies_without_writing(tmp_path):
     assert run_function_with_persistent_simulation_app(
         _test_matching_body_paths_return_copies_without_writing, headless=HEADLESS, tmp_path=tmp_path
+    )
+
+
+@pytest.mark.parametrize("override_name", PATH_KEYED_OVERRIDES)
+def test_matching_body_paths_keep_path_keyed_overrides(tmp_path, override_name):
+    assert run_function_with_persistent_simulation_app(
+        _test_matching_body_paths_keep_path_keyed_overrides,
+        headless=HEADLESS,
+        tmp_path=tmp_path,
+        override_name=override_name,
     )
 
 
