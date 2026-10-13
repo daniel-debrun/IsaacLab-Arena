@@ -256,6 +256,10 @@ class BuildTimeVariationBase(VariationBase):
     Use for properties that can't change in-flight: HDR maps, USD swaps,
     spawner params baked into a config. Subclasses hold references to the
     asset(s) they mutate and realise the effect in ``_realize_at_build_time``.
+
+    A draw without ``env_ids`` applies to every environment. To draw one value per
+    environment, pass ``env_ids=torch.arange(self.build_context.num_envs)`` (a tensor);
+    the variation recorder keeps each environment's value for all of its episodes.
     """
 
     @abstractmethod

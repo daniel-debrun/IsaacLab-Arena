@@ -17,9 +17,14 @@ import pytest
 from isaaclab.utils.configclass import configclass
 
 from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
-from isaaclab_arena.variations.choice_sampler import ChoiceSampler
+from isaaclab_arena.variations.choice_sampler import ChoiceSampler, ChoiceSamplerCfg
 from isaaclab_arena.variations.uniform_sampler import UniformSamplerCfg
-from isaaclab_arena.variations.variation_base import BuildTimeVariationBase, VariationBaseCfg
+from isaaclab_arena.variations.variation_base import (
+    BuildTimeVariationBase,
+    RunTimeVariationBase,
+    VariationBaseCfg,
+    VariationBuildContext,
+)
 from isaaclab_arena.variations.variation_recorder import VariationRecord, VariationRecorder
 
 HEADLESS = True
@@ -27,7 +32,7 @@ HEADLESS = True
 
 @configclass
 class _RecorderTestVariationCfg(VariationBaseCfg):
-    """Build-time variation cfg whose sampler draws a single scalar."""
+    """Variation cfg whose sampler draws a single scalar."""
 
     __test__ = False
 
@@ -49,6 +54,60 @@ class _RecorderTestVariation(BuildTimeVariationBase):
     def _realize_at_build_time(self) -> None:
         assert self.sampler is not None
         self.sampler.sample(num_samples=1)
+
+
+class _PerEnvRecorderTestVariation(BuildTimeVariationBase):
+    """Build-time variation that draws one value per environment of the build."""
+
+    __test__ = False
+
+    def __init__(self, name: str = "per_env_recorder_test"):
+        super().__init__(cfg=_RecorderTestVariationCfg(), name=name)
+
+    def _realize_at_build_time(self) -> None:
+        num_envs = self.build_context.num_envs
+        self.sampler.sample(num_samples=num_envs, env_ids=torch.arange(num_envs))
+
+
+class _RecorderTestRuntimeVariation(RunTimeVariationBase):
+    """Run-time variation whose samples the tests draw directly from its sampler."""
+
+    __test__ = False
+
+    def __init__(self, name: str = "runtime_recorder_test"):
+        super().__init__(cfg=_RecorderTestVariationCfg(), name=name)
+
+    def build_event_cfg(self):
+        raise NotImplementedError("Recorder tests draw from the sampler directly.")
+
+
+@configclass
+class _ChoiceRecorderTestVariationCfg(VariationBaseCfg):
+    """Variation cfg whose sampler draws items from a per-call list of choices."""
+
+    __test__ = False
+
+    sampler_cfg: ChoiceSamplerCfg = field(default_factory=ChoiceSamplerCfg)
+
+
+class _PerEnvChoiceRecorderTestVariation(BuildTimeVariationBase):
+    """Build-time variation that picks one name per environment from a seeded generator."""
+
+    __test__ = False
+
+    choices = ["apple", "banana", "cherry"]
+
+    def __init__(self, name: str = "per_env_choice_recorder_test"):
+        super().__init__(cfg=_ChoiceRecorderTestVariationCfg(), name=name)
+
+    def _realize_at_build_time(self) -> None:
+        num_envs = self.build_context.num_envs
+        self.sampler.sample(
+            num_envs,
+            choices=self.choices,
+            env_ids=torch.arange(num_envs),
+            generator=self.build_context.make_generator(),
+        )
 
 
 def test_uniform_sampler_notifies_listeners():
@@ -150,7 +209,7 @@ def test_record_variation_samples_emits_the_per_episode_draw():
     """The episode term emits the draw made for the finishing episode, one value per variation."""
     from isaaclab_arena.recording.common_terms import record_variation_samples
 
-    variation = _RecorderTestVariation()
+    variation = _RecorderTestRuntimeVariation()
     variation.enable()
     recorder = VariationRecorder()
     recorder.attach({"asset": [variation]})
@@ -161,12 +220,12 @@ def test_record_variation_samples_emits_the_per_episode_draw():
     variation.sampler.sample(num_samples=1, env_ids=torch.tensor([0]))
 
     fields = record_variation_samples(env, env_id=0)
-    sample = fields["variations"]["asset.recorder_test"]
+    sample = fields["variations"]["asset.runtime_recorder_test"]
     # The single (1,)-shaped draw is recorded as a flat list, not a list of draws.
     assert isinstance(sample, list) and len(sample) == 1
 
     recorder.release_episode(env_id=0, episode_idx=0)
-    assert recorder["asset.recorder_test"].sample_for_episode(0, 0) is None
+    assert recorder["asset.runtime_recorder_test"].sample_for_episode(0, 0) is None
 
     # A different env in the same episode has nothing recorded, so no variations field is emitted.
     assert record_variation_samples(env, env_id=1) == {}
@@ -211,6 +270,132 @@ def test_recorder_duplicate_asset_name_asserts():
     recorder.attach({"asset": [variation]})
     with pytest.raises(AssertionError):
         recorder.attach({"asset": [variation]})
+
+
+def test_recorder_keeps_per_env_build_time_samples_for_every_episode():
+    """A per-env build-time draw is recorded before bind_env and applies to every episode of its env."""
+    from isaaclab_arena.recording.common_terms import record_variation_samples
+
+    variation = _PerEnvRecorderTestVariation()
+    variation.enable()
+    recorder = VariationRecorder()
+    recorder.attach({"asset": [variation]})
+    drawn_samples = []
+    variation.add_sample_listener(lambda sample, _env_ids: drawn_samples.append(sample))
+
+    # No bind_env(): build-time draws happen before the env exists.
+    variation.configure_at_build_time(
+        VariationBuildContext(num_envs=2, seed=3, variation_key="asset.per_env_recorder_test")
+    )
+
+    (drawn,) = drawn_samples
+    record = recorder["asset.per_env_recorder_test"]
+    for env_id in (0, 1):
+        for episode_idx in (0, 5):
+            value = record.sample_for_episode(env_id, episode_idx)
+            assert value.device.type == "cpu"
+            assert value.tolist() == drawn[env_id].tolist()
+    assert record.sample_for_episode(2, 0) is None
+
+    # Releasing a finished episode drops only run-time samples; the env keeps its build-time value.
+    recorder.release_episode(env_id=1, episode_idx=0)
+    assert record.sample_for_episode(1, 1).tolist() == drawn[1].tolist()
+
+    env = _FakeEnv(recorder, episode_index=4)
+    recorder.bind_env(env)
+    assert record_variation_samples(env, env_id=1) == {"variations": {"asset.per_env_recorder_test": drawn[1].tolist()}}
+
+
+def test_recorder_keeps_per_env_build_time_choices_as_plain_values():
+    """A per-env ChoiceSampler draw is recorded per env and emitted as the chosen item, not a tensor."""
+    from isaaclab_arena.recording.common_terms import record_variation_samples
+
+    variation = _PerEnvChoiceRecorderTestVariation()
+    variation.enable()
+    recorder = VariationRecorder()
+    recorder.attach({"asset": [variation]})
+    drawn_samples = []
+    variation.add_sample_listener(lambda sample, _env_ids: drawn_samples.append(sample))
+
+    variation.configure_at_build_time(
+        VariationBuildContext(num_envs=3, seed=5, variation_key="asset.per_env_choice_recorder_test")
+    )
+
+    (drawn_names,) = drawn_samples
+    assert len(drawn_names) == 3
+    record = recorder["asset.per_env_choice_recorder_test"]
+    env = _FakeEnv(recorder, episode_index=2)
+    recorder.bind_env(env)
+    for env_id, drawn_name in enumerate(drawn_names):
+        assert drawn_name in _PerEnvChoiceRecorderTestVariation.choices
+        assert record.sample_for_episode(env_id, 0) == drawn_name
+        assert record.sample_for_episode(env_id, 2) == drawn_name
+        assert record_variation_samples(env, env_id=env_id) == {
+            "variations": {"asset.per_env_choice_recorder_test": drawn_name}
+        }
+
+
+def test_runtime_variation_routing_is_unchanged():
+    """Run-time variations: shared draws are shared, per-env draws need bind_env and belong to one episode."""
+    variation = _RecorderTestRuntimeVariation()
+    variation.enable()
+    recorder = VariationRecorder()
+    recorder.attach({"asset": [variation]})
+    record = recorder["asset.runtime_recorder_test"]
+
+    # A run-time variation may draw a shared value during the build (e.g. in _prepare_at_build_time).
+    shared_draw = variation.sampler.sample(num_samples=1)
+    assert record.sample_for_episode(4, 2).tolist() == shared_draw[0].tolist()
+
+    with pytest.raises(AssertionError, match="needs bind_env"):
+        variation.sampler.sample(num_samples=1, env_ids=torch.tensor([0]))
+
+    recorder.bind_env(_FakeEnv(recorder, episode_index=3))
+    episode_draw = variation.sampler.sample(num_samples=1, env_ids=torch.tensor([0]))
+    assert record.sample_for_episode(0, 3).tolist() == episode_draw[0].tolist()
+    # Other episodes of env 0 still report the shared draw.
+    assert record.sample_for_episode(0, 2).tolist() == shared_draw[0].tolist()
+
+
+def test_build_time_record_rejects_invalid_per_env_draws_without_partial_writes():
+    record = VariationRecord(name="asset.var", cfg=_RecorderTestVariationCfg())
+    record.record_buildtime_sample(torch.tensor([[1.0], [2.0]]), env_ids=[0, 2])
+
+    with pytest.raises(AssertionError, match="already recorded a build-time sample"):
+        record.record_buildtime_sample(torch.tensor([[3.0], [4.0]]), env_ids=[1, 2])
+    # The rejected draw wrote nothing: env 1 is still unrecorded and env 2 keeps its value.
+    assert record.sample_for_episode(1, 0) is None
+    assert record.sample_for_episode(2, 0).tolist() == [2.0]
+
+    with pytest.raises(AssertionError, match="repeats an environment id"):
+        record.record_buildtime_sample(torch.tensor([[5.0], [6.0]]), env_ids=[3, 3])
+    assert record.sample_for_episode(3, 0) is None
+
+    with pytest.raises(AssertionError, match="rows for"):
+        record.record_buildtime_sample(torch.tensor([[7.0]]), env_ids=[4, 5])
+    assert record.sample_for_episode(4, 0) is None
+
+    with pytest.raises(AssertionError, match="mixes shared and per-environment"):
+        record.record_buildtime_sample(torch.tensor([[8.0]]))
+    assert record.sample_for_episode(6, 0) is None
+
+    # A later per-env draw for envs without a value is accepted and leaves earlier values in place.
+    record.record_buildtime_sample(torch.tensor([[9.0]]), env_ids=[1])
+    assert record.sample_for_episode(1, 0).tolist() == [9.0]
+    assert record.sample_for_episode(2, 0).tolist() == [2.0]
+
+
+def test_build_time_record_rejects_per_env_draw_after_shared_draw():
+    record = VariationRecord(name="asset.var", cfg=_RecorderTestVariationCfg())
+    record.record_buildtime_sample(torch.tensor([[1.0]]))
+
+    with pytest.raises(AssertionError, match="mixes shared and per-environment"):
+        record.record_buildtime_sample(torch.tensor([[2.0]]), env_ids=[0])
+    assert record.sample_for_episode(0, 0).tolist() == [1.0]
+
+    # A repeated shared draw replaces the earlier one, as on main.
+    record.record_buildtime_sample(torch.tensor([[3.0]]))
+    assert record.sample_for_episode(0, 0).tolist() == [3.0]
 
 
 def _test_hdr_variation_recorder_captures_chosen_hdr_name(simulation_app):
