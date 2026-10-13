@@ -31,7 +31,10 @@ class RigidObjectSet(Object):
         Args:
             name: The name of the object set.
             objects: The list of objects to be included in the object set. Each member spawns from a copy
-                of its own object_cfg.spawn, taken when the set is built.
+                of its own object_cfg.spawn, taken when the set is built, so configure each member before
+                building the set. Set-wide settings can be changed on the set's object_cfg.spawn, but
+                per-environment assignment rebuilds the entries in object_cfg.spawn.assets_cfg from these
+                copies.
             prim_path: The prim path of the object set. Note that for all environments, the object set
                 prim path must be the same.
             random_choice: Whether to randomly choose an object from the object set to spawn in
@@ -94,7 +97,7 @@ class RigidObjectSet(Object):
         """Fix one member-variant index per environment.
 
         The assignment is fixed for the lifetime of the object set so spawned
-        USDs and per-env bboxes stay aligned across placement refills.
+        members and per-env bboxes stay aligned across placement refills.
         Subsequent calls with the same num_envs are no-ops. A call with a
         different num_envs regenerates with a warning. When random_choice is True, each env
         independently samples one variant; otherwise assignments repeat the
@@ -175,9 +178,11 @@ class RigidObjectSet(Object):
         ), f"RigidObjectSet '{self.name}' variant indices must be in [0, {n}); got {variant_indices_by_env}."
         self.variant_indices_by_env = variant_indices_by_env
         if isinstance(self.spawner_cfg, sim_utils.MultiAssetSpawnerCfg):
-            # With one spawn entry per environment, Isaac Lab's default sequential cloning gives environment i
-            # the entry i. Entries come from the declared members, so a second assignment does not compound;
-            # set-wide settings made on the live config are kept.
+            # When this set is the scene's only multi-entry spawner, Isaac Lab's default sequential cloning
+            # gives environment i the entry i. With several such sets the cloner enumerates the product of their
+            # entries, so this mapping does not hold until the assignment is pinned through the clone strategy.
+            # Entries come from the member copies taken when the set was built, so a second assignment does not
+            # compound and edits to entries of the live config are replaced; set-wide settings on it are kept.
             member_spawn_cfgs = self.spawner_cfg.assets_cfg
             spawn_cfgs_by_env = [deepcopy(member_spawn_cfgs[idx]) for idx in variant_indices_by_env]
             self.object_cfg.spawn = self.object_cfg.spawn.replace(assets_cfg=spawn_cfgs_by_env)

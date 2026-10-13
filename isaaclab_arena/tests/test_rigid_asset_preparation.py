@@ -570,7 +570,8 @@ def _test_relocation_requires_exactly_one_rigid_body(simulation_app, tmp_path):
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
     with patch(CACHE_DIR_TARGET, return_value=cache_dir):
-        # Matching paths take the fast path, which keeps main's shallowest-body rule.
+        # Matching body paths take the fast path, which picks the shallowest rigid body and does not require exactly
+        # one.
         aligned = align_rigid_body_paths([_make_spawn_cfg(two_body_path), _make_spawn_cfg(two_body_path)])
         assert [spawn_cfg.usd_path for spawn_cfg in aligned] == [str(two_body_path)] * 2
         # In the second order the nested member relocates fine before the two-body member is rejected.

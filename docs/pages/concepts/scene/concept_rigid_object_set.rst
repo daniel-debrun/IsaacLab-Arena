@@ -11,7 +11,8 @@ Motivation
 A plain ``Object`` clones the same USD into every environment. To spawn a
 different object per env without rewriting the environment definition, wrap the
 candidates in a ``RigidObjectSet``. Arena assigns one member per environment
-before spawn and uses that member's USD and bounding box for placement.
+before spawn and uses that member's spawn configuration and bounding box for
+placement.
 
 **Example.** Suppose the task is to pick a fruit and place it in a bowl. With a
 single ``Object``, every parallel environment tests the same fruit. With a
@@ -28,7 +29,7 @@ differs across environments.
 
 When the environment is built and ``num_envs`` is known, Arena assigns one
 member to each environment. That choice is locked for the run, so the spawned
-USD and the geometry used by the placement solver stay aligned.
+member and the geometry used by the placement solver stay aligned.
 
 How members are chosen:
 
@@ -51,12 +52,18 @@ Each member spawns from a copy of its own spawn configuration
 (``member.object_cfg.spawn``), taken when the set is built. Its scale, physics
 properties, USD variant selections and materials stay as configured. Later
 edits to the member do not change what the set spawns, but the set's placement
-bounds still read the member objects. A member may also be a primitive
-shape, for example an ``Object`` with ``spawner_cfg=CuboidCfg(...)`` and
-``rigid_props`` set. A member built from ``spawner_cfg`` (for example a
-primitive shape) keeps its own ``activate_contact_sensors`` value, which
-defaults to ``False``, so set it to ``True`` when a task needs contact sensing.
-Members built from ``usd_path`` have it enabled.
+bounds still read the member objects, so configure each member before building
+the set. Set-wide settings can be changed on the set's ``object_cfg.spawn``.
+Per-environment assignment rebuilds the entries in
+``object_cfg.spawn.assets_cfg`` from the member copies, so edits to those
+entries are replaced.
+
+A member may also be a primitive shape, for example an ``Object`` with
+``spawner_cfg=CuboidCfg(...)`` and ``rigid_props`` set. A member built from
+``spawner_cfg`` (for example a primitive shape) keeps its own
+``activate_contact_sensors`` value, which defaults to ``False``, so set it to
+``True`` when a task needs contact sensing. Members built from ``usd_path`` have
+it enabled.
 
 How to Use
 ----------
@@ -155,7 +162,8 @@ Limitations
   ``visual_material_bindings``, ``physics_material_prim_path``, and a relative
   ``visual_material_path`` when ``visual_material`` is set, are rejected. The
   copy keeps materials and bakes in the USD variant selections. An authored
-  rotation on the asset's root is dropped, as when Isaac Lab spawns it.
+  translation or rotation on the asset's root is dropped, as when Isaac Lab
+  spawns it.
 - **Single-box geometry has a fallback.** ``get_bounding_box()`` returns one box
   from the tallest member; per-environment placement uses
   ``get_bounding_box_per_env()`` instead.

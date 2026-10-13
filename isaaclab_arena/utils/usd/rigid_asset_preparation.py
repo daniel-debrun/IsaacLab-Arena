@@ -46,15 +46,15 @@ _CACHE_LAYOUT_VERSION = "rigid-layout-v1"
 def align_rigid_body_paths(spawn_cfgs: Sequence[SpawnerCfg]) -> list[SpawnerCfg]:
     """Return copies of the spawn configurations with their rigid bodies at one common path.
 
-    When the body paths already agree, the copies are unchanged and nothing is written. Otherwise every member
-    must be a USD asset and gets a cached copy with its body at /rigid_body and its USD variant selections
-    baked in.
+    When the body paths already agree, the copies are unchanged and nothing is written. Otherwise every spawn
+    configuration must be a UsdFileCfg and gets a cached copy with its body at /rigid_body and its USD variant
+    selections baked in.
 
     Args:
-        spawn_cfgs: One native spawn configuration per member, in member order.
+        spawn_cfgs: Native spawn configurations.
 
     Returns:
-        One spawn configuration per member, in the same order.
+        The aligned spawn configurations, in input order.
     """
     assert spawn_cfgs, "At least one spawn configuration is required."
     geometries = [SpawnCfgGeometry(spawn_cfg) for spawn_cfg in spawn_cfgs]
@@ -63,11 +63,12 @@ def align_rigid_body_paths(spawn_cfgs: Sequence[SpawnerCfg]) -> list[SpawnerCfg]
         return [deepcopy(spawn_cfg) for spawn_cfg in spawn_cfgs]
     for spawn_cfg in spawn_cfgs:
         assert isinstance(spawn_cfg, UsdFileCfg), (
-            "Members with different rigid-body paths must be USD assets, so their bodies can be moved to one path; "
-            f"got {type(spawn_cfg).__name__} and rigid-body paths {body_paths}."
+            "Spawn configurations with different rigid-body paths must be USD assets, so their bodies can be moved "
+            f"to one path; got {type(spawn_cfg).__name__} and rigid-body paths {body_paths}."
         )
         _assert_relocatable(spawn_cfg)
-    # Build every relocated layer before writing any file, so a rejected member leaves no cache files behind.
+    # Build every relocated layer before writing any file, so a rejected spawn configuration leaves no cache files
+    # behind.
     relocated_layers = [
         _relocate_rigid_body(geometry, body_path) for geometry, body_path in zip(geometries, body_paths)
     ]
@@ -90,7 +91,7 @@ def _assert_relocatable(spawn_cfg: UsdFileCfg) -> None:
             continue
         assert not _selects_prims_by_path(getattr(spawn_cfg, spawn_field.name)), (
             f"Cannot relocate {source}: {spawn_field.name} uses schema fragments or target patterns. "
-            "Use a properties config such as MassPropertiesCfg, or members with the same rigid-body path."
+            "Use a properties config such as MassPropertiesCfg, or spawn configurations with the same rigid-body path."
         )
     assert (
         not spawn_cfg.visual_material_bindings
@@ -149,8 +150,8 @@ def _relocate_rigid_body(geometry: SpawnCfgGeometry, body_path: str) -> Sdf.Laye
     """Return a flattened copy of one USD asset with its rigid body moved to /rigid_body.
 
     Args:
-        geometry: Geometry of the member's spawn configuration, which must be a UsdFileCfg.
-        body_path: The member's rigid-body path relative to its default prim, "" for the default prim.
+        geometry: Geometry of a UsdFileCfg spawn configuration.
+        body_path: Its rigid-body path relative to the default prim, "" for the default prim.
 
     Returns:
         The relocated layer, not yet written to the cache.
