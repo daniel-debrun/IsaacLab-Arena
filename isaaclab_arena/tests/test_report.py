@@ -642,3 +642,21 @@ def test_mixed_report_keeps_replay_out_of_policy_comparison(tmp_path):
     run_page = (tmp_path / "report/job_task_controller.html").read_text(encoding="utf-8")
     assert '<div class="label">Success rate</div><div class="value">50%</div>' in run_page
     assert "Robot execution not evaluated" not in run_page
+
+
+def test_unrelated_scene_replay_keeps_robot_policy_comparison_matrix(tmp_path):
+    for run_name in ("task_pi0", "task_gr00t", "replay"):
+        _write_run(tmp_path, run_name, num_episodes=1)
+    (tmp_path / "arena_experiment_result.json").write_text(
+        json.dumps({"runs": {"replay": {"execution_kind": "object_state_replay"}}}), encoding="utf-8"
+    )
+
+    report_path = build_report(tmp_path)
+
+    index = report_path.read_text(encoding="utf-8")
+    comparison = index.split("<h2>Success rate by task and policy</h2>")[1].split("</section>")[0]
+    assert "pi0" in comparison and "gr00t" in comparison
+    assert "replay" not in comparison
+    assert "<h2>Scene replays</h2>" in index
+    assert (tmp_path / "report/task_task.html").is_file()
+    assert (tmp_path / "report/job_replay.html").is_file()

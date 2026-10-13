@@ -820,12 +820,26 @@ def build_experiment_summary(
     }
     scanned = [entry for entry in scanned if entry.name not in failed_run_names]
 
-    labels, grouping_source = _resolve_job_labels([entry.name for entry in scanned], policy_suffixes)
+    robot_job_names = []
+    replay_job_names = []
+    execution_kind_by_job = {}
+    for scanned_job in scanned:
+        # A Run can store recorder artifacts in nested directories.
+        run_name = pathlib.PurePath(scanned_job.name).parts[0] if scanned_job.name else ""
+        execution_kind = execution_kinds.get(run_name, "robot_actions")
+        execution_kind_by_job[scanned_job.name] = execution_kind
+        if execution_kind == "object_state_replay":
+            replay_job_names.append(scanned_job.name)
+        else:
+            robot_job_names.append(scanned_job.name)
+
+    # Diagnostic Run names must not change how robot policies are compared.
+    labels, grouping_source = _resolve_job_labels(robot_job_names, policy_suffixes)
+    replay_labels, _ = _resolve_job_labels(replay_job_names, policy_suffixes)
+    labels.update(replay_labels)
     jobs_by_task: dict[str, list[JobSummary]] = {}
     for scanned_job in scanned:
         task, policy = labels[scanned_job.name]
-        # A Run can store recorder artifacts in nested directories.
-        run_name = pathlib.PurePath(scanned_job.name).parts[0] if scanned_job.name else ""
         jobs_by_task.setdefault(task, []).append(
             JobSummary(
                 name=scanned_job.name,
@@ -834,7 +848,7 @@ def build_experiment_summary(
                 cameras=scanned_job.cameras,
                 episodes=scanned_job.episodes,
                 issues=scanned_job.issues,
-                execution_kind=execution_kinds.get(run_name, "robot_actions"),
+                execution_kind=execution_kind_by_job[scanned_job.name],
             )
         )
 

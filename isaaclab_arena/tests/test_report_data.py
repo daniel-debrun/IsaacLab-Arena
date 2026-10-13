@@ -619,3 +619,29 @@ def test_report_rejects_unknown_execution_kind_instead_of_counting_it_as_robot_e
 
     with pytest.raises(AssertionError, match="execution_kind for Run"):
         build_experiment_summary(tmp_path, "Test")
+
+
+@pytest.mark.parametrize("replay_name", ["replay", "scene_preview", "task_replay"])
+@pytest.mark.parametrize("policy_suffixes", [(), ("pi0", "gr00t", "replay")])
+def test_scene_replay_names_do_not_change_robot_policy_grouping(tmp_path, replay_name, policy_suffixes):
+    record = {"env_id": 0, "episode_in_env": 0, "success": True}
+    for run_name in ("task_pi0", "task_gr00t"):
+        _write_run(tmp_path, run_name, [record])
+    original = build_experiment_summary(tmp_path, "Test", policy_suffixes=policy_suffixes)
+    assert original.is_grouped
+
+    _write_run(tmp_path, replay_name, [record])
+    (tmp_path / "arena_experiment_result.json").write_text(
+        json.dumps({"runs": {replay_name: {"execution_kind": "object_state_replay"}}}), encoding="utf-8"
+    )
+    with_replay = build_experiment_summary(tmp_path, "Test", policy_suffixes=policy_suffixes)
+
+    assert with_replay.is_grouped
+    assert with_replay.grouping_source == original.grouping_source
+    assert with_replay.policies == original.policies == ["gr00t", "pi0"]
+    assert [(job.name, job.task, job.policy) for job in with_replay.robot_action_jobs] == [
+        (job.name, job.task, job.policy) for job in original.robot_action_jobs
+    ]
+    if replay_name == "task_replay" and policy_suffixes:
+        replay = with_replay.scene_replay_jobs[0]
+        assert (replay.task, replay.policy) == ("task", "replay")
