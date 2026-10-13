@@ -754,9 +754,9 @@ head<span class="w"> </span>-n<span class="w"> </span><span class="m">1</span><s
 </div>
 <p>The line count must match the reported accepted count. Inspecting the first
 record shows the format; it does not validate the whole file.
-Under <code class="docutils literal notranslate"><span class="pre">variations[&quot;scene.relation_placement&quot;]</span></code>, check:</p>
+Under the top-level <code class="docutils literal notranslate"><span class="pre">placement</span></code> field, check:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">source</span></code> is <code class="docutils literal notranslate"><span class="pre">&quot;settled&quot;</span></code>, and <code class="docutils literal notranslate"><span class="pre">poses</span></code> contains the recorded physics roots.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">layout_id</span></code> identifies the sample, and <code class="docutils literal notranslate"><span class="pre">poses</span></code> contains the recorded physics roots.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">validation.post_physics</span></code> reports <code class="docutils literal notranslate"><span class="pre">passed:</span> <span class="pre">true</span></code> for applicable checks;
 skipped checks have <code class="docutils literal notranslate"><span class="pre">passed:</span> <span class="pre">null</span></code> and a reason.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">validation.pre_physics</span></code> stores solver verdicts, and <code class="docutils literal notranslate"><span class="pre">validation.sampling</span></code>
@@ -767,7 +767,7 @@ stores the settling duration and robot roots excluded from link checks.</p></li>
 </section>
 <section id="replay-placement-layouts">
 <span id="placement-recording-replay"></span><h2>Replay Placement Layouts<a class="headerlink" href="#replay-placement-layouts" title="Link to this heading">#</a></h2>
-<p>Set <code class="docutils literal notranslate"><span class="pre">environment_builder.placement_layouts_path</span></code> in an
+<p>Set <code class="docutils literal notranslate"><span class="pre">environment_builder.recorded_variation_samples_path</span></code> in an
 <a class="reference internal" href="../concept_arena_experiments.html"><span class="doc">Experiment Definition</span></a> to load the recording:</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">runs</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">clamp_replay</span><span class="p">:</span>
@@ -776,7 +776,7 @@ stores the settling duration and robot roots excluded from link checks.</p></li>
 <span class="w">    </span><span class="nt">environment_builder</span><span class="p">:</span>
 <span class="w">      </span><span class="nt">num_envs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
 <span class="w">      </span><span class="nt">presets</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PHYSX</span>
-<span class="w">      </span><span class="nt">placement_layouts_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">outputs/placements/clamp.jsonl</span>
+<span class="w">      </span><span class="nt">recorded_variation_samples_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">isaaclab_arena_environments/experiment_configs/placement_record_replay/clamp_placement_replay.jsonl</span>
 <span class="w">    </span><span class="nt">policy</span><span class="p">:</span>
 <span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">zero_action</span>
 <span class="w">    </span><span class="nt">rollout_limit</span><span class="p">:</span>
@@ -785,7 +785,7 @@ stores the settling duration and robot roots excluded from link checks.</p></li>
 </div>
 <p>Run this command to replay the recording with the experiment definition above:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>isaaclab_arena/evaluation/experiment_runner.py<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--experiment_config<span class="w"> </span>isaaclab_arena_environments/experiment_configs/settled_placement_replay_experiment.yaml<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--experiment_config<span class="w"> </span>isaaclab_arena_environments/experiment_configs/placement_record_replay/settled_placement_replay_experiment.yaml<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--device<span class="w"> </span>cpu<span class="w"> </span>--viz<span class="w"> </span>kit<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--output_base_dir<span class="w"> </span>outputs/placements/evaluation
 </pre></div>

@@ -669,15 +669,15 @@ randomized properties still follow the environment’s reset configuration.</p>
 <span class="s">path = Path("outputs/clutter/tools_on_table.jsonl")</span>
 <span class="s">records = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]</span>
 <span class="s">assert len(records) == 1, f"Expected one layout, got {len(records)}"</span>
-<span class="s">placement = records[0]["variations"]["scene.relation_placement"]</span>
-<span class="s">print("Source:", placement["source"])</span>
+<span class="s">placement = records[0]["placement"]</span>
+<span class="s">print("Layout:", placement["layout_id"])</span>
 <span class="s">print("Roots:", sorted(placement["poses"]))</span>
 <span class="s">print(json.dumps(placement["validation"], indent=2))</span>
 <span class="s">PYTHON</span>
 </pre></div>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">source</span></code>, <code class="docutils literal notranslate"><span class="pre">poses</span></code>, and <code class="docutils literal notranslate"><span class="pre">validation</span></code> all belong to the
-<code class="docutils literal notranslate"><span class="pre">scene.relation_placement</span></code> variation. An enabled, applicable post-physics check
+<p><code class="docutils literal notranslate"><span class="pre">layout_id</span></code>, <code class="docutils literal notranslate"><span class="pre">poses</span></code>, and <code class="docutils literal notranslate"><span class="pre">validation</span></code> all belong to the top-level
+<code class="docutils literal notranslate"><span class="pre">placement</span></code> record. An enabled, applicable post-physics check
 must have <code class="docutils literal notranslate"><span class="pre">passed:</span> <span class="pre">true</span></code>. <code class="docutils literal notranslate"><span class="pre">passed:</span> <span class="pre">null</span></code> denotes a skipped check with a reason.</p>
 <p>For larger targets, exhausting the batch budget can produce a <strong>partial file</strong>.
 Every layout in that file has passed the same checks. With zero accepts,
@@ -689,16 +689,16 @@ if too few layouts are accepted.</p>
 <section id="replay-in-the-viewer">
 <h3>Replay in the Viewer<a class="headerlink" href="#replay-in-the-viewer" title="Link to this heading">#</a></h3>
 <p>Load the same scene and the file just recorded:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>isaaclab_arena/scripts/environment_runner.py<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--env_spec<span class="w"> </span>isaaclab_arena_environments/clutter/franka_three_hammers_and_clamp_no_task.yaml<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--placement_layouts<span class="w"> </span>outputs/clutter/tools_on_table.jsonl<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--num_envs<span class="w"> </span><span class="m">1</span><span class="w"> </span>--device<span class="w"> </span>cpu<span class="w"> </span>--viz<span class="w"> </span>kit
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>isaaclab_arena/evaluation/experiment_runner.py<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--experiment_config<span class="w"> </span>isaaclab_arena_environments/experiment_configs/placement_record_replay/clutter_replay_tools_experiment.yaml<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--device<span class="w"> </span>cpu<span class="w"> </span>--viz<span class="w"> </span>kit<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--output_base_dir<span class="w"> </span>outputs/clutter/tools_replay
 </pre></div>
 </div>
-<p>The viewer starts with the recorded arrangement. These examples use <code class="docutils literal notranslate"><span class="pre">NoTask</span></code>:
-they load the first layout and do not trigger episode resets. Close the viewer
-or press Ctrl-C to exit. Physics continues after reset. Keep the same backend,
-asset geometry and joint-reset configuration when replaying the recording.</p>
+<p>The viewer starts with the recorded arrangement. These examples use a short
+finite timeout so the experiment records one completed episode and exits.
+Keep the same backend, asset geometry and joint-reset configuration when
+replaying the recording.</p>
 <p>For policy evaluation, configure the same scene in an Experiment and pass this
 file as its placement layouts. Follow the <a class="reference internal" href="recording.html#placement-recording-replay"><span class="std std-ref">evaluation replay instructions</span></a> and <a class="reference internal" href="../object_placement/relations.html#placement-replay-configuration"><span class="std std-ref">Replay Configuration</span></a>;
 an experiment using a different scene’s root names cannot replay this file.
@@ -768,10 +768,10 @@ penetration. Inspect the contacts as well as the saved validation reports.</p>
 <p>Success produces one row in <code class="docutils literal notranslate"><span class="pre">outputs/clutter/three_cubes_in_bowl.jsonl</span></code>.
 Inspect it with the earlier Python snippet, changing <code class="docutils literal notranslate"><span class="pre">path</span></code> to this bowl
 recording, then open the viewer:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>isaaclab_arena/scripts/environment_runner.py<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--env_spec<span class="w"> </span>isaaclab_arena_environments/clutter/franka_three_cubes_in_bowl_no_task.yaml<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--placement_layouts<span class="w"> </span>outputs/clutter/three_cubes_in_bowl.jsonl<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--num_envs<span class="w"> </span><span class="m">1</span><span class="w"> </span>--device<span class="w"> </span>cpu<span class="w"> </span>--viz<span class="w"> </span>kit
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>isaaclab_arena/evaluation/experiment_runner.py<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--experiment_config<span class="w"> </span>isaaclab_arena_environments/experiment_configs/placement_record_replay/clutter_replay_bowls_experiment.yaml<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--device<span class="w"> </span>cpu<span class="w"> </span>--viz<span class="w"> </span>kit<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--output_base_dir<span class="w"> </span>outputs/clutter/bowls_replay
 </pre></div>
 </div>
 </section>
