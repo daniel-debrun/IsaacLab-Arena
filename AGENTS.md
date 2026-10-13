@@ -62,6 +62,7 @@ Lint and format tooling (`pre-commit` and the hooks it runs — black, flake8, i
 - Prefer one line; a 2–3 line paragraph may follow if needed.
 - The docstring should describe the function’s calling syntax and its semantics, but generally not its
     implementation details, unless those details are relevant to how the function is to be used.
+- Describe what the code is and does, not who calls it or which features use it. Caller lists go stale.
 - Document `Args` and `Returns`, but **not** `Raises`. Omit `Returns` when it only returns None
     or the summary already covers it.
 - Don't use Sphinx-style cross-references.
