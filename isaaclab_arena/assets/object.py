@@ -66,6 +66,9 @@ class Object(RootedObjectBase):
         self.asset_cfg_addon = asset_cfg_addon
         self.bounding_box: AxisAlignedBoundingBox | None = None
         """Explicit local bounds. None derives bounds from object_cfg.spawn."""
+        # TODO(cvolk, 2026.10.13): Replace this per-object cache with one cache in spawn_cfg_geometry.py
+        # shared across objects, keyed by get_geometry_key(), so objects and asset-selection candidates that
+        # use the same asset compute its geometry once.
         self._spawn_cfg_geometry_by_key: dict[tuple, SpawnCfgGeometry] = {}
         """Geometry per spawn configuration, keyed by get_geometry_key(). Editing a geometric setting of
         object_cfg.spawn, or replacing it, gives a new key and new geometry. Physics or appearance edits
