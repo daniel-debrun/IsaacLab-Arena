@@ -167,9 +167,9 @@ def _test_builder_passes_build_context_and_records_per_env_samples(simulation_ap
     per_env_variation = PerEnvContextReadingVariation()
     per_env_variation.enable()
     sphere.add_variation(per_env_variation)
-    runtime_context_variation = RunTimeContextReadingVariation()
-    runtime_context_variation.enable()
-    sphere.add_variation(runtime_context_variation)
+    run_time_context_variation = RunTimeContextReadingVariation()
+    run_time_context_variation.enable()
+    sphere.add_variation(run_time_context_variation)
     args_cli = get_isaaclab_arena_cli_parser().parse_args(["--num_envs", str(TEST_NUM_ENVS), "--seed", str(TEST_SEED)])
 
     _, env_kwargs = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).compose_manager_cfg()
@@ -178,7 +178,7 @@ def _test_builder_passes_build_context_and_records_per_env_samples(simulation_ap
         VariationBuildContext(num_envs=TEST_NUM_ENVS, seed=TEST_SEED, variation_key="sphere.per_env_context_reading")
     ]
     # Run-time variations get the context too, for their build-time preparation.
-    assert runtime_context_variation.received_build_contexts == [
+    assert run_time_context_variation.received_build_contexts == [
         VariationBuildContext(num_envs=TEST_NUM_ENVS, seed=TEST_SEED, variation_key="sphere.run_time_context_reading")
     ]
     variation_recorder = env_kwargs["variation_recorder"]

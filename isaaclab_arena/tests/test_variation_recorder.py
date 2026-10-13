@@ -149,8 +149,8 @@ def test_variation_listener_survives_sampler_swap():
     assert sample.item() == pytest.approx(2.0, abs=1e-6)
 
 
-def test_recorder_records_build_time_sample_for_every_episode():
-    """A build-time draw (env_ids=None) is recorded and surfaced for every env/episode."""
+def test_recorder_records_shared_build_time_sample_for_every_env_and_episode():
+    """A shared build-time draw (no env_ids) is recorded and reported for every env and episode."""
     variation = _SharedBuildTimeVariation()
     variation.enable()
     recorder = VariationRecorder()
@@ -164,7 +164,7 @@ def test_recorder_records_build_time_sample_for_every_episode():
     value = record.sample_for_episode(0, 0)
     # Tensor samples are stored detached on CPU.
     assert value.device.type == "cpu"
-    # A build-time draw applies to every env and episode, not just (0, 0).
+    # A shared draw applies to every env and episode, not just (0, 0).
     assert record.sample_for_episode(7, 3).tolist() == value.tolist()
     recorder.release_episode(7, 3)
     assert record.sample_for_episode(7, 3).tolist() == value.tolist()
@@ -236,16 +236,16 @@ def test_record_placement_sample_uses_sampler_listener_without_variation():
     """Placement shares episode attribution but is emitted outside ``variations``."""
     from isaaclab_arena.recording.common_terms import record_placement_sample
 
-    variation = _SharedBuildTimeVariation()
+    placement_sampler = UniformSamplerCfg(low=[0.0], high=[1.0]).build()
     recorder = VariationRecorder()
     recorder.attach_placement_sampler(
-        variation.sampler,
+        placement_sampler,
         serializer=lambda sample: [{"pose": row.tolist()} for row in sample],
     )
     env = _FakeEnv(recorder, episode_index=2)
     recorder.bind_env(env)
 
-    variation.sampler.sample(num_samples=1, env_ids=torch.tensor([3]))
+    placement_sampler.sample(num_samples=1, env_ids=torch.tensor([3]))
 
     fields = record_placement_sample(env, env_id=3)
     assert fields.keys() == {"placement"}
@@ -368,7 +368,7 @@ def test_recorder_keeps_per_env_run_time_samples_for_one_episode():
         pytest.param(torch.tensor([[3.0]]), [3, 4], "rows for", id="row_count_mismatch"),
     ],
 )
-def test_build_time_record_rejects_invalid_per_env_draw_and_records_nothing(sample, env_ids, expected_error):
+def test_record_rejects_invalid_per_env_build_time_draw_and_records_nothing(sample, env_ids, expected_error):
     record = VariationRecord(name="asset.var", cfg=_ScalarVariationCfg())
     record.record_per_env_build_time_samples(torch.tensor([[1.0], [2.0]]), env_ids=[0, 2])
 
@@ -382,7 +382,7 @@ def test_build_time_record_rejects_invalid_per_env_draw_and_records_nothing(samp
         assert record.sample_for_episode(env_id, 0) is None
 
 
-def test_build_time_record_rejects_shared_draw_after_per_env_draw():
+def test_record_rejects_shared_draw_after_per_env_build_time_draw():
     record = VariationRecord(name="asset.var", cfg=_ScalarVariationCfg())
     record.record_per_env_build_time_samples(torch.tensor([[1.0]]), env_ids=[0])
 
@@ -390,9 +390,13 @@ def test_build_time_record_rejects_shared_draw_after_per_env_draw():
         record.record_shared_sample(torch.tensor([[2.0]]))
     # A stored shared value would show up for every env without its own value.
     assert record.sample_for_episode(1, 0) is None
+    # The rejected shared draw does not block a later per-env draw for another env.
+    record.record_per_env_build_time_samples(torch.tensor([[3.0]]), env_ids=[1])
+    assert record.sample_for_episode(0, 0).tolist() == [1.0]
+    assert record.sample_for_episode(1, 0).tolist() == [3.0]
 
 
-def test_build_time_record_rejects_per_env_draw_after_shared_draw():
+def test_record_rejects_per_env_build_time_draw_after_shared_draw():
     record = VariationRecord(name="asset.var", cfg=_ScalarVariationCfg())
     record.record_shared_sample(torch.tensor([[1.0]]))
 
@@ -401,7 +405,7 @@ def test_build_time_record_rejects_per_env_draw_after_shared_draw():
     assert record.sample_for_episode(0, 0).tolist() == [1.0]
 
 
-def test_build_time_record_accepts_a_later_per_env_draw_for_other_envs():
+def test_record_accepts_a_later_per_env_build_time_draw_for_other_envs():
     record = VariationRecord(name="asset.var", cfg=_ScalarVariationCfg())
     record.record_per_env_build_time_samples(torch.tensor([[1.0], [2.0]]), env_ids=[0, 2])
 
