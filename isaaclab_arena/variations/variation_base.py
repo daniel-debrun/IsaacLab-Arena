@@ -12,7 +12,7 @@ variations subclass one of two flavors:
 
 * :class:`RunTimeVariationBase` — realised via an event term during simulation
   (e.g. per-reset randomization).
-* :class:`BuildTimeVariationBase` — sampled once and applied to asset configs
+* :class:`BuildTimeVariationBase` — drawn once per build and applied to asset configs
   before the env cfg is composed (e.g. picking a dome-light HDR).
 """
 
@@ -36,14 +36,11 @@ if TYPE_CHECKING:
 
 
 def get_variation_key(asset_name: str, variation_name: str) -> str:
-    """Return the key that names a variation in a build, in its recorded samples and in replay.
+    """Return the ``"<asset_name>.<variation_name>"`` key that identifies a variation in an environment.
 
     Args:
         asset_name: Name of the asset the variation is registered on.
         variation_name: Name of the variation on that asset.
-
-    Returns:
-        The key ``"<asset_name>.<variation_name>"``.
     """
     return f"{asset_name}.{variation_name}"
 
@@ -56,7 +53,10 @@ class VariationBuildContext:
     """Number of parallel environments in the build."""
 
     seed: int | None
-    """Environment builder seed, or None for a build that is not reproducible."""
+    """Seed of this environment build, ArenaEnvBuilderCfg.seed.
+
+    With None, make_generator seeds from system entropy, so draws do not repeat.
+    """
 
     variation_key: str
     """Key of the variation in this build, as returned by get_variation_key."""
@@ -73,11 +73,12 @@ class VariationBuildContext:
         ), f"VariationBuildContext.variation_key must be a non-empty string; got {self.variation_key!r}."
 
     def make_generator(self) -> torch.Generator:
-        """Return a new CPU generator for this variation's random draws in this build.
+        """Return a CPU generator for this variation's random draws in this build.
 
         The stream depends only on seed and variation_key: a build with the same seed repeats it,
         other variations get independent streams, and the global torch random state is neither read
-        nor advanced. A None seed seeds the generator from system entropy.
+        nor advanced. Each call starts the stream again, so make all of the variation's draws in a
+        build from one generator. With a None seed, each generator is seeded from system entropy.
         """
         generator = torch.Generator(device="cpu")
         if self.seed is None:
@@ -105,8 +106,9 @@ class VariationBase(ABC):
     """Variation base class.
 
     This class only enforces that the variation has a name, a config, a sampler,
-    a way to enable and disable it, and a way to apply a new config.
-
+    a way to enable and disable it, and a way to apply a new config. It also gives
+    each variation the asset it was added to (``host``) and the settings of the build
+    it is configured for (``build_context``).
     """
 
     cfg: VariationBaseCfg
@@ -186,11 +188,10 @@ class VariationBase(ABC):
 
     @property
     def build_context(self) -> VariationBuildContext:
-        """Settings of the build passed to the current ``configure_at_build_time`` call."""
-        assert self._build_context is not None, (
-            f"Variation '{self.name}' has no build context. ArenaEnvBuilder passes one to "
-            "configure_at_build_time(); other callers must pass a VariationBuildContext."
-        )
+        """Build settings from the latest ``configure_at_build_time`` call; kept until the next call replaces them."""
+        assert (
+            self._build_context is not None
+        ), f"Variation '{self.name}' has no build context; pass a VariationBuildContext to configure_at_build_time()."
         return self._build_context
 
     def _prepare_at_build_time(self) -> None:
@@ -255,15 +256,20 @@ class RunTimeVariationBase(VariationBase):
 
 
 class BuildTimeVariationBase(VariationBase):
-    """Variation sampled once and applied before the env is built.
+    """Variation drawn once per build and applied before the env is built.
 
     Use for properties that can't change in-flight: HDR maps, USD swaps,
-    spawner params baked into a config. Subclasses hold references to the
-    asset(s) they mutate and realise the effect in ``_realize_at_build_time``.
+    spawner params baked into a config. Subclasses realise the effect in
+    ``_realize_at_build_time``, on ``host`` (the asset the variation was added to)
+    or on assets they keep references to.
 
-    A draw without ``env_ids`` applies to every environment. To draw one value per
-    environment, pass ``env_ids=torch.arange(self.build_context.num_envs)`` (a tensor);
-    the variation recorder keeps each environment's value for all of its episodes.
+    A draw without ``env_ids`` gives one value for all environments. For one value per
+    environment, draw ``build_context.num_envs`` samples with
+    ``env_ids=torch.arange(build_context.num_envs)``; each environment's value is recorded
+    for every episode of that environment. Recorded variation replay supports only the
+    shared form. To make a draw follow the build seed, pass
+    ``generator=self.build_context.make_generator()`` to a sampler that accepts one, such as
+    ChoiceSampler.
     """
 
     @abstractmethod
