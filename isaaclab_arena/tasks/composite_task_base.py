@@ -31,6 +31,7 @@ from isaaclab_arena.utils.configclass import (
 
 if TYPE_CHECKING:
     from isaaclab_arena.embodiments.embodiment_base import EmbodimentBase
+    from isaaclab_arena.progress_tracking.predicate_group import PredicateGroup
 
 
 class SubtaskSuccessStateRecorder(RecorderTerm):
@@ -235,6 +236,14 @@ class CompositeTaskBase(TaskBase):
             subtasks_are_sequential=self.subtasks_are_sequential,
             desired_subtask_success_state=self.desired_subtask_success_state,
         )
+
+    def get_tracking_groups(self) -> list[PredicateGroup]:
+        """Collect observations from every subtask, independently of success ordering."""
+        groups = []
+        for index, subtask in enumerate(self.subtasks):
+            for group in subtask.get_tracking_groups():
+                groups.append(dataclasses.replace(group, name=f"subtask_{index}/{group.name}"))
+        return groups
 
     def _combine_subtask_metrics(self, subtask_idxs: list[int]) -> list[MetricBase]:
         """Combine metrics from subtasks with the given ids.
