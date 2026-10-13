@@ -142,18 +142,20 @@ def _build_copy_with_body_moved(geometry: SpawnCfgGeometry, body_path: str) -> S
         The copy as a layer, not yet saved to the cache.
     """
     stage = _open_asset_for_editing(geometry)
-    old_body_path = Sdf.Path(str(_SOURCE_ROOT) + body_path)
-    _assert_single_rigid_body(stage, old_body_path, geometry.spawn_cfg.usd_path)
+    # The body has three paths here: source_body_path under /Asset in the source stage, body_path_in_rest_of_asset
+    # under /Prepared/source in the copy, and finally /Prepared/rigid_body.
+    source_body_path = Sdf.Path(str(_SOURCE_ROOT) + body_path)
+    _assert_single_rigid_body(stage, source_body_path, geometry.spawn_cfg.usd_path)
 
     # Read these while the body still sits below its parents. Once moved, it no longer inherits their transforms
     # or material bindings, so both are authored on the moved body directly.
-    body = stage.GetPrimAtPath(old_body_path)
+    body = stage.GetPrimAtPath(source_body_path)
     # /Asset has no parent, so the body's world transform is its transform within the asset.
     body_transform = UsdGeom.Xformable(body).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
     bound_materials = _read_bound_materials(body)
 
-    prepared_stage, body_path_before_move = _move_body_to_common_path(stage, old_body_path)
-    _restore_placement_and_materials(prepared_stage, body_transform, bound_materials, body_path_before_move)
+    prepared_stage, body_path_in_rest_of_asset = _move_body_to_common_path(stage, source_body_path)
+    _restore_placement_and_materials(prepared_stage, body_transform, bound_materials, body_path_in_rest_of_asset)
     return prepared_stage.GetRootLayer()
 
 
@@ -193,17 +195,17 @@ def _read_bound_materials(body: Usd.Prim) -> list[_BoundMaterial]:
     return bound_materials
 
 
-def _move_body_to_common_path(stage: Usd.Stage, old_body_path: Sdf.Path) -> tuple[Usd.Stage, Sdf.Path]:
+def _move_body_to_common_path(stage: Usd.Stage, source_body_path: Sdf.Path) -> tuple[Usd.Stage, Sdf.Path]:
     """Flatten the asset into a new stage with its rigid body moved to /Prepared/rigid_body.
 
     The rest of the asset goes to /Prepared/source, and properties that pointed into the body point at its new path.
 
     Args:
         stage: Source stage with the asset at /Asset.
-        old_body_path: Path of the rigid body in the source stage.
+        source_body_path: Path of the rigid body below /Asset in the source stage.
 
     Returns:
-        A stage on the new layer, and the path the body had below /Prepared/source before it moved.
+        A stage on the new layer, and the path the body's copy had below /Prepared/source before it moved.
     """
     # Flatten resolves references and USD variant selections and makes asset paths absolute, so the copy can
     # live in another directory.
@@ -213,21 +215,21 @@ def _move_body_to_common_path(stage: Usd.Stage, old_body_path: Sdf.Path) -> tupl
     # Keep the rest of the source asset: materials and other content the body uses may sit outside the body.
     copied_rest_of_asset = Sdf.CopySpec(layer, _SOURCE_ROOT, layer, _COPY_REST_OF_ASSET)
     assert copied_rest_of_asset, f"Could not copy {_SOURCE_ROOT} to {_COPY_REST_OF_ASSET}."
-    body_path_before_move = old_body_path.ReplacePrefix(_SOURCE_ROOT, _COPY_REST_OF_ASSET)
-    copied_body = Sdf.CopySpec(layer, body_path_before_move, layer, _COPY_BODY)
-    assert copied_body, f"Could not copy {body_path_before_move} to {_COPY_BODY}."
-    prepared_stage.RemovePrim(body_path_before_move)
+    body_path_in_rest_of_asset = source_body_path.ReplacePrefix(_SOURCE_ROOT, _COPY_REST_OF_ASSET)
+    copied_body = Sdf.CopySpec(layer, body_path_in_rest_of_asset, layer, _COPY_BODY)
+    assert copied_body, f"Could not copy {body_path_in_rest_of_asset} to {_COPY_BODY}."
+    prepared_stage.RemovePrim(body_path_in_rest_of_asset)
     prepared_stage.RemovePrim(_SOURCE_ROOT)
     prepared_stage.SetDefaultPrim(prepared_root)
-    _point_links_at_moved_body(layer, body_path_before_move)
-    return prepared_stage, body_path_before_move
+    _point_links_at_moved_body(layer, body_path_in_rest_of_asset)
+    return prepared_stage, body_path_in_rest_of_asset
 
 
-def _point_links_at_moved_body(layer: Sdf.Layer, body_path_before_move: Sdf.Path) -> None:
-    """Point relationship targets and attribute connections that name the body's old path at /Prepared/rigid_body."""
+def _point_links_at_moved_body(layer: Sdf.Layer, body_path_in_rest_of_asset: Sdf.Path) -> None:
+    """Point relationship targets and attribute connections into body_path_in_rest_of_asset at the moved body."""
     # Sdf.CopySpec remaps only paths inside the subtree it copies, so prims outside the body that point into it,
     # such as joints, filtered pairs or collections, still name the removed body below /Prepared/source.
-    path_after_body_move = partial(_path_after_body_move, body_path_before_move=body_path_before_move)
+    path_after_body_move = partial(_path_after_body_move, body_path_in_rest_of_asset=body_path_in_rest_of_asset)
     property_paths = []
 
     def collect_property_path(spec_path: Sdf.Path) -> None:
@@ -244,13 +246,14 @@ def _point_links_at_moved_body(layer: Sdf.Layer, body_path_before_move: Sdf.Path
             property_spec.connectionPathList.ModifyItemEdits(path_after_body_move)
 
 
-def _path_after_body_move(path: Sdf.Path, body_path_before_move: Sdf.Path) -> Sdf.Path:
+def _path_after_body_move(path: Sdf.Path, body_path_in_rest_of_asset: Sdf.Path) -> Sdf.Path:
     """Return where a path in the copy points after the body moved to /Prepared/rigid_body.
 
-    Paths at or below the body's old path in /Prepared/source map into /Prepared/rigid_body; others are unchanged.
+    Paths at or below body_path_in_rest_of_asset, below /Prepared/source, map into /Prepared/rigid_body; others are
+    unchanged.
     """
-    if path.HasPrefix(body_path_before_move):
-        return path.ReplacePrefix(body_path_before_move, _COPY_BODY)
+    if path.HasPrefix(body_path_in_rest_of_asset):
+        return path.ReplacePrefix(body_path_in_rest_of_asset, _COPY_BODY)
     return path
 
 
@@ -258,7 +261,7 @@ def _restore_placement_and_materials(
     prepared_stage: Usd.Stage,
     body_transform: Gf.Matrix4d,
     bound_materials: list[_BoundMaterial],
-    body_path_before_move: Sdf.Path,
+    body_path_in_rest_of_asset: Sdf.Path,
 ) -> None:
     """Author the body's transform and material bindings from the source asset on the moved body.
 
@@ -266,13 +269,13 @@ def _restore_placement_and_materials(
         prepared_stage: Stage with the moved body at /Prepared/rigid_body.
         body_transform: The body's transform within the source asset.
         bound_materials: Materials bound to the body in the source asset.
-        body_path_before_move: The path the body had below /Prepared/source before it moved.
+        body_path_in_rest_of_asset: The path the body's copy had below /Prepared/source before it moved.
     """
     moved_body = prepared_stage.GetPrimAtPath(_COPY_BODY)
     UsdGeom.Xformable(moved_body).MakeMatrixXform().Set(body_transform)
     for bound_material in bound_materials:
         material_path_in_copy = _path_after_body_move(
-            bound_material.material_path.ReplacePrefix(_SOURCE_ROOT, _COPY_REST_OF_ASSET), body_path_before_move
+            bound_material.material_path.ReplacePrefix(_SOURCE_ROOT, _COPY_REST_OF_ASSET), body_path_in_rest_of_asset
         )
         material = UsdShade.Material(prepared_stage.GetPrimAtPath(material_path_in_copy))
         UsdShade.MaterialBindingAPI.Apply(moved_body).Bind(
