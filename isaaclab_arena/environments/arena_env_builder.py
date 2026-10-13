@@ -568,6 +568,8 @@ class ArenaEnvBuilder:
         The default operation is to call with no arguments, in which case the env_cfg is built from the
         Arena description passed to the builder at construction.
         The registered constructor supplies env_kwargs even when the caller only passes cfg to gym.make.
+        A registration shares samplers across constructions; close its current env before making another.
+        Each construction starts fresh runtime recording and restarts recorded replay.
 
         Args:
             env_cfg: The optional environment cfg to use.
@@ -593,9 +595,7 @@ class ArenaEnvBuilder:
         # and never cleared, so pinning it there retains every registered env's GPU memory until
         # process exit — an unbounded leak across a persistent SimulationApp.
         # TODO(alexmillane, 2026-08-05): Fix this issue and remove this note.
-        # TODO(qianl, 2026-10-12): Restore Isaac Lab interoperability without retaining these runtime objects in
-        # the Gym registry. Relation placement and enabled run-time variations currently fail because their
-        # VariationRecorder is not forwarded to and bound by Isaac Lab's later gym.make() call.
+        # The factory below retains the original sampler listeners; VariationRecorder now binds the env weakly.
 
         def create_env(**kwargs):
             # Sampler callbacks capture these objects, so preserve their identity across Gym's kwargs deepcopy.

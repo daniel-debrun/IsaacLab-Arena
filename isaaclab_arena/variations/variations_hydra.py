@@ -40,6 +40,34 @@ def overrides_from_dict(values: dict[str, Any]) -> list[str]:
     return overrides
 
 
+def split_variation_overrides(
+    args: list[str], variations: dict[str, list[VariationBase]]
+) -> tuple[list[str], list[str]]:
+    """Separate registered host.variation overrides from other CLI arguments.
+
+    Args:
+        args: Unconsumed CLI arguments, including Hydra overrides.
+        variations: Host names mapped to their attached variations.
+
+    Returns:
+        Variation overrides and remaining arguments, preserving order within each list.
+    """
+    variation_paths = set()
+    for host, host_variations in variations.items():
+        for variation in host_variations:
+            variation_paths.add(f"{host}.{variation.name}")
+    variation_overrides = []
+    remaining_args = []
+    for arg in args:
+        key = arg.lstrip("+~").partition("=")[0]
+        variation_path = ".".join(key.split(".")[:2])
+        if variation_path in variation_paths and ("=" in arg or arg.startswith("~")):
+            variation_overrides.append(arg)
+        else:
+            remaining_args.append(arg)
+    return variation_overrides, remaining_args
+
+
 def apply_overrides(
     variations: dict[str, list[VariationBase]],
     hydra_overrides: list[str],

@@ -160,7 +160,7 @@ def variation_environment_registration_callback() -> list[str]:
     from isaaclab_arena.environments.isaaclab_interop import (
         environment_registration_callback as register_arena_environment,
     )
-    from isaaclab_arena.relations.placement_events import get_reset_placement_results
+    from isaaclab_arena.utils.pose import Pose
 
     environment = {}
 
@@ -195,8 +195,15 @@ def variation_environment_registration_callback() -> list[str]:
                 mass = wp.to_torch(env.scene[VARIATION_ASSET_NAME].data.body_mass)[0, 0].item()
                 assert mass == pytest.approx(VARIATION_MASS)
                 assert recorded_mass.item() == pytest.approx(mass)
-                layout = get_reset_placement_results(env)[0]
-                assert any(asset.name == VARIATION_ASSET_NAME for asset in layout.positions)
+                placement_record = env.variation_recorder.placement_record
+                assert placement_record is not None, "Relation placement recorder was not attached"
+                placement = placement_record.sample_for_episode(0, episode_index)
+                assert placement is not None, "Reset placement was not recorded for this episode"
+                # Compare object (O) poses in the environment frame (E) before stepping physics.
+                recorded_T_E_O = Pose.from_dict(placement["poses"][VARIATION_ASSET_NAME]).to_tensor(env.device)
+                T_E_O = env.arena_world.get_pose_e(VARIATION_ASSET_NAME)[0]
+                torch.testing.assert_close(T_E_O[:3], recorded_T_E_O[:3], atol=2e-5, rtol=0)
+                assert torch.abs(torch.dot(T_E_O[3:], recorded_T_E_O[3:])).item() > 1 - 1e-5
                 print(VARIATION_METADATA_PREFIX + json.dumps({"episode": episode_index, "mass": mass}), flush=True)
             return torch.zeros(self._env.action_manager.total_action_dim, device=self._env.device)
 

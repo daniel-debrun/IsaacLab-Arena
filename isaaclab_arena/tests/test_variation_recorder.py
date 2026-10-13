@@ -196,6 +196,26 @@ def test_record_placement_sample_uses_sampler_listener_without_variation():
     assert recorder.placement_record.sample_for_episode(3, 2) is None
 
 
+def test_recorder_rebinding_starts_fresh_runtime_records():
+    """A reused configuration preserves build-time draws but starts a new episode history."""
+    variation = _RecorderTestVariation()
+    variation.enable()
+    recorder = VariationRecorder()
+    recorder.attach({"asset": [variation]})
+    variation.configure_at_build_time()
+    build_time_sample = recorder["asset.recorder_test"].sample_for_episode(0, 0).clone()
+    recorder.attach_placement_sampler(variation.sampler, serializer=lambda sample: sample.tolist())
+
+    for _ in range(2):
+        env = _FakeEnv(recorder)
+        recorder.bind_env(env)
+        assert recorder.placement_record.sample_for_episode(0, 0) is None
+        torch.testing.assert_close(recorder["asset.recorder_test"].sample_for_episode(0, 0), build_time_sample)
+        sample = variation.sampler.sample(num_samples=1, env_ids=torch.tensor([0]))
+        torch.testing.assert_close(recorder["asset.recorder_test"].sample_for_episode(0, 0), sample[0])
+        assert recorder.placement_record.sample_for_episode(0, 0) == sample[0].tolist()
+
+
 def test_recorder_skips_disabled_variations():
     variation = _RecorderTestVariation()  # disabled by default
     recorder = VariationRecorder()

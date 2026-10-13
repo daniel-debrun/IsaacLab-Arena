@@ -99,6 +99,7 @@ def environment_registration_callback() -> list[str]:
         add_isaaclab_arena_cli_args,
     )
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
+    from isaaclab_arena.variations.variations_hydra import split_variation_overrides
 
     # Get the requested environment from the CLI.
     parser = argparse.ArgumentParser()
@@ -140,20 +141,9 @@ def environment_registration_callback() -> list[str]:
     # TODO(cvolk, 2026-07-06): [typed-config-migration] Remove this Namespace conversion when the Isaac Lab
     # external callback can receive ArenaEnvBuilderCfg directly.
     env_builder = ArenaEnvBuilder(isaaclab_arena_environment, arena_env_builder_cfg_from_argparse(args))
-    variation_paths = set()
-    for host, variations in env_builder.get_all_variations().items():
-        for variation in variations:
-            variation_paths.add(f"{host}.{variation.name}")
-    variation_overrides = []
-    lab_args = []
-    for arg in remaining_args:
-        key = arg.lstrip("+~").partition("=")[0]
-        variation_path = ".".join(key.split(".")[:2])
-        if variation_path in variation_paths and ("=" in arg or arg.startswith("~")):
-            variation_overrides.append(arg)
-        else:
-            lab_args.append(arg)
-    env_builder.hydra_overrides = variation_overrides
+    # TODO: Route recorded_variation_samples_path to the builder for IL recording and replay.
+    # Only registered host.variation overrides are consumed here; builder overrides are not supported.
+    env_builder.hydra_overrides, lab_args = split_variation_overrides(remaining_args, env_builder.get_all_variations())
     env_builder.build_registered()
     # Return the arguments that were not consumed by this callback
     return lab_args

@@ -70,6 +70,10 @@ class VariationRecord:
             return self._samples_by_env_episode[key]
         return self._build_time_sample
 
+    def clear_runtime_samples(self) -> None:
+        """Discard per-episode samples while retaining the build-time draw."""
+        self._samples_by_env_episode.clear()
+
     def release_episode(self, env_id: int, episode_idx: int) -> None:
         """Release the run-time sample retained for a finished episode."""
         self._samples_by_env_episode.pop(EnvEpisodeKey(env_id, episode_idx), None)
@@ -86,7 +90,11 @@ class VariationRecorder:
         self._env: Any = None
 
     def bind_env(self, env: Any) -> None:
-        """Bind the env so run-time draws can be attributed to its current episode index."""
+        """Start recording for a new env, retaining build-time draws and clearing prior runtime samples."""
+        for record in self.records.values():
+            record.clear_runtime_samples()
+        if self.placement_record is not None:
+            self.placement_record.clear_runtime_samples()
         self._env = weakref.proxy(env)
 
     def __getitem__(self, key: str) -> VariationRecord:

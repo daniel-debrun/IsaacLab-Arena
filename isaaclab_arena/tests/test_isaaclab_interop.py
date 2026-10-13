@@ -12,6 +12,7 @@ import sys
 import torch
 import weakref
 from copy import deepcopy
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -131,8 +132,7 @@ def _test_registration_callback_routes_variation_overrides(_simulation_app, monk
 
     variation = ObjectMassVariation(variation_host)
     # Asset names may match Lab's config roots, including assets without variations.
-    variations = {"env": [], "agent": []}
-    variations[variation_host] = [variation]
+    variations = {"env": [], "agent": [], variation_host: [variation]}
     arena_env = SimpleNamespace(scene=SimpleNamespace(get_asset_variations=lambda: variations), embodiment=None)
     task_name = "arena_interop_variations_test"
     factory = object()
@@ -168,4 +168,70 @@ def _test_registration_callback_routes_variation_overrides(_simulation_app, monk
 def test_registration_callback_routes_variation_overrides(monkeypatch, variation_host):
     assert run_function_with_persistent_simulation_app(
         _test_registration_callback_routes_variation_overrides, monkeypatch=monkeypatch, variation_host=variation_host
+    )
+
+
+def _test_registered_environment_restarts_recording(_simulation_app, tmp_path, replay):
+    """Recreating a registered scene starts fresh recording and replay, including partial resets."""
+    import warp as wp
+
+    from isaaclab_arena.environment_spec.arena_env_graph_spec import ArenaEnvGraphSpec
+    from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
+    from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
+    from isaaclab_arena.utils.pose import Pose
+
+    source = Path(__file__).parent / "test_data/placement_replay.yaml"
+    rows = [json.loads(line) for line in source.with_suffix(".jsonl").read_text().splitlines()]
+    for index, row in enumerate(rows):
+        row["variations"] = {"cube_0.mass": [0.1 * (index + 1)]}
+    replay_path = tmp_path / "replay.jsonl"
+    replay_path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    builder = ArenaEnvBuilder(
+        ArenaEnvGraphSpec.from_yaml(source).to_arena_env(),
+        ArenaEnvBuilderCfg(
+            num_envs=2,
+            device="cpu",
+            recorded_variation_samples_path=str(replay_path) if replay else None,
+        ),
+        hydra_overrides=["cube_0.mass.enabled=true"],
+    )
+
+    def check_episode(base, env_id, source_index):
+        episode = base.get_episode_index(env_id)
+        recorder = base.variation_recorder
+        mass = wp.to_torch(base.scene["cube_0"].data.body_mass)[env_id, 0].item()
+        assert recorder["cube_0.mass"].sample_for_episode(env_id, episode).item() == pytest.approx(mass)
+        placement = recorder.placement_record.sample_for_episode(env_id, episode)
+        for key, pose in placement["poses"].items():
+            expected = Pose.from_dict(pose).to_tensor(base.device)
+            torch.testing.assert_close(base.arena_world.get_pose_e(key)[env_id], expected, atol=2e-5, rtol=0)
+        if replay:
+            assert mass == pytest.approx(rows[source_index]["variations"]["cube_0.mass"][0])
+            assert placement == rows[source_index]["placement"]
+
+    name, cfg, _ = builder.build_registered()
+    try:
+        for _ in range(2):
+            env = gym.make(name, cfg=deepcopy(cfg))
+            try:
+                base = env.unwrapped
+                env.reset()
+                check_episode(base, env_id=0, source_index=0)
+                check_episode(base, env_id=1, source_index=1)
+                base.reset(env_ids=torch.tensor([1], device=base.device))
+                check_episode(base, env_id=1, source_index=2)
+                assert base.get_episode_index(0) == 0
+                assert base.get_episode_index(1) == 1
+            finally:
+                # Close with both episodes active to exercise reuse of the registered state.
+                env.close()
+    finally:
+        gym.registry.pop(name, None)
+    return True
+
+
+@pytest.mark.parametrize("replay", [False, True], ids=["live", "replay"])
+def test_registered_environment_restarts_recording(tmp_path, replay):
+    assert run_function_with_persistent_simulation_app(
+        _test_registered_environment_restarts_recording, tmp_path=tmp_path, replay=replay
     )
