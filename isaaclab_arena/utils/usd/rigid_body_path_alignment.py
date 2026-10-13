@@ -20,13 +20,12 @@ from collections.abc import Sequence
 from copy import deepcopy
 from dataclasses import fields
 from functools import partial
-from typing import NamedTuple
 
 from isaaclab.sim import UsdFileCfg
 from isaaclab.sim.spawners._utils import fragment_mapping
 from isaaclab.sim.spawners.spawner_cfg import SpawnerCfg
 from isaaclab.sim.utils import make_uninstanceable, standardize_xform_ops
-from pxr import Gf, Sdf, Usd, UsdGeom, UsdShade
+from pxr import Sdf, Usd, UsdGeom, UsdShade
 
 from isaaclab_arena.assets.asset_cache import get_arena_asset_cache_dir
 from isaaclab_arena.assets.spawn_cfg_geometry import SpawnCfgGeometry
@@ -40,19 +39,6 @@ _COPY_REST_OF_ASSET = _COPY_ROOT.AppendChild("source")
 
 _COPY_BODY = _COPY_ROOT.AppendChild("rigid_body")
 """The moved rigid body, at /rigid_body relative to the spawn root."""
-
-
-class _BoundMaterial(NamedTuple):
-    """A material bound to the rigid body in the source asset, directly or through a parent prim."""
-
-    purpose: str
-    """Material purpose of the binding, such as all-purpose or preview."""
-
-    material_path: Sdf.Path
-    """Path of the material in the source stage."""
-
-    binding_strength: str
-    """Binding strength of the relationship that binds the material."""
 
 
 def align_rigid_body_paths(spawn_cfgs: Sequence[SpawnerCfg]) -> list[SpawnerCfg]:
@@ -145,15 +131,10 @@ def _build_copy_with_body_moved(geometry: SpawnCfgGeometry, body_path: str) -> S
     body_path_under_source = source_body_path.ReplacePrefix(source_root, _COPY_REST_OF_ASSET)
     _assert_single_rigid_body(stage, source_body_path, geometry.spawn_cfg.usd_path)
 
-    # Read these while the body still sits below its parents. Once moved, it no longer inherits their transforms
-    # or material bindings, so both are authored on the moved body directly.
-    body = stage.GetPrimAtPath(source_body_path)
-    # The source root has no parent, so the body's world transform is its transform within the asset.
-    body_transform = UsdGeom.Xformable(body).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
-    bound_materials = _read_bound_materials(body)
-
     copy_stage = _move_body_to_common_path(stage, source_root, body_path_under_source)
-    _restore_placement_and_materials(copy_stage, body_transform, bound_materials, source_root, body_path_under_source)
+    _keep_inherited_placement_and_materials(
+        stage.GetPrimAtPath(source_body_path), copy_stage, source_root, body_path_under_source
+    )
     return copy_stage.GetRootLayer()
 
 
@@ -178,17 +159,6 @@ def _assert_single_rigid_body(stage: Usd.Stage, body_path: Sdf.Path, usd_path: s
     assert rigid_body_paths == [
         str(body_path)
     ], f"Moving the rigid body of {usd_path} requires exactly one rigid body; found {rigid_body_paths}."
-
-
-def _read_bound_materials(body: Usd.Prim) -> list[_BoundMaterial]:
-    """Return the materials bound to the body for each material purpose, including bindings on its parents."""
-    bound_materials = []
-    for purpose in (UsdShade.Tokens.allPurpose, UsdShade.Tokens.preview, UsdShade.Tokens.full):
-        material, relationship = UsdShade.MaterialBindingAPI(body).ComputeBoundMaterial(purpose)
-        if material:
-            binding_strength = UsdShade.MaterialBindingAPI.GetMaterialBindingStrength(relationship)
-            bound_materials.append(_BoundMaterial(purpose, material.GetPath(), binding_strength))
-    return bound_materials
 
 
 def _move_body_to_common_path(stage: Usd.Stage, source_root: Sdf.Path, body_path_under_source: Sdf.Path) -> Usd.Stage:
@@ -254,31 +224,34 @@ def _path_after_body_move(path: Sdf.Path, body_path_under_source: Sdf.Path) -> S
     return path
 
 
-def _restore_placement_and_materials(
-    copy_stage: Usd.Stage,
-    body_transform: Gf.Matrix4d,
-    bound_materials: list[_BoundMaterial],
-    source_root: Sdf.Path,
-    body_path_under_source: Sdf.Path,
+def _keep_inherited_placement_and_materials(
+    source_body: Usd.Prim, copy_stage: Usd.Stage, source_root: Sdf.Path, body_path_under_source: Sdf.Path
 ) -> None:
-    """Author the body's transform and material bindings from the source asset on the moved body.
+    """Give the moved body the transform and material bindings it had in the source asset, including inherited ones.
 
     Args:
+        source_body: The rigid body in the source stage.
         copy_stage: Stage with the moved body at /AlignedAsset/rigid_body.
-        body_transform: The body's transform within the source asset.
-        bound_materials: Materials bound to the body in the source asset.
         source_root: Path of the source asset in the source stage.
         body_path_under_source: The path the body's copy had below /AlignedAsset/source before it moved.
     """
+    # The moved body no longer sits below its parents, so their transforms and material bindings no longer apply to
+    # it. The source stage is not edited while the copy is built, so it still shows what the body inherited.
     moved_body = copy_stage.GetPrimAtPath(_COPY_BODY)
+    # The source root has no parent, so the body's world transform is its transform within the asset.
+    body_transform = UsdGeom.Xformable(source_body).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
     UsdGeom.Xformable(moved_body).MakeMatrixXform().Set(body_transform)
-    for bound_material in bound_materials:
+    for purpose in (UsdShade.Tokens.allPurpose, UsdShade.Tokens.preview, UsdShade.Tokens.full):
+        source_material, binding_relationship = UsdShade.MaterialBindingAPI(source_body).ComputeBoundMaterial(purpose)
+        if not source_material:
+            continue
+        binding_strength = UsdShade.MaterialBindingAPI.GetMaterialBindingStrength(binding_relationship)
         material_path_in_copy = _path_after_body_move(
-            bound_material.material_path.ReplacePrefix(source_root, _COPY_REST_OF_ASSET), body_path_under_source
+            source_material.GetPath().ReplacePrefix(source_root, _COPY_REST_OF_ASSET), body_path_under_source
         )
         material = UsdShade.Material(copy_stage.GetPrimAtPath(material_path_in_copy))
         UsdShade.MaterialBindingAPI.Apply(moved_body).Bind(
-            material, bindingStrength=bound_material.binding_strength, materialPurpose=bound_material.purpose
+            material, bindingStrength=binding_strength, materialPurpose=purpose
         )
 
 
