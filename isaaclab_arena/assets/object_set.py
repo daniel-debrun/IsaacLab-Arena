@@ -181,12 +181,3 @@ class RigidObjectSet(Object):
             member_spawn_cfgs = self.spawner_cfg.assets_cfg
             spawn_cfgs_by_env = [deepcopy(member_spawn_cfgs[idx]) for idx in variant_indices_by_env]
             self.object_cfg.spawn = self.object_cfg.spawn.replace(assets_cfg=spawn_cfgs_by_env)
-
-    def _generate_articulation_cfg(self):
-        raise NotImplementedError("Articulation configuration is not supported for object sets")
-
-    def _generate_base_cfg(self):
-        raise NotImplementedError("Base configuration is not supported for object sets")
-
-    def _generate_spawner_cfg(self):
-        raise NotImplementedError("Spawner configuration is not supported for object sets")

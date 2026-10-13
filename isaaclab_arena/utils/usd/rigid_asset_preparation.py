@@ -14,6 +14,7 @@ import tempfile
 from collections.abc import Sequence
 from copy import deepcopy
 from dataclasses import fields
+from functools import partial
 from typing import Any
 
 from isaaclab.sim import UsdFileCfg
@@ -114,11 +115,11 @@ def _selects_prims_by_path(props: Any) -> bool:
     return False
 
 
-def _relocated_path(path: Sdf.Path, original_body: Sdf.Path) -> Sdf.Path:
-    """Map a path of the source stage, below /Asset, to its path in the relocated asset."""
-    if path.HasPrefix(original_body):
-        return path.ReplacePrefix(original_body, _PREPARED_BODY)
-    return path.ReplacePrefix(_SOURCE_ROOT, _PREPARED_SOURCE)
+def _redirect_into_moved_body(path: Sdf.Path, copied_body: Sdf.Path) -> Sdf.Path:
+    """Map a path below the body's copy in /Prepared/source to /Prepared/rigid_body; return other paths unchanged."""
+    if path.HasPrefix(copied_body):
+        return path.ReplacePrefix(copied_body, _PREPARED_BODY)
+    return path
 
 
 def _redirect_paths_into_moved_body(layer: Sdf.Layer, copied_body: Sdf.Path) -> None:
@@ -127,12 +128,7 @@ def _redirect_paths_into_moved_body(layer: Sdf.Layer, copied_body: Sdf.Path) -> 
     Sdf.CopySpec remaps only paths inside the subtree it copies, so prims outside the body that point into it,
     such as joints, filtered pairs or collections, still name the removed body copy below /Prepared/source.
     """
-
-    def redirect_into_moved_body(path: Sdf.Path) -> Sdf.Path:
-        if path.HasPrefix(copied_body):
-            return path.ReplacePrefix(copied_body, _PREPARED_BODY)
-        return path
-
+    redirect_into_moved_body = partial(_redirect_into_moved_body, copied_body=copied_body)
     property_paths = []
 
     def collect_property_path(spec_path: Sdf.Path) -> None:
@@ -204,7 +200,10 @@ def _relocate_rigid_body(geometry: SpawnCfgGeometry, body_path: str) -> Sdf.Laye
     prepared_body = prepared_stage.GetPrimAtPath(_PREPARED_BODY)
     UsdGeom.Xformable(prepared_body).MakeMatrixXform().Set(body_transform)
     for purpose, material_path, binding_strength in inherited_materials:
-        material = UsdShade.Material(prepared_stage.GetPrimAtPath(_relocated_path(material_path, original_body)))
+        prepared_material_path = _redirect_into_moved_body(
+            material_path.ReplacePrefix(_SOURCE_ROOT, _PREPARED_SOURCE), copied_body
+        )
+        material = UsdShade.Material(prepared_stage.GetPrimAtPath(prepared_material_path))
         UsdShade.MaterialBindingAPI.Apply(prepared_body).Bind(
             material, bindingStrength=binding_strength, materialPurpose=purpose
         )
