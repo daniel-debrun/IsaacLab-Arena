@@ -394,8 +394,8 @@ def _test_object_set_expansion_keeps_live_spawn_settings(simulation_app):
     return True
 
 
-def _test_relation_free_object_set_is_not_a_passive_obstacle(simulation_app, tmp_path):
-    """A set has no usd_path, so passive-obstacle discovery skips it like other objects without one."""
+def _test_relation_free_object_set_is_a_passive_obstacle(simulation_app, tmp_path):
+    """A relation-free set with a fixed pose blocks placement like a fixed object, although it has no usd_path."""
     from isaaclab_arena.assets.object import Object
     from isaaclab_arena.assets.object_set import RigidObjectSet
     from isaaclab_arena.assets.object_type import ObjectType
@@ -412,7 +412,7 @@ def _test_relation_free_object_set_is_not_a_passive_obstacle(simulation_app, tmp
     fixed_cube = Object(
         name="fixed_cube", object_type=ObjectType.RIGID, usd_path=member_usd_path, initial_pose=fixed_pose
     )
-    assert discover_passive_assets([fixed_set, fixed_cube]) == [fixed_cube]
+    assert discover_passive_assets([fixed_set, fixed_cube]) == [fixed_set, fixed_cube]
     return True
 
 
@@ -1033,13 +1033,13 @@ def test_object_set_expansion_keeps_live_spawn_settings():
     assert result, f"Test {_test_object_set_expansion_keeps_live_spawn_settings.__name__} failed"
 
 
-def test_relation_free_object_set_is_not_a_passive_obstacle(tmp_path):
+def test_relation_free_object_set_is_a_passive_obstacle(tmp_path):
     result = run_function_with_persistent_simulation_app(
-        _test_relation_free_object_set_is_not_a_passive_obstacle,
+        _test_relation_free_object_set_is_a_passive_obstacle,
         headless=HEADLESS,
         tmp_path=tmp_path,
     )
-    assert result, f"Test {_test_relation_free_object_set_is_not_a_passive_obstacle.__name__} failed"
+    assert result, f"Test {_test_relation_free_object_set_is_a_passive_obstacle.__name__} failed"
 
 
 def test_live_object_set_keeps_member_mass_and_scale(tmp_path):
