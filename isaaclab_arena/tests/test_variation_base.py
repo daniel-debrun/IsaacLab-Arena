@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for :class:`VariationBase`: cfg-driven configuration, sampler wiring, the build context and the host asset.
+"""Tests for VariationBase: cfg-driven configuration, sampler wiring, the build context and the host asset.
 
 These tests stay in plain Python (no ``SimulationApp``) because none of them needs an Isaac Sim runtime.
 """
@@ -370,7 +370,7 @@ def test_variation_can_only_have_one_host():
     variation = _CustomVariation()
     asset.add_variation(variation)
 
-    with pytest.raises(AssertionError, match="already has a host asset and cannot also be added to 'second'"):
+    with pytest.raises(AssertionError, match="already has host asset 'first' and cannot also be added to 'second'"):
         other_asset.add_variation(variation)
 
     assert other_asset.get_variations() == []

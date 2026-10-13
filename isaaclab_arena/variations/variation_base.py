@@ -86,7 +86,7 @@ class VariationBuildContext:
             return generator
         seed_material = f"{self.seed}:{self.variation_key}".encode()
         # Python's hash() of a str changes between processes, so use a stable digest; torch generator
-        # seeds are 64-bit, so keep its first 8 bytes.
+        # seeds are 64-bit, so keep its first 8 bytes. Changing this derivation changes every seeded draw.
         generator_seed = int.from_bytes(hashlib.sha256(seed_material).digest()[:8], "big")
         generator.manual_seed(generator_seed)
         return generator
@@ -106,7 +106,7 @@ class VariationBaseCfg:
 class VariationBase(ABC):
     """Variation base class.
 
-    This class only enforces that the variation has a name, a config, a sampler,
+    This class enforces that the variation has a name, a config, a sampler,
     a way to enable and disable it, and a way to apply a new config. It also gives
     each variation the asset it was added to (``host``) and the settings of the build
     it is configured for (``build_context``).
@@ -144,8 +144,8 @@ class VariationBase(ABC):
             asset: Asset the variation is being added to.
         """
         assert self._host_ref is None, (
-            f"Variation '{self.name}' already has a host asset and cannot also be added to '{asset.name}'."
-            " Create one variation instance per asset."
+            f"Variation '{self.name}' already has host asset '{getattr(self.host, 'name', '<garbage-collected>')}'"
+            f" and cannot also be added to '{asset.name}'. Create one variation instance per asset."
         )
         # Weak because an asset can be a configclass field (for example JointStateRecorderCfg.object), and
         # configclass validation follows object attributes without cycle detection: a strong
@@ -265,8 +265,8 @@ class BuildTimeVariationBase(VariationBase):
     or on assets they keep references to.
 
     A draw without ``env_ids`` gives one value for all environments. For one value per
-    environment, draw ``build_context.num_envs`` samples with
-    ``env_ids=torch.arange(build_context.num_envs)``; each environment's value is recorded
+    environment, draw ``self.build_context.num_envs`` samples with
+    ``env_ids=torch.arange(self.build_context.num_envs)``; each environment's value is recorded
     for every episode of that environment. Recorded variation replay supports only the
     shared form. To make a draw follow the build seed, pass
     ``generator=self.build_context.make_generator()`` to a sampler that accepts one, such as
