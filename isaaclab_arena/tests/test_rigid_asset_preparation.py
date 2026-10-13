@@ -22,8 +22,13 @@ PATH_KEYED_OVERRIDES = [
 ]
 
 
-def _write_asset(source_path, body_path, default_path="/Asset", root_scale=1.0):
-    """Write a rigid cube with an ancestor transform and a sibling material library."""
+def _write_asset(
+    source_path, body_path, default_path="/Asset", root_scale=1.0, root_translation=None, root_rotate_xyz=None
+):
+    """Write a rigid cube with an ancestor transform and a sibling material library.
+
+    root_translation and root_rotate_xyz, in degrees, author a translate and a rotateXYZ op on the default prim.
+    """
     from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics, UsdShade
 
     stage = Usd.Stage.CreateNew(str(source_path))
@@ -31,7 +36,12 @@ def _write_asset(source_path, body_path, default_path="/Asset", root_scale=1.0):
         UsdGeom.Xform.Define(stage, prefix)
     root = stage.GetPrimAtPath(default_path)
     stage.SetDefaultPrim(root)
-    UsdGeom.Xformable(root).AddScaleOp().Set(Gf.Vec3f(root_scale))
+    root_xformable = UsdGeom.Xformable(root)
+    if root_translation is not None:
+        root_xformable.AddTranslateOp().Set(Gf.Vec3d(*root_translation))
+    if root_rotate_xyz is not None:
+        root_xformable.AddRotateXYZOp().Set(Gf.Vec3f(*root_rotate_xyz))
+    root_xformable.AddScaleOp().Set(Gf.Vec3f(root_scale))
     body = stage.GetPrimAtPath(body_path)
     UsdPhysics.RigidBodyAPI.Apply(body)
     UsdGeom.Cube.Define(stage, body_path + "/Cube").CreateSizeAttr().Set(2.0)
@@ -244,6 +254,41 @@ def _test_relocation_keeps_authored_root_scale_when_spawn_scale_is_none(simulati
     return True
 
 
+def _test_relocation_drops_the_authored_root_translation_and_rotation(simulation_app, tmp_path):
+    import numpy as np
+
+    from isaaclab.sim.utils import use_stage
+    from isaaclab.utils.string import string_to_callable
+    from pxr import Usd, UsdGeom
+
+    from isaaclab_arena.utils.usd.rigid_asset_preparation import align_rigid_body_paths
+
+    root_path = tmp_path / "root.usda"
+    nested_path = tmp_path / "nested.usda"
+    root_pose = {"root_translation": (0.4, -0.3, 0.2), "root_rotate_xyz": (90.0, 0.0, 30.0)}
+    _write_asset(root_path, "/Asset", **root_pose)
+    _write_asset(nested_path, "/Asset/Group/Body", **root_pose)
+    spawn_cfgs = [_make_spawn_cfg(root_path), _make_spawn_cfg(nested_path)]
+    with patch(CACHE_DIR_TARGET, return_value=tmp_path):
+        aligned = align_rigid_body_paths(spawn_cfgs)
+    # Isaac Lab's spawn replaces the root translation and orientation with the spawn pose, so a body spawned from
+    # the source and one spawned from the relocated copy at the same pose must end up at the same world transform.
+    spawn_pose = {"translation": (1.0, 2.0, 0.5), "orientation": (0.0, 0.0, 0.3826834, 0.9238795)}
+    stage = Usd.Stage.CreateInMemory()
+    with use_stage(stage):
+        for member_index, (spawn_cfg, aligned_cfg) in enumerate(zip(spawn_cfgs, aligned)):
+            string_to_callable(spawn_cfg.func)(f"/World/source_{member_index}", spawn_cfg, **spawn_pose)
+            string_to_callable(aligned_cfg.func)(f"/World/relocated_{member_index}", aligned_cfg, **spawn_pose)
+    source_body_paths = ["/World/source_0", "/World/source_1/Group/Body"]
+    for member_index, source_body_path in enumerate(source_body_paths):
+        source_body = stage.GetPrimAtPath(source_body_path)
+        relocated_body = stage.GetPrimAtPath(f"/World/relocated_{member_index}/rigid_body")
+        source_transform = UsdGeom.Xformable(source_body).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+        relocated_transform = UsdGeom.Xformable(relocated_body).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+        assert np.allclose(np.array(source_transform), np.array(relocated_transform), atol=1e-5), source_body_path
+    return True
+
+
 def _test_relocated_cache_files_are_named_by_content(simulation_app, tmp_path):
     import re
 
@@ -442,6 +487,12 @@ def test_relocation_redirects_paths_from_outside_into_the_moved_body(tmp_path):
 def test_relocation_keeps_authored_root_scale_when_spawn_scale_is_none(tmp_path):
     assert run_function_with_persistent_simulation_app(
         _test_relocation_keeps_authored_root_scale_when_spawn_scale_is_none, headless=HEADLESS, tmp_path=tmp_path
+    )
+
+
+def test_relocation_drops_the_authored_root_translation_and_rotation(tmp_path):
+    assert run_function_with_persistent_simulation_app(
+        _test_relocation_drops_the_authored_root_translation_and_rotation, headless=HEADLESS, tmp_path=tmp_path
     )
 
 
