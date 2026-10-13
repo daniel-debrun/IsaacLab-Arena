@@ -85,7 +85,8 @@ class VariationBuildContext:
             generator.seed()
             return generator
         seed_material = f"{self.seed}:{self.variation_key}".encode()
-        # torch generator seeds are 64-bit, so use the first 8 bytes of the digest.
+        # Python's hash() of a str changes between processes, so use a stable digest; torch generator
+        # seeds are 64-bit, so keep its first 8 bytes.
         generator_seed = int.from_bytes(hashlib.sha256(seed_material).digest()[:8], "big")
         generator.manual_seed(generator_seed)
         return generator

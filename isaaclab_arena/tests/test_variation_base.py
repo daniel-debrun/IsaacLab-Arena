@@ -3,10 +3,9 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for :class:`VariationBase` subclassing and Cfg-driven configuration.
+"""Tests for :class:`VariationBase`: cfg-driven configuration, sampler wiring, the build context and the host asset.
 
-These tests stay in plain Python (no ``SimulationApp``) because they only
-exercise the cfg plumbing and sampler wiring, not any Isaac Sim runtime.
+These tests stay in plain Python (no ``SimulationApp``) because none of them needs an Isaac Sim runtime.
 """
 
 import gc
@@ -249,11 +248,16 @@ def test_build_context_reaches_both_hooks():
 
     assert variation.build_steps == [("prepare", context), ("realize", context)]
     assert variation.build_context is context
+
+
+def test_build_context_is_immutable():
+    context = VariationBuildContext(num_envs=3, seed=17, variation_key="object.build_time")
+
     with pytest.raises(FrozenInstanceError):
         context.num_envs = 4
 
 
-def test_build_context_must_be_supplied_before_it_is_read():
+def test_build_context_must_be_supplied_for_every_build():
     variation = _BuildContextReadingVariation()
     with pytest.raises(AssertionError, match="has no build context"):
         variation.build_context
@@ -274,21 +278,24 @@ def test_hooks_that_do_not_read_the_build_context_run_without_one():
     assert variation.realized_values == [0.5]
 
 
+_VALID_BUILD_CONTEXT_FIELDS = {"num_envs": 2, "seed": 1, "variation_key": "asset.variation"}
+
+
 @pytest.mark.parametrize(
-    "field_values",
+    ("field_name", "invalid_value"),
     [
-        {"num_envs": 0, "seed": 1, "variation_key": "asset.variation"},
-        {"num_envs": True, "seed": 1, "variation_key": "asset.variation"},
-        {"num_envs": 2.0, "seed": 1, "variation_key": "asset.variation"},
-        {"num_envs": 2, "seed": True, "variation_key": "asset.variation"},
-        {"num_envs": 2, "seed": "1", "variation_key": "asset.variation"},
-        {"num_envs": 2, "seed": 1, "variation_key": ""},
-        {"num_envs": 2, "seed": 1, "variation_key": None},
+        ("num_envs", 0),
+        ("num_envs", True),
+        ("num_envs", 2.0),
+        ("seed", True),
+        ("seed", "1"),
+        ("variation_key", ""),
+        ("variation_key", None),
     ],
 )
-def test_build_context_rejects_invalid_fields(field_values):
-    with pytest.raises(AssertionError, match="VariationBuildContext"):
-        VariationBuildContext(**field_values)
+def test_build_context_rejects_invalid_field(field_name, invalid_value):
+    with pytest.raises(AssertionError, match=f"VariationBuildContext.{field_name} must"):
+        VariationBuildContext(**{**_VALID_BUILD_CONTEXT_FIELDS, field_name: invalid_value})
 
 
 def test_build_context_requires_every_field():
@@ -303,12 +310,10 @@ def _draw(generator: torch.Generator) -> torch.Tensor:
 
 def test_build_context_generator_is_keyed_by_seed_and_variation_key():
     context = VariationBuildContext(num_envs=1, seed=7, variation_key="pickup.asset_selection")
-    expected_generator_seed = int.from_bytes(hashlib.sha256(b"7:pickup.asset_selection").digest()[:8], "big")
     original_global_state = torch.random.get_rng_state()
 
     first_draw = _draw(context.make_generator())
     repeated_draw = _draw(context.make_generator())
-    expected_draw = _draw(torch.Generator().manual_seed(expected_generator_seed))
     other_num_envs_draw = _draw(
         VariationBuildContext(num_envs=4, seed=7, variation_key="pickup.asset_selection").make_generator()
     )
@@ -317,12 +322,19 @@ def test_build_context_generator_is_keyed_by_seed_and_variation_key():
         VariationBuildContext(num_envs=1, seed=8, variation_key="pickup.asset_selection").make_generator()
     )
 
-    assert torch.equal(first_draw, expected_draw)
     assert torch.equal(repeated_draw, first_draw)
     assert torch.equal(other_num_envs_draw, first_draw)
     assert not torch.equal(other_key_draw, first_draw)
     assert not torch.equal(other_seed_draw, first_draw)
     assert torch.equal(torch.random.get_rng_state(), original_global_state)
+
+
+def test_build_context_generator_seed_derivation_is_pinned():
+    """Pins how the generator seed is derived, so a change to it, which changes every seeded draw, is deliberate."""
+    context = VariationBuildContext(num_envs=1, seed=7, variation_key="pickup.asset_selection")
+    expected_generator_seed = int.from_bytes(hashlib.sha256(b"7:pickup.asset_selection").digest()[:8], "big")
+
+    assert torch.equal(_draw(context.make_generator()), _draw(torch.Generator().manual_seed(expected_generator_seed)))
 
 
 def test_build_context_generator_treats_seed_zero_as_a_seed():
