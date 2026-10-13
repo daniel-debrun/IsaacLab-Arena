@@ -67,6 +67,9 @@ class Object(RootedObjectBase):
         self.bounding_box: AxisAlignedBoundingBox | None = None
         """Explicit local bounds. None derives bounds from object_cfg.spawn."""
         self._spawn_cfg_geometry_by_key: dict[tuple, SpawnCfgGeometry] = {}
+        """Geometry per spawn configuration, keyed by get_geometry_key(). Editing a geometric setting of
+        object_cfg.spawn, or replacing it, gives a new key and new geometry. Physics or appearance edits
+        keep the cached entry."""
         self.object_cfg = self._init_object_cfg()
         self._pose_event_cfg = self._build_reset_event()
 
