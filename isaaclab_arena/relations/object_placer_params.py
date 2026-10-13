@@ -28,6 +28,10 @@ class ObjectPlacerParams:
     scene variety. ClutterOn uses its own random_yaw setting. Not optimized; collisions use the
     conservative box enclosing the rotated object."""
 
+    allow_arbitrary_anchor_rotation: bool = False
+    """If True, anchors with non-zero pitch or roll use :meth:`PlaceableAsset.get_world_bounding_box`
+    for placement collision geometry. Otherwise only Z quarter-turn anchor rotations are allowed."""
+
     max_placement_attempts: int = 10
     """Number of candidate layouts solved and ranked per result. Higher values raise the chance a valid
     layout is found in the batched solve. Also bounds the refill batches in PooledObjectPlacer."""

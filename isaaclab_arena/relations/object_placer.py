@@ -218,7 +218,11 @@ class ObjectPlacer:
         # Variant assignment fixes the env-to-USD mapping before bbox expansion.
         assign_variants_for_envs(objects, num_envs, placement_seed=self.params.placement_seed)
         num_candidates = num_envs * candidates_per_env
-        env_bboxes = build_per_env_bounding_boxes(objects, num_envs).get_bounding_boxes_for_all_envs()
+        env_bboxes = build_per_env_bounding_boxes(
+            objects,
+            num_envs,
+            allow_arbitrary_anchor_rotation=self.params.allow_arbitrary_anchor_rotation,
+        ).get_bounding_boxes_for_all_envs()
         batch = self._candidate_generator.generate_candidates(
             objects, anchor_objects_set, env_bboxes, candidates_per_env, generator, collision_objects
         )

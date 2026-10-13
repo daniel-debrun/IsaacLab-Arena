@@ -102,7 +102,38 @@ class PerEnvBoundingBoxes:
         return [self.get_bounding_boxes_for_env_id(env_id) for env_id in range(self.num_envs)]
 
 
-def build_per_env_bounding_boxes(objects: list[PlaceableAsset], num_envs: int) -> PerEnvBoundingBoxes:
+def _anchor_has_pitch_or_roll(rotation_xyzw: tuple[float, float, float, float]) -> bool:
+    x_rot, y_rot, _, _ = rotation_xyzw
+    return abs(x_rot) >= 1e-3 or abs(y_rot) >= 1e-3
+
+
+def _anchor_bbox_for_placement(
+    obj: PlaceableAsset,
+    bbox: AxisAlignedBoundingBox,
+    num_envs: int,
+    *,
+    allow_arbitrary_anchor_rotation: bool,
+) -> AxisAlignedBoundingBox:
+    rotation = obj.get_bounding_box_rotation()
+    if allow_arbitrary_anchor_rotation and _anchor_has_pitch_or_roll(rotation):
+        world = obj.get_world_bounding_box()
+        return AxisAlignedBoundingBox(
+            min_point=world.min_point.expand(num_envs, 3),
+            max_point=world.max_point.expand(num_envs, 3),
+        )
+    try:
+        quarters = quaternion_to_90_deg_z_quarters(rotation)
+    except AssertionError as error:
+        raise AssertionError(f"Anchor '{obj.name}': {error}") from error
+    return bbox.rotated_90_around_z(quarters)
+
+
+def build_per_env_bounding_boxes(
+    objects: list[PlaceableAsset],
+    num_envs: int,
+    *,
+    allow_arbitrary_anchor_rotation: bool = False,
+) -> PerEnvBoundingBoxes:
     """Build per-env base bboxes for each placement object.
 
     Anchor bounds include their fixed quarter-turn rotation. Movable-object bounds remain
@@ -113,11 +144,12 @@ def build_per_env_bounding_boxes(objects: list[PlaceableAsset], num_envs: int) -
         if obj.is_anchor:
             pose = obj.get_initial_pose()
             assert isinstance(pose, Pose), f"Anchor '{obj.name}' must have a fixed Pose"
-            try:
-                quarters = quaternion_to_90_deg_z_quarters(obj.get_bounding_box_rotation())
-            except AssertionError as error:
-                raise AssertionError(f"Anchor '{obj.name}': {error}") from error
-            object_bboxes[obj] = bbox.rotated_90_around_z(quarters)
+            object_bboxes[obj] = _anchor_bbox_for_placement(
+                obj,
+                bbox,
+                num_envs,
+                allow_arbitrary_anchor_rotation=allow_arbitrary_anchor_rotation,
+            )
     return PerEnvBoundingBoxes(object_bboxes=object_bboxes, num_envs=num_envs)
 
 
