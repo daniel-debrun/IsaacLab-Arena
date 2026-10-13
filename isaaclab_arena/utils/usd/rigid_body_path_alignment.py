@@ -58,15 +58,17 @@ class _BoundMaterial(NamedTuple):
 def align_rigid_body_paths(spawn_cfgs: Sequence[SpawnerCfg]) -> list[SpawnerCfg]:
     """Return spawn configurations whose rigid bodies sit at the same path inside their assets.
 
-    If they already do, the configurations are returned as copies. Otherwise each USD file is copied with its rigid
-    body moved to /rigid_body, and each returned configuration points at its copy, with its USD variant selections
-    baked in.
+    Isaac Lab finds a rigid object's body at one path in all environments, so assets spawned as one object must
+    agree on it. For example, the cracker box's rigid body is its root prim, while the sweet potato's is the child
+    prim ``/SweetPotato005``. Spawned together, each gets a cached copy of its USD file with the body at
+    ``/rigid_body``. If the paths already match, the configurations are returned unchanged and no file is written.
 
     Args:
-        spawn_cfgs: Native spawn configurations.
+        spawn_cfgs: Spawn configurations of the assets spawned as one object.
 
     Returns:
-        The aligned spawn configurations, in input order.
+        Spawn configurations in the same order. Changed ones point at a cached copy of their USD file, with its
+        USD variant selections baked in.
     """
     assert spawn_cfgs, "At least one spawn configuration is required."
     geometries = [SpawnCfgGeometry(spawn_cfg) for spawn_cfg in spawn_cfgs]
