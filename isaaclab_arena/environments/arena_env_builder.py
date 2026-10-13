@@ -224,11 +224,11 @@ class ArenaEnvBuilder:
         return VariationsEventCfg()
 
     def _apply_build_time_variations(self) -> None:
-        """Configure every enabled variation at build time before ``scene_cfg`` is materialised.
+        """Configure every enabled variation with this build's VariationBuildContext.
 
-        Each variation receives a VariationBuildContext with this build's ``num_envs``, seed and
-        its variation key. These mutate asset configs in place (e.g. a dome light's spawner
-        texture), so this must run before ``scene_cfg`` is materialised.
+        The context carries the build's ``num_envs``, seed and the variation's key. Build-time
+        variations mutate asset configs in place (e.g. a dome light's spawner texture), so this
+        must run before ``scene_cfg`` is materialised.
         """
         for asset_name, asset_variations in self.get_all_variations().items():
             for variation in asset_variations:

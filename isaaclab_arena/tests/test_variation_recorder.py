@@ -394,7 +394,7 @@ def test_build_time_record_rejects_per_env_draw_after_shared_draw():
         record.record_buildtime_sample(torch.tensor([[2.0]]), env_ids=[0])
     assert record.sample_for_episode(0, 0).tolist() == [1.0]
 
-    # A repeated shared draw replaces the earlier one, as on main.
+    # A repeated shared draw still replaces the earlier one; only per-env draws are checked for repeats.
     record.record_buildtime_sample(torch.tensor([[3.0]]))
     assert record.sample_for_episode(0, 0).tolist() == [3.0]
 

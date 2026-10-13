@@ -209,7 +209,7 @@ class VariationBase(ABC):
 
         Args:
             context: Settings of this build, read by the hooks through ``build_context``.
-                ArenaEnvBuilder always passes one. Without one, a hook that reads ``build_context`` fails.
+                Without one, a hook that reads ``build_context`` fails.
         """
         # Replace any earlier context, so a build without one never sees a previous build's settings.
         self._build_context = context
