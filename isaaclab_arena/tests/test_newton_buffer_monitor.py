@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 import warp as wp
 
-from isaaclab_arena.environments.newton_buffer_monitor import NewtonBufferMonitor
+from isaaclab_arena.utils.newton_buffer_monitor import NewtonBufferMonitor
 
 
 def _make_monitor(device: str = "cpu") -> tuple[NewtonBufferMonitor, SimpleNamespace, SimpleNamespace]:

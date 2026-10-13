@@ -21,8 +21,8 @@ from isaaclab_physx.renderers import IsaacRtxRendererGlobalSettingsCfg
 from isaaclab_physx.renderers.isaac_rtx_renderer_utils import apply_isaac_rtx_global_settings
 from isaaclab_tasks.utils import PresetCfg
 
-from isaaclab_arena.environments.newton_buffer_monitor import NewtonBufferMonitor
 from isaaclab_arena.progress_tracking.task_progress_cfg import TaskProgressCfg
+from isaaclab_arena.utils.newton_buffer_monitor import NewtonBufferMonitor
 
 if TYPE_CHECKING:
     from isaaclab_newton.assets.articulation.articulation import Articulation
@@ -30,6 +30,8 @@ if TYPE_CHECKING:
     from newton import Contacts, Control, Model, State
 
 
+# TODO: Remove the buffer overflow checks once https://github.com/newton-physics/newton/pull/4086 is
+# available in the Newton version used by Isaac Lab.
 class NewtonArenaMJWarpManager(NewtonMJWarpManager):
     """Customize Isaac Lab's Newton/MuJoCo-Warp solver lifecycle for Arena.
 
