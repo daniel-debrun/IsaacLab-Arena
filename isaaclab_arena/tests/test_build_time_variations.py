@@ -12,12 +12,18 @@ from isaaclab.utils.configclass import configclass
 
 from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
 from isaaclab_arena.variations.uniform_sampler import UniformSamplerCfg
-from isaaclab_arena.variations.variation_base import BuildTimeVariationBase, RunTimeVariationBase, VariationBaseCfg
+from isaaclab_arena.variations.variation_base import (
+    BuildTimeVariationBase,
+    RunTimeVariationBase,
+    VariationBaseCfg,
+    VariationBuildContext,
+)
 
 HEADLESS = True
 
 TEST_ASSET_NAME = "sphere"
 TEST_APPLIED_RADIUS = 0.42
+TEST_PER_ENV_VALUE = 0.25
 TEST_NUM_ENVS = 3
 TEST_SEED = 7
 
@@ -48,19 +54,19 @@ class TestBuildTimeVariation(BuildTimeVariationBase):
         self._asset.object_cfg.spawn.radius = float(self.sampler.sample(num_samples=1)[0, 0])
 
 
-class ContextRecordingVariation(BuildTimeVariationBase):
+class PerEnvContextReadingVariation(BuildTimeVariationBase):
     """Build-time variation that keeps each build context it receives and draws one value per env."""
 
     __test__ = False
 
-    def __init__(self, name: str = "context_recording"):
+    def __init__(self, name: str = "per_env_context_reading"):
         super().__init__(
             cfg=VariationBaseCfg(
-                sampler_cfg=UniformSamplerCfg(low=[TEST_APPLIED_RADIUS], high=[TEST_APPLIED_RADIUS]),
+                sampler_cfg=UniformSamplerCfg(low=[TEST_PER_ENV_VALUE], high=[TEST_PER_ENV_VALUE]),
             ),
             name=name,
         )
-        self.received_build_contexts: list = []
+        self.received_build_contexts: list[VariationBuildContext] = []
 
     def _realize_at_build_time(self) -> None:
         self.received_build_contexts.append(self.build_context)
@@ -68,28 +74,28 @@ class ContextRecordingVariation(BuildTimeVariationBase):
         self.sampler.sample(num_samples=num_envs, env_ids=torch.arange(num_envs))
 
 
-def noop_context_recording_event(env, env_ids, asset_cfg):  # noqa: ARG001
-    """No-op event term for the run-time context recording variation."""
+def noop_context_reading_event(env, env_ids, asset_cfg):  # noqa: ARG001
+    """No-op event term for the run-time context reading variation."""
 
 
-class RunTimeContextRecordingVariation(RunTimeVariationBase):
+class RunTimeContextReadingVariation(RunTimeVariationBase):
     """Run-time variation that keeps each build context its build-time preparation receives."""
 
     __test__ = False
 
-    def __init__(self, name: str = "runtime_context_recording"):
+    def __init__(self, name: str = "run_time_context_reading"):
         super().__init__(
             cfg=VariationBaseCfg(sampler_cfg=UniformSamplerCfg(low=[0.0], high=[1.0])),
             name=name,
         )
-        self.received_build_contexts: list = []
+        self.received_build_contexts: list[VariationBuildContext] = []
 
     def _prepare_at_build_time(self) -> None:
         self.received_build_contexts.append(self.build_context)
 
     def build_event_cfg(self) -> tuple[str, EventTermCfg]:
         event_cfg = EventTermCfg(
-            func=noop_context_recording_event,
+            func=noop_context_reading_event,
             mode="reset",
             params={"asset_cfg": SceneEntityCfg(TEST_ASSET_NAME)},
         )
@@ -155,38 +161,39 @@ def _test_enabled_build_time_variation_applied(simulation_app):
 def _test_builder_passes_build_context_and_records_per_env_samples(simulation_app):
     from isaaclab_arena.cli.isaaclab_arena_cli import arena_env_builder_cfg_from_argparse, get_isaaclab_arena_cli_parser
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
-    from isaaclab_arena.variations.variation_base import VariationBuildContext
 
     arena_env = get_test_environment(enabled=True)
     sphere = arena_env.scene.assets[TEST_ASSET_NAME]
-    context_variation = ContextRecordingVariation()
-    context_variation.enable()
-    sphere.add_variation(context_variation)
-    runtime_context_variation = RunTimeContextRecordingVariation()
+    per_env_variation = PerEnvContextReadingVariation()
+    per_env_variation.enable()
+    sphere.add_variation(per_env_variation)
+    runtime_context_variation = RunTimeContextReadingVariation()
     runtime_context_variation.enable()
     sphere.add_variation(runtime_context_variation)
     args_cli = get_isaaclab_arena_cli_parser().parse_args(["--num_envs", str(TEST_NUM_ENVS), "--seed", str(TEST_SEED)])
 
     _, env_kwargs = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).compose_manager_cfg()
 
-    assert context_variation.received_build_contexts == [
-        VariationBuildContext(num_envs=TEST_NUM_ENVS, seed=TEST_SEED, variation_key="sphere.context_recording")
+    assert per_env_variation.received_build_contexts == [
+        VariationBuildContext(num_envs=TEST_NUM_ENVS, seed=TEST_SEED, variation_key="sphere.per_env_context_reading")
     ]
     # Run-time variations get the context too, for their build-time preparation.
     assert runtime_context_variation.received_build_contexts == [
-        VariationBuildContext(num_envs=TEST_NUM_ENVS, seed=TEST_SEED, variation_key="sphere.runtime_context_recording")
+        VariationBuildContext(num_envs=TEST_NUM_ENVS, seed=TEST_SEED, variation_key="sphere.run_time_context_reading")
     ]
     variation_recorder = env_kwargs["variation_recorder"]
-    per_env_record = variation_recorder["sphere.context_recording"]
+    per_env_record = variation_recorder["sphere.per_env_context_reading"]
     for env_id in range(TEST_NUM_ENVS):
         for episode_idx in (0, 4):
             per_env_value = per_env_record.sample_for_episode(env_id, episode_idx)
-            assert per_env_value.tolist() == pytest.approx([TEST_APPLIED_RADIUS], abs=1e-6)
+            assert per_env_value.tolist() == pytest.approx([TEST_PER_ENV_VALUE], abs=1e-6)
     # Only the build's environments have a per-env value.
-    assert per_env_record.sample_for_episode(TEST_NUM_ENVS, 0) is None
-    # The existing shared build-time variation in the same build stays shared.
+    env_outside_build = TEST_NUM_ENVS
+    assert per_env_record.sample_for_episode(env_outside_build, 0) is None
+    # TestBuildTimeVariation, added by get_test_environment(enabled=True), draws without env_ids,
+    # so any env id reports its one shared value.
     shared_record = variation_recorder["sphere.test_build_time"]
-    shared_value = shared_record.sample_for_episode(TEST_NUM_ENVS + 5, 2)
+    shared_value = shared_record.sample_for_episode(env_outside_build, 4)
     assert shared_value.tolist() == pytest.approx([TEST_APPLIED_RADIUS], abs=1e-6)
     return True
 
