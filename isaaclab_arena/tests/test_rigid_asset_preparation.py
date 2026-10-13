@@ -289,6 +289,95 @@ def _test_relocation_drops_the_authored_root_translation_and_rotation(simulation
     return True
 
 
+def _write_instanceable_geometry(geometry_path, nested_instance_path=None, rigid_cube=False):
+    """Write a geometry layer with a 4 m cube, optionally inside a nested instanceable reference."""
+    from pxr import Usd, UsdGeom, UsdPhysics
+
+    stage = Usd.Stage.CreateNew(str(geometry_path))
+    root = UsdGeom.Xform.Define(stage, "/Geometry").GetPrim()
+    stage.SetDefaultPrim(root)
+    if nested_instance_path is None:
+        cube = UsdGeom.Cube.Define(stage, "/Geometry/ReferencedCube")
+        cube.CreateSizeAttr().Set(4.0)
+        if rigid_cube:
+            UsdPhysics.RigidBodyAPI.Apply(cube.GetPrim())
+    else:
+        inner = UsdGeom.Xform.Define(stage, "/Geometry/Inner").GetPrim()
+        inner.GetReferences().AddReference(nested_instance_path.name)
+        inner.SetInstanceable(True)
+    stage.GetRootLayer().Save()
+
+
+def _write_asset_with_instanced_visuals(source_path, geometry_path):
+    """Write a rigid body at /Asset/Group/Body with an instanceable Visuals child that references geometry_path.
+
+    This is the usual layout of Isaac Sim assets.
+    """
+    from pxr import UsdGeom
+
+    stage = _write_asset(source_path, "/Asset/Group/Body")
+    visuals = UsdGeom.Xform.Define(stage, "/Asset/Group/Body/Visuals").GetPrim()
+    visuals.GetReferences().AddReference(geometry_path.name)
+    visuals.SetInstanceable(True)
+    stage.GetRootLayer().Save()
+
+
+def _test_relocation_keeps_instanced_geometry_below_the_body(simulation_app, tmp_path, nested_instance):
+    import torch
+
+    from pxr import Usd, UsdGeom
+
+    from isaaclab_arena.assets.spawn_cfg_geometry import SpawnCfgGeometry
+    from isaaclab_arena.utils.usd.rigid_asset_preparation import align_rigid_body_paths
+    from isaaclab_arena.utils.usd.rigid_bodies import get_all_rigid_body_prim_paths_from_stage
+
+    geometry_path = tmp_path / "geometry.usda"
+    referenced_cube_path = "Visuals/ReferencedCube"
+    if nested_instance:
+        inner_geometry_path = tmp_path / "inner_geometry.usda"
+        _write_instanceable_geometry(inner_geometry_path)
+        _write_instanceable_geometry(geometry_path, nested_instance_path=inner_geometry_path)
+        referenced_cube_path = "Visuals/Inner/ReferencedCube"
+    else:
+        _write_instanceable_geometry(geometry_path)
+    root_path = tmp_path / "root.usda"
+    instanced_path = tmp_path / "instanced.usda"
+    _write_asset(root_path, "/Asset")
+    _write_asset_with_instanced_visuals(instanced_path, geometry_path)
+    spawn_cfgs = [_make_spawn_cfg(root_path), _make_spawn_cfg(instanced_path)]
+    original_bound = SpawnCfgGeometry(spawn_cfgs[1]).get_bounding_box()
+    with patch(CACHE_DIR_TARGET, return_value=tmp_path):
+        aligned = align_rigid_body_paths(spawn_cfgs)
+    relocated_bound = SpawnCfgGeometry(aligned[1]).get_bounding_box()
+    assert torch.allclose(original_bound.min_point, relocated_bound.min_point)
+    assert torch.allclose(original_bound.max_point, relocated_bound.max_point)
+    stage = Usd.Stage.CreateInMemory()
+    holder = UsdGeom.Xform.Define(stage, "/World/Object").GetPrim()
+    holder.GetReferences().AddReference(aligned[1].usd_path)
+    assert get_all_rigid_body_prim_paths_from_stage(stage) == ["/World/Object/rigid_body"]
+    assert stage.GetPrimAtPath(f"/World/Object/rigid_body/{referenced_cube_path}").IsA(UsdGeom.Cube)
+    return True
+
+
+def _test_relocation_finds_rigid_bodies_inside_instances(simulation_app, tmp_path):
+    from isaaclab_arena.utils.usd.rigid_asset_preparation import align_rigid_body_paths
+
+    geometry_path = tmp_path / "geometry.usda"
+    _write_instanceable_geometry(geometry_path, rigid_cube=True)
+    root_path = tmp_path / "root.usda"
+    instanced_path = tmp_path / "instanced.usda"
+    _write_asset(root_path, "/Asset")
+    # The second rigid body sits inside an instance, where body discovery does not look.
+    _write_asset_with_instanced_visuals(instanced_path, geometry_path)
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    with patch(CACHE_DIR_TARGET, return_value=cache_dir):
+        with pytest.raises(AssertionError, match="exactly one rigid body"):
+            align_rigid_body_paths([_make_spawn_cfg(root_path), _make_spawn_cfg(instanced_path)])
+    assert not list(cache_dir.iterdir())
+    return True
+
+
 def _test_relocated_cache_files_are_named_by_content(simulation_app, tmp_path):
     import re
 
@@ -493,6 +582,22 @@ def test_relocation_keeps_authored_root_scale_when_spawn_scale_is_none(tmp_path)
 def test_relocation_drops_the_authored_root_translation_and_rotation(tmp_path):
     assert run_function_with_persistent_simulation_app(
         _test_relocation_drops_the_authored_root_translation_and_rotation, headless=HEADLESS, tmp_path=tmp_path
+    )
+
+
+@pytest.mark.parametrize("nested_instance", [False, True])
+def test_relocation_keeps_instanced_geometry_below_the_body(tmp_path, nested_instance):
+    assert run_function_with_persistent_simulation_app(
+        _test_relocation_keeps_instanced_geometry_below_the_body,
+        headless=HEADLESS,
+        tmp_path=tmp_path,
+        nested_instance=nested_instance,
+    )
+
+
+def test_relocation_finds_rigid_bodies_inside_instances(tmp_path):
+    assert run_function_with_persistent_simulation_app(
+        _test_relocation_finds_rigid_bodies_inside_instances, headless=HEADLESS, tmp_path=tmp_path
     )
 
 

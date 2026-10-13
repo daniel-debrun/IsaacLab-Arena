@@ -19,7 +19,7 @@ from typing import Any
 from isaaclab.sim import UsdFileCfg
 from isaaclab.sim.schemas import SchemaFragment
 from isaaclab.sim.spawners.spawner_cfg import SpawnerCfg
-from isaaclab.sim.utils import standardize_xform_ops
+from isaaclab.sim.utils import make_uninstanceable, standardize_xform_ops
 from pxr import Sdf, Usd, UsdGeom, UsdShade
 
 from isaaclab_arena.assets.asset_cache import get_arena_asset_cache_dir
@@ -163,12 +163,7 @@ def _relocate_rigid_body(geometry: SpawnCfgGeometry, body_path: str) -> Sdf.Laye
     stage = geometry.open_usd_stage()
     # Instance proxies cannot be edited or found by Traverse(), so make the whole asset editable in this
     # throwaway stage before looking for bodies.
-    while True:
-        instances = [prim for prim in stage.Traverse() if prim.IsInstance()]
-        if not instances:
-            break
-        for prim in instances:
-            prim.SetInstanceable(False)
+    make_uninstanceable(_SOURCE_ROOT, stage=stage)
     original_body = Sdf.Path(str(_SOURCE_ROOT) + body_path)
     rigid_body_paths = get_all_rigid_body_prim_paths_from_stage(stage)
     assert rigid_body_paths == [
