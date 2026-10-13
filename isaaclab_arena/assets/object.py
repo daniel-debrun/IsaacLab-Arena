@@ -26,7 +26,7 @@ from isaaclab_arena.utils.usd.rigid_bodies import read_asset_rigid_body_paths
 
 
 class Object(RootedObjectBase):
-    """Pick-up object config for a pick-and-place environment."""
+    """Scene object spawned from a USD file or a spawn configuration, as a rigid, articulated or static (``BASE``) asset."""
 
     def __init__(
         self,
