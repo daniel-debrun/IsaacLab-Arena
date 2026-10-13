@@ -74,6 +74,9 @@ field. Arena uses this name in command-line overrides, output directories, and r
 Use ``rollout_limit.num_episodes`` instead of ``rollout_limit.num_steps`` to start and finish
 exactly that many episodes per Run, across all rebuilds.
 
+See :doc:`Record and Replay Experiments <experiment_record_replay>` for variation recording,
+partial and complete replay, and episode scheduling across one or more rebuilds.
+
 Runs keep their YAML order and execute locally in that order.
 
 
@@ -195,3 +198,9 @@ Related concepts
 * :doc:`Policy Design <policy/index>`
 * :doc:`Metrics Design <task/concept_metrics_design>`
 * :doc:`Environment Variations <variations/index>`
+
+.. toctree::
+   :hidden:
+   :maxdepth: 1
+
+   experiment_record_replay

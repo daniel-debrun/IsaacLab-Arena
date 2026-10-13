@@ -53,7 +53,7 @@
     <link rel="icon" href="../../_static/favicon.png"/>
     <link rel="index" title="Index" href="../../genindex.html" />
     <link rel="search" title="Search" href="../../search.html" />
-    <link rel="next" title="Variations" href="variations/index.html" />
+    <link rel="next" title="Record and Replay Experiments" href="experiment_record_replay.html" />
     <link rel="prev" title="Policy" href="policy/index.html" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -367,6 +367,7 @@
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../example_workflows/analysis/index.html">Evaluation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l2"><a class="reference internal" href="../example_workflows/analysis/variations.html">Run an Evaluation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../example_workflows/analysis/recorded_variations.html">Run an Evaluation with Recorded Variations</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../example_workflows/sensitivity_analysis/sensitivity_analysis.html">Sensitivity Analysis</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../example_workflows/multi_node_evaluation/multi_node_evaluation.html">Multi-Node Evaluation</a></li>
 </ul>
@@ -495,7 +496,10 @@
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="policy/index.html">Policy</a></li>
-<li class="toctree-l1 current active"><a aria-current="page" class="current reference internal" href="#">Arena Experiments</a></li>
+<li class="toctree-l1 current active has-children"><a aria-current="page" class="current reference internal" href="#">Arena Experiments</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="experiment_record_replay.html">Record and Replay Experiments</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="variations/index.html">Variations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l2"><a class="reference internal" href="variations/variations.html">Variations</a></li>
 </ul>
@@ -653,6 +657,8 @@ the background. The Run name comes from its key below <code class="docutils lite
 field. Arena uses this name in command-line overrides, output directories, and reports.</p>
 <p>Use <code class="docutils literal notranslate"><span class="pre">rollout_limit.num_episodes</span></code> instead of <code class="docutils literal notranslate"><span class="pre">rollout_limit.num_steps</span></code> to start and finish
 exactly that many episodes per Run, across all rebuilds.</p>
+<p>See <a class="reference internal" href="experiment_record_replay.html"><span class="doc">Record and Replay Experiments</span></a> for variation recording,
+partial and complete replay, and episode scheduling across one or more rebuilds.</p>
 <p>Runs keep their YAML order and execute locally in that order.</p>
 </section>
 <section id="one-definition-two-execution-paths">
@@ -773,6 +779,8 @@ multi-GPU execution or policy evaluation of an external environment loaded with
 <li><p><a class="reference internal" href="task/concept_metrics_design.html"><span class="doc">Metrics Design</span></a></p></li>
 <li><p><a class="reference internal" href="variations/index.html"><span class="doc">Environment Variations</span></a></p></li>
 </ul>
+<div class="toctree-wrapper compound">
+</div>
 </section>
 </section>
 
@@ -796,11 +804,11 @@ multi-GPU execution or policy evaluation of an external environment loaded with
       </div>
     </a>
     <a class="right-next"
-       href="variations/index.html"
+       href="experiment_record_replay.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Variations</p>
+        <p class="prev-next-title">Record and Replay Experiments</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
