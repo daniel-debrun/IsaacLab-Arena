@@ -53,15 +53,7 @@ def get_geometry_key(spawn_cfg: SpawnerCfg) -> tuple:
 
 
 class SpawnCfgGeometry:
-    """Bounds and contact body computed from one native spawn configuration, before anything is spawned.
-
-    Placement and contact-sensor setup use it while the scene configuration is built. ``ArenaWorld``
-    reports the live geometry of the spawned scene instead.
-
-    USD bounds are measured from the default prim's origin with its authored rotation kept.
-    A tuple spawn scale takes the place of the authored root scale, which matches Isaac Lab's spawn
-    for a uniform authored scale or an unrotated root. None keeps the authored scale.
-    """
+    """Bounds and contact body computed from one native spawn configuration, before anything is spawned."""
 
     def __init__(self, spawn_cfg: SpawnerCfg):
         _assert_single_spawn_cfg(spawn_cfg)
@@ -72,7 +64,11 @@ class SpawnCfgGeometry:
         self._contact_body_path: str | None = None
 
     def get_bounding_box(self) -> AxisAlignedBoundingBox:
-        """Return local bounds relative to the spawned asset root."""
+        """Return local bounds relative to the spawned asset root.
+
+        USD bounds are measured from the default prim's origin, with its authored rotation kept.
+        A tuple spawn scale replaces the authored root scale, and None keeps it.
+        """
         if self._bounding_box is None:
             if isinstance(self.spawn_cfg, UsdFileCfg):
                 self._bounding_box = compute_local_bounding_box_from_stage(

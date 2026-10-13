@@ -201,12 +201,9 @@ def compute_local_bounding_box_from_usd(
 ) -> AxisAlignedBoundingBox:
     """Compute the local bounding box matching Isaac Lab ``UsdFileCfg`` spawn size.
 
-    A spawn scale takes the place of the default prim's authored root scale, which matches Isaac Lab's
-    spawn for a uniform authored scale or an unrotated root.
-
     Args:
         usd_path: Path to the USD file.
-        scale: Spawn-time scale passed to ``UsdFileCfg`` / ``Object.scale``.
+        scale: Spawn-time scale that replaces the authored root scale.
         prim_path: Optional sub-prim to bound. When set, returns that prim's AABB
             expressed in the default prim's frame (root-relative). When None,
             bounds the default prim itself.
@@ -227,14 +224,9 @@ def compute_local_bounding_box_from_stage(
 ) -> AxisAlignedBoundingBox:
     """Compute the local bounding box of a stage's default prim as Isaac Lab spawns it.
 
-    A spawn scale stands in for the default prim's authored ``xformOp:scale``: the bounds are divided by
-    the authored scale and multiplied by the spawn scale along each world axis. This matches
-    ``UsdFileCfg.scale`` at spawn time when the authored scale is uniform or the root is not rotated.
-    ``None`` keeps the authored root scale.
-
     Args:
         stage: Stage whose default prim is the asset root.
-        scale: Spawn-time scale, or None to keep the authored root scale.
+        scale: Spawn-time scale that replaces the authored root scale, or None to keep it.
         prim_path: Optional sub-prim to bound. When set, returns that prim's AABB
             expressed in the default prim's frame (root-relative). When None,
             bounds the default prim itself.
@@ -264,6 +256,8 @@ def compute_local_bounding_box_from_stage(
 
     if scale is None:
         return bbox
+    # The spawn scale replaces the authored root scale. Rescaling the world-aligned box per axis
+    # matches Isaac Lab's spawn only for a uniform authored scale or an unrotated root.
     usd_scale = _read_default_prim_scale(default_prim)
     assert not any(
         s == 0.0 for s in usd_scale
