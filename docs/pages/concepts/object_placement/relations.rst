@@ -261,98 +261,64 @@ relation.
 
 .. _recorded-layouts:
 
-Recorded Layouts
-----------------
+Replay a Recorded Layout
+-------------------------
 
-Pass the companion file to the environment builder:
+Placement poses can be replayed from an episode JSONL containing solved poses
+from earlier runs, bypassing relation solving and post-physics settling.
+
+Following is an example Experiment Definition with an episode JSONL for replay:
+
+.. literalinclude:: ../../../../isaaclab_arena_environments/experiment_configs/placement_record_replay/settled_placement_replay_experiment.yaml
+   :language: yaml
+
+Run it from the repository root:
 
 .. code-block:: bash
 
-   /isaac-sim/python.sh isaaclab_arena/scripts/environment_runner.py \
-       --env_spec scene.yaml --placement_layouts layouts.jsonl
+   python isaaclab_arena/evaluation/experiment_runner.py \
+       --experiment_config isaaclab_arena_environments/experiment_configs/placement_record_replay/settled_placement_replay_experiment.yaml \
+       --device cpu --viz kit
 
-For a registered Python environment, place ``--placement_layouts layouts.jsonl``
-before the environment subcommand. Python callers use
-``ArenaEnvBuilderCfg(placement_layouts_path="layouts.jsonl")``. All file paths are
-relative to the working directory.
+Python callers use
+``ArenaEnvBuilderCfg(recorded_variation_samples_path="layouts.jsonl")``. All
+file paths are relative to the working directory.
+Placement replay does not rerun geometry, reachability or settling checks.
+``resolve_on_reset`` and ``placement_seed`` are ignored.
 
-A ten-layout example for ``isaaclab_arena/tests/test_data/placement_replay.yaml``
-is available in ``isaaclab_arena/tests/test_data/placement_replay.jsonl``.
+File Format
+~~~~~~~~~~~
 
-Each JSONL line contains one complete layout under
-``variations["scene.relation_placement"]["poses"]``. Poses use runtime scene keys
-for both YAML and Python environments. Use ``asset.get_scene_root_keys()`` to
-identify all owned physics roots. Ordinary objects use their instance names;
-single-root embodiments commonly use ``"robot"``. Compound embodiments expose
-each owned root, whose runtime name can differ from the YAML node ID.
-Positions are environment-local, in metres; rotations are xyzw quaternions.
-Every nonblank line must contain the placement block with the same object set.
-Additional episode fields are ignored; episodes without placement records cannot
-be loaded. Python callers can pass ``PlacementLayouts`` directly to
-``IsaacLabArenaEnvironment`` instead of configuring a file path.
-Supplying both is rejected.
+Each row contains one complete sample under ``placement``:
 
-.. code-block:: python
+.. code-block:: json
 
-   from isaaclab_arena.relations.placement_layouts import PlacementLayouts
+   {"placement": {"layout_id": "layout_000000", "poses": {"cube": {"position_xyz": [0.1, 0.2, 0.3], "rotation_xyzw": [0.0, 0.0, 0.0, 1.0]}}}}
 
-   arena_env.placement_layouts = PlacementLayouts.from_episode_jsonl("layouts.jsonl")
-
-Set replay inputs before ``compose_manager_cfg()`` or ``make_registered()``.
-For registered Python environments, a Python runner can set
-``builder.arena_env.placement_layouts`` after obtaining the builder. Replay inputs
-are read when the environment configuration is composed.
-
-``PlacementLayouts.write_episode_jsonl(path, source=...)`` writes the same format.
-The caller supplies the source label, such as ``"solver"`` or ``"settled"``;
-the writer does not solve or simulate the poses.
-
-Replay Order
-~~~~~~~~~~~~
-
-Resetting environments draw consecutive layouts from one shared queue, in reset
-request order. The queue wraps after its last layout. For four layouts and three
-environments, successive full resets select ``[0, 1, 2]``, then ``[3, 0, 1]``.
-A partial reset consumes only the layouts needed by those environments; other
-poses remain unchanged. Layouts can repeat across active environments after the
-queue wraps. If the environment count is a multiple of the layout count,
-repeated full resets assign the same layout to each environment. The queue covers
-all layouts across the batch; it does not guarantee that each environment visits
-every layout. Partial-reset order determines later assignments, so different
-policies may receive different per-environment sequences.
+Pose keys are runtime scene-root names. Ordinary objects use their instance
+names; a single-root embodiment commonly uses ``"robot"``; compound assets
+must include every name returned by ``asset.get_scene_root_keys()``. Positions
+are environment-local metres and rotations are xyzw quaternions.
 
 .. _placement-replay-configuration:
 
 Replay Configuration
 ~~~~~~~~~~~~~~~~~~~~
 
-Replay validates finite poses, unit quaternions, consistent object coverage and
-reset ownership. Recorded objects share one reset writer, which zeros their root
-velocities. All non-anchor objects with spatial relations must be included,
-as must a non-anchor embodiment carrying any placement relation or marker.
+Replay validates finite poses, unit quaternions, consistent root coverage, and
+reset ownership before constructing the scene. It rejects:
 
-Before replaying a recording:
+- unknown roots or incomplete compound assets;
+- missing non-anchor assets constrained by relations;
+- ``RigidObjectSet`` and ``RandomAroundSolution`` assets, whose identity or
+  random reset cannot be recovered from poses alone;
+- disabled pose resets, nonzero initial root velocity, or non-fixed
+  asset-owned pose-reset policies.
 
-- Use concrete assets rather than object sets, and include every owned root of
-  each recorded asset.
-- Enable pose resets and use fixed initial poses for assets with pose-reset
-  events. Remove ``RandomAroundSolution`` from recorded assets and keep their
-  initial root velocities zero.
-- Keep ``resolve_on_reset=True``. An explicit ``--no-resolve_on_reset`` or a
-  false environment default is rejected.
-- Remove explicit ``placement_seed`` settings from the CLI, builder configuration
-  and ``placer_params``. The recording seed selects release candidates; replay
-  consumes layouts in file order.
+After validation, one coordinated placement event becomes the root-pose reset
+writer for all recorded assets and zeros their root velocities. Articulation
+joint reset behavior remains independent.
 
-``--no_solve_relations`` is compatible: replay never invokes the solver.
-Placement validator settings apply only when solving; they do not revalidate a
-recorded layout or open the solver's debug viewer.
-
-Loading bypasses solving and does not rerun geometry, reachability or settling
-checks. Preserve the scene geometry, robot initialization and physics settings
-used to record the layouts. The file contains root poses, not joint states or
-other randomized properties; their normal reset initialization still applies.
-Disable pose-changing variations and callbacks when exact root replay is required.
 
 Next Steps
 ----------
