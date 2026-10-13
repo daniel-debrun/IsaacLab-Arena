@@ -47,10 +47,10 @@ def _patch_contact_body_path(contact_body_path="/rigid"):
     return patch.object(SpawnCfgGeometry, "get_contact_body_path", autospec=True, return_value=contact_body_path)
 
 
-def _write_rigid_cube_usd(usd_path, body_path="/Object"):
+def _write_rigid_cube_usd(usd_path, body_path="/Object", default_path=None):
     """Write a USD file with one rigid body at body_path that holds a 0.1 m collision cube.
 
-    The first prefix of body_path becomes the default prim.
+    The default prim is default_path, or the first prefix of body_path when it is None.
     """
     from pxr import Sdf, Usd, UsdGeom, UsdPhysics
 
@@ -58,7 +58,9 @@ def _write_rigid_cube_usd(usd_path, body_path="/Object"):
     body_prefixes = Sdf.Path(body_path).GetPrefixes()
     for prefix in body_prefixes:
         UsdGeom.Xform.Define(stage, prefix)
-    stage.SetDefaultPrim(stage.GetPrimAtPath(body_prefixes[0]))
+    if default_path is None:
+        default_path = body_prefixes[0]
+    stage.SetDefaultPrim(stage.GetPrimAtPath(default_path))
     body = stage.GetPrimAtPath(body_path)
     UsdPhysics.RigidBodyAPI.Apply(body)
     UsdPhysics.MassAPI.Apply(body)
@@ -120,7 +122,7 @@ def _test_object_set_samples_and_stores_variant_indices(simulation_app):
 
 def _test_two_object_sets_resolve_normalized_usd_contact_paths(simulation_app, tmp_path):
     """Task sensor and filter paths must resolve for every pair of members, with and without relocated bodies."""
-    from pxr import Usd, UsdGeom, UsdPhysics
+    from pxr import Usd, UsdPhysics
 
     from isaaclab_arena.assets.object import Object
     from isaaclab_arena.assets.object_set import RigidObjectSet
@@ -128,16 +130,8 @@ def _test_two_object_sets_resolve_normalized_usd_contact_paths(simulation_app, t
     from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask
 
     def make_member(name, default_path, body_path):
-        usd_path = tmp_path / f"{name}.usda"
-        stage = Usd.Stage.CreateNew(str(usd_path))
-        default_prim = UsdGeom.Xform.Define(stage, default_path).GetPrim()
-        stage.SetDefaultPrim(default_prim)
-        body = UsdGeom.Xform.Define(stage, body_path).GetPrim()
-        UsdPhysics.RigidBodyAPI.Apply(body)
-        shape = UsdGeom.Cube.Define(stage, f"{body_path}/Shape")
-        UsdPhysics.CollisionAPI.Apply(shape.GetPrim())
-        stage.GetRootLayer().Save()
-        return Object(name=name, object_type=ObjectType.RIGID, usd_path=str(usd_path))
+        usd_path = _write_rigid_cube_usd(tmp_path / f"{name}.usda", body_path, default_path=default_path)
+        return Object(name=name, object_type=ObjectType.RIGID, usd_path=usd_path)
 
     pickup_members = [
         make_member("pickup_root", "/Fruit", "/Fruit"),
@@ -171,7 +165,7 @@ def _test_two_object_sets_resolve_normalized_usd_contact_paths(simulation_app, t
         for path_expr in (sensor_cfg.prim_path, *sensor_cfg.filter_prim_paths_expr):
             body = stage.GetPrimAtPath(path_expr.replace("{ENV_REGEX_NS}", env_path))
             assert body.IsValid() and body.HasAPI(UsdPhysics.RigidBodyAPI), path_expr
-            assert body.GetChild("Shape").HasAPI(UsdPhysics.CollisionAPI), path_expr
+            assert body.GetChild("Cube").HasAPI(UsdPhysics.CollisionAPI), path_expr
     return True
 
 
