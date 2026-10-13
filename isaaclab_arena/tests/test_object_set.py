@@ -234,7 +234,7 @@ def _test_object_set_regenerates_variants_with_different_num_envs(simulation_app
         with redirect_stdout(output):
             obj_set.assign_variants(num_envs=4)
         assert obj_set.variant_indices_by_env == [0, 1, 0, 1]
-        assert "regenerating variant assignments" in output.getvalue()
+        assert "regenerating member assignments" in output.getvalue()
     entry_paths = [entry.usd_path for entry in obj_set.object_cfg.spawn.assets_cfg]
     assert entry_paths == [can_a.usd_path, can_b.usd_path, can_a.usd_path, can_b.usd_path]
     return True
