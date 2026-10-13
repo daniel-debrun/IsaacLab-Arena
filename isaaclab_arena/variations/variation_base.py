@@ -126,23 +126,27 @@ class VariationBase(ABC):
 
     @property
     def host(self) -> Asset | None:
-        """Asset this variation was added to, or None before ``Asset.add_variation`` or once that asset is gone."""
+        """Asset this variation was added to; None before it is added or after that asset is garbage-collected."""
         if self._host_ref is None:
             return None
         return self._host_ref()
 
-    def attach(self, asset: Asset) -> None:
-        """Record ``asset`` as this variation's host; ``Asset.add_variation`` calls this.
+    def set_host(self, asset: Asset) -> None:
+        """Set ``asset`` as this variation's host; Asset.add_variation calls this when it adds the variation.
 
-        A variation is attached once. Subclasses may override this to check the host
-        and then call ``super().attach(asset)``.
+        A variation has one host. Subclasses may override this to reject an unsupported host
+        and then call ``super().set_host(asset)``.
 
         Args:
             asset: Asset the variation is being added to.
         """
-        assert self._host_ref is None, f"Variation '{self.name}' is already attached to an asset."
-        # A weak reference: configclass validation follows object attributes without cycle
-        # detection, so a strong asset -> variation -> asset reference would recurse forever.
+        assert self._host_ref is None, (
+            f"Variation '{self.name}' already has a host asset and cannot also be added to '{asset.name}'."
+            " Create one variation instance per asset."
+        )
+        # Weak because an asset can be a configclass field (for example JointStateRecorderCfg.object), and
+        # configclass validation follows object attributes without cycle detection: a strong
+        # asset -> variation -> asset reference would recurse when that config is validated.
         self._host_ref = weakref.ref(asset)
 
     @property

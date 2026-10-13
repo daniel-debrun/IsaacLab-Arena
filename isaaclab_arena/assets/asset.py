@@ -29,15 +29,15 @@ class Asset:
         self.variations: dict[str, VariationBase] = {}
 
     def add_variation(self, variation: VariationBase) -> None:
-        """Attach a variation under its instance ``name``, which must not already be attached.
+        """Add ``variation`` under its ``name`` and make this asset its host.
 
-        Records this asset as the variation's host. Subclasses call this from their ``__init__``
-        to declare the variations they support.
+        The name must be unused on this asset, and the variation must not have a host yet.
+        Subclasses call this from their ``__init__`` to declare the variations they support.
         """
         assert (
             variation.name not in self.variations
         ), f"Asset '{self.name}' ({type(self).__name__}) already has variation '{variation.name}' attached."
-        variation.attach(self)
+        variation.set_host(self)
         self.variations[variation.name] = variation
 
     def get_variation(self, name: str) -> VariationBase:
