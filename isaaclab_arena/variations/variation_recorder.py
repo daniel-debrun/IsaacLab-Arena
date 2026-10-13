@@ -33,9 +33,9 @@ class VariationRecord:
         self.cfg = cfg
         # Run-time draw, one per (env id, episode index).
         self._samples_by_env_episode: dict[EnvEpisodeKey, Any] = {}
-        # Build-time draw shared by all envs; applies to every episode of every env.
-        self._build_time_sample: Any = None
-        self._has_shared_build_time_sample = False
+        # Draw made without env ids, by a variation of either lifecycle; applies to every episode of every env.
+        self._shared_sample: Any = None
+        self._has_shared_sample = False
         # Build-time per-env draws; each applies to every episode of its env, so release_episode keeps them.
         self._build_time_samples_by_env: dict[int, Any] = {}
 
@@ -56,41 +56,42 @@ class VariationRecord:
             ), f"Variation '{self.name}' already recorded a sample for env {env_id}, episode {episode_idx}."
             self._samples_by_env_episode[key] = sample[row]
 
-    def record_buildtime_sample(self, sample: Any, env_ids: Sequence[int] | None = None) -> None:
-        """Record a build-time draw: one row shared by all envs, or one row per env in ``env_ids``.
+    def record_shared_sample(self, sample: Any) -> None:
+        """Record a draw shared by all envs; it applies to every episode of every env.
 
-        A shared draw replaces an earlier shared draw. A variation cannot mix shared and per-env
-        build-time draws. A later per-env draw for other envs is accepted; an env that already has a
-        value is rejected. A rejected draw records nothing.
+        A later shared draw replaces it. A shared draw after a per-env build-time draw is rejected.
 
         Args:
-            sample: The drawn rows; a single row when ``env_ids`` is None, otherwise row ``i``
-                belongs to ``env_ids[i]``.
-            env_ids: The envs the rows were drawn for, or None for a draw shared by all envs.
+            sample: The drawn sample, holding a single row.
         """
-        if env_ids is None:
-            self._record_shared_build_time_sample(sample)
-        else:
-            self._record_per_env_build_time_samples(sample, list(env_ids))
-
-    def _record_shared_build_time_sample(self, sample: Any) -> None:
-        assert (
-            len(sample) == 1
-        ), f"Variation '{self.name}' build-time draw expected a single sample for all envs; got {len(sample)}."
+        assert len(sample) == 1, (
+            f"Variation '{self.name}' drew {len(sample)} rows without env_ids. A draw shared by all envs has one"
+            " row; to draw one row per env, pass env_ids to the sampler."
+        )
         assert (
             not self._build_time_samples_by_env
         ), f"Variation '{self.name}' mixes shared and per-environment build-time draws."
-        self._build_time_sample = sample[0]
-        self._has_shared_build_time_sample = True
+        self._shared_sample = sample[0]
+        self._has_shared_sample = True
 
-    def _record_per_env_build_time_samples(self, sample: Any, env_ids: list[int]) -> None:
+    def record_per_env_build_time_samples(self, sample: Any, env_ids: Sequence[int]) -> None:
+        """Record a build-time variation's per-env draw; row ``i`` applies to every episode of ``env_ids[i]``.
+
+        A later draw for other envs is accepted. A draw for an env that already has a value, or for a
+        variation with a shared draw, is rejected and records nothing.
+
+        Args:
+            sample: The drawn rows, one for each entry of ``env_ids``.
+            env_ids: The envs the rows were drawn for.
+        """
+        env_ids = list(env_ids)
         # Validate the whole draw first, so a rejected draw leaves no partial record.
         assert len(sample) == len(env_ids), (
             f"Variation '{self.name}' per-environment build-time draw has {len(sample)} rows for "
             f"{len(env_ids)} environments."
         )
         assert (
-            not self._has_shared_build_time_sample
+            not self._has_shared_sample
         ), f"Variation '{self.name}' mixes shared and per-environment build-time draws."
         assert len(set(env_ids)) == len(
             env_ids
@@ -105,15 +106,16 @@ class VariationRecord:
     def sample_for_episode(self, env_id: int, episode_idx: int) -> Any:
         """Return the value drawn for ``env_id``'s ``episode_idx``, or ``None`` if none was drawn.
 
-        A run-time draw made during that episode comes first, then the env's build-time draw,
-        then the build-time draw shared by all envs.
+        This is the run-time draw made during that episode, else the env's per-env build-time draw,
+        else the shared draw. A variation fills either the per-episode or the per-env build-time
+        draws, never both.
         """
         key = EnvEpisodeKey(env_id, episode_idx)
         if key in self._samples_by_env_episode:
             return self._samples_by_env_episode[key]
         if env_id in self._build_time_samples_by_env:
             return self._build_time_samples_by_env[env_id]
-        return self._build_time_sample
+        return self._shared_sample
 
     def release_episode(self, env_id: int, episode_idx: int) -> None:
         """Release the run-time sample retained for a finished episode."""
@@ -165,7 +167,7 @@ class VariationRecorder:
                 self.records[variation_key] = record
 
                 variation.add_sample_listener(
-                    self._make_listener(record, build_time=isinstance(variation, BuildTimeVariationBase))
+                    self._make_listener(record, is_build_time_variation=isinstance(variation, BuildTimeVariationBase))
                 )
 
     def attach_placement_sampler(
@@ -183,15 +185,17 @@ class VariationRecorder:
         record: VariationRecord,
         serializer: Callable[[Any], Any] | None = None,
         *,
-        build_time: bool = False,
+        is_build_time_variation: bool = False,
     ) -> Callable[[Any, torch.Tensor | None], None]:
-        """Create a sampler listener using shared episode attribution.
+        """Return a listener that stores each draw of a sampler in ``record``.
+
+        A draw without env ids is stored as shared by all envs. A per-env draw is stored for each env's
+        current episode, or for every episode of the env when ``is_build_time_variation`` is set.
 
         Args:
             record: The record that receives the samples.
             serializer: Converts each sample before it is recorded, if given.
-            build_time: Whether the sampler belongs to a build-time variation. Its per-env draws are then
-                kept for every episode of each env instead of the current episode.
+            is_build_time_variation: Whether the sampler belongs to a BuildTimeVariationBase.
 
         Returns:
             The listener to register with the sampler.
@@ -204,16 +208,15 @@ class VariationRecorder:
                 sample = sample.detach().cpu()
             if env_ids is None:
                 # Shared draw of either lifecycle: applies to every episode of every env.
-                record.record_buildtime_sample(sample)
-                return
-            if build_time:
+                record.record_shared_sample(sample)
+            elif is_build_time_variation:
                 # Per-env build-time draw: fixed for every episode of each env. It happens
                 # before the env exists, so it needs no bind_env().
-                record.record_buildtime_sample(sample, env_ids.tolist())
-                return
-            assert self._env is not None, "VariationRecorder needs bind_env() before per-env draws."
-            env_id_list = env_ids.tolist()
-            episode_indices = [self._env.get_episode_index(env_id) for env_id in env_id_list]
-            record.record_runtime_sample(sample, env_id_list, episode_indices)
+                record.record_per_env_build_time_samples(sample, env_ids.tolist())
+            else:
+                assert self._env is not None, "VariationRecorder needs bind_env() before per-env run-time draws."
+                env_id_list = env_ids.tolist()
+                episode_indices = [self._env.get_episode_index(env_id) for env_id in env_id_list]
+                record.record_runtime_sample(sample, env_id_list, episode_indices)
 
         return on_sample

@@ -68,7 +68,7 @@ class SamplerBase(ABC):
         """Forward ``sample`` (and the ``env_ids`` it was drawn for) to every registered listener.
 
         ``env_ids`` is the per-env id tensor/sequence the sample's rows correspond to, or ``None``
-        when the single sample applies to all envs (e.g. a build-time draw).
+        when the single sample applies to all envs (e.g. a shared build-time draw).
         """
         for listener in self._listeners:
             listener(sample, env_ids)

@@ -360,42 +360,42 @@ def test_runtime_variation_routing_is_unchanged():
 
 def test_build_time_record_rejects_invalid_per_env_draws_without_partial_writes():
     record = VariationRecord(name="asset.var", cfg=_RecorderTestVariationCfg())
-    record.record_buildtime_sample(torch.tensor([[1.0], [2.0]]), env_ids=[0, 2])
+    record.record_per_env_build_time_samples(torch.tensor([[1.0], [2.0]]), env_ids=[0, 2])
 
     with pytest.raises(AssertionError, match="already recorded a build-time sample"):
-        record.record_buildtime_sample(torch.tensor([[3.0], [4.0]]), env_ids=[1, 2])
+        record.record_per_env_build_time_samples(torch.tensor([[3.0], [4.0]]), env_ids=[1, 2])
     # The rejected draw wrote nothing: env 1 is still unrecorded and env 2 keeps its value.
     assert record.sample_for_episode(1, 0) is None
     assert record.sample_for_episode(2, 0).tolist() == [2.0]
 
     with pytest.raises(AssertionError, match="repeats an environment id"):
-        record.record_buildtime_sample(torch.tensor([[5.0], [6.0]]), env_ids=[3, 3])
+        record.record_per_env_build_time_samples(torch.tensor([[5.0], [6.0]]), env_ids=[3, 3])
     assert record.sample_for_episode(3, 0) is None
 
     with pytest.raises(AssertionError, match="rows for"):
-        record.record_buildtime_sample(torch.tensor([[7.0]]), env_ids=[4, 5])
+        record.record_per_env_build_time_samples(torch.tensor([[7.0]]), env_ids=[4, 5])
     assert record.sample_for_episode(4, 0) is None
 
     with pytest.raises(AssertionError, match="mixes shared and per-environment"):
-        record.record_buildtime_sample(torch.tensor([[8.0]]))
+        record.record_shared_sample(torch.tensor([[8.0]]))
     assert record.sample_for_episode(6, 0) is None
 
     # A later per-env draw for envs without a value is accepted and leaves earlier values in place.
-    record.record_buildtime_sample(torch.tensor([[9.0]]), env_ids=[1])
+    record.record_per_env_build_time_samples(torch.tensor([[9.0]]), env_ids=[1])
     assert record.sample_for_episode(1, 0).tolist() == [9.0]
     assert record.sample_for_episode(2, 0).tolist() == [2.0]
 
 
 def test_build_time_record_rejects_per_env_draw_after_shared_draw():
     record = VariationRecord(name="asset.var", cfg=_RecorderTestVariationCfg())
-    record.record_buildtime_sample(torch.tensor([[1.0]]))
+    record.record_shared_sample(torch.tensor([[1.0]]))
 
     with pytest.raises(AssertionError, match="mixes shared and per-environment"):
-        record.record_buildtime_sample(torch.tensor([[2.0]]), env_ids=[0])
+        record.record_per_env_build_time_samples(torch.tensor([[2.0]]), env_ids=[0])
     assert record.sample_for_episode(0, 0).tolist() == [1.0]
 
     # A repeated shared draw still replaces the earlier one; only per-env draws are checked for repeats.
-    record.record_buildtime_sample(torch.tensor([[3.0]]))
+    record.record_shared_sample(torch.tensor([[3.0]]))
     assert record.sample_for_episode(0, 0).tolist() == [3.0]
 
 
