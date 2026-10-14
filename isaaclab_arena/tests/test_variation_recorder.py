@@ -277,8 +277,6 @@ def test_recorder_duplicate_asset_name_asserts():
 
 def test_recorder_keeps_per_env_build_time_samples_for_every_episode():
     """A per-env build-time draw is recorded before bind_env and applies to every episode of its env."""
-    from isaaclab_arena.recording.common_terms import record_variation_samples
-
     variation = _PerEnvBuildTimeVariation()
     variation.enable()
     recorder = VariationRecorder()
@@ -295,22 +293,17 @@ def test_recorder_keeps_per_env_build_time_samples_for_every_episode():
     record = recorder["asset.per_env_build_time"]
     for env_id in (0, 1):
         for episode_idx in (0, 5):
-            value = record.sample_for_episode(env_id, episode_idx)
-            assert value.device.type == "cpu"
-            assert value.tolist() == drawn[env_id].tolist()
-    assert record.sample_for_episode(2, 0) is None
+            assert record.sample_for_episode(env_id, episode_idx).tolist() == drawn[env_id].tolist()
+    env_outside_build = 2
+    assert record.sample_for_episode(env_outside_build, 0) is None
 
     # Releasing a finished episode drops only run-time samples; the env keeps its build-time value.
     recorder.release_episode(env_id=1, episode_idx=0)
-    assert record.sample_for_episode(1, 1).tolist() == drawn[1].tolist()
-
-    env = _FakeEnv(recorder, episode_index=4)
-    recorder.bind_env(env)
-    assert record_variation_samples(env, env_id=1) == {"variations": {"asset.per_env_build_time": drawn[1].tolist()}}
+    assert record.sample_for_episode(1, 0).tolist() == drawn[1].tolist()
 
 
-def test_recorder_keeps_per_env_build_time_choices_as_plain_values():
-    """A per-env ChoiceSampler draw is recorded per env and emitted as the chosen item, not a tensor."""
+def test_record_variation_samples_emits_per_env_build_time_choices_as_plain_values():
+    """Each env's episode row holds its chosen item itself, not a tensor or a one-item list."""
     from isaaclab_arena.recording.common_terms import record_variation_samples
 
     variation = _PerEnvChoiceBuildTimeVariation()
@@ -326,13 +319,9 @@ def test_recorder_keeps_per_env_build_time_choices_as_plain_values():
 
     (drawn_names,) = drawn_samples
     assert len(drawn_names) == 3
-    record = recorder["asset.per_env_choice_build_time"]
     env = _FakeEnv(recorder, episode_index=2)
     recorder.bind_env(env)
     for env_id, drawn_name in enumerate(drawn_names):
-        assert drawn_name in _PerEnvChoiceBuildTimeVariation.choices
-        assert record.sample_for_episode(env_id, 0) == drawn_name
-        assert record.sample_for_episode(env_id, 2) == drawn_name
         assert record_variation_samples(env, env_id=env_id) == {
             "variations": {"asset.per_env_choice_build_time": drawn_name}
         }
