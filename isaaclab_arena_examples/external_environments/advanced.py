@@ -16,6 +16,8 @@ selects the environment by the dotted class path of its factory::
           object: tomato_soup_can
         policy:
           type: zero_action
+        rollout_limit:
+          num_steps: 50
 
 ``external_environments_experiment.yaml`` in this directory runs this environment with
 ``isaaclab_arena/evaluation/experiment_runner.py``.

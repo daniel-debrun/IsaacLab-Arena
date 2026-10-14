@@ -142,7 +142,9 @@ Scripts that select an environment by name on the command line import a factory 
 repository with ``--external_environment_class_path module_path:ClassName``. These include the
 Environment Runner and Isaac Lab scripts that register Arena environments through
 ``--external_callback isaaclab_arena.environments.isaaclab_interop.environment_registration_callback``.
-The fields of the environment's configuration become command-line flags:
+The fields of the environment's configuration become command-line flags. Flags can be generated
+for fields of type ``bool``, ``int``, ``float``, ``str``, an ``Enum`` or ``Literal``, an optional
+of these, or a list of these:
 
 .. code-block:: bash
 
@@ -165,14 +167,19 @@ been removed. To migrate an environment defined in your repository:
    decorate the class with ``@register_environment``.
 #. Rename ``get_env(self, args_cli)`` to ``build(self, cfg)`` and read values from ``cfg`` instead
    of ``args_cli``.
+#. If ``get_env`` read values of the shared runner flags, such as ``args_cli.num_envs``, add a
+   field with the same name to the configuration. Command-line scripts fill ``num_envs`` and
+   ``mimic`` fields from their shared flags. In an Experiment, set the field under ``environment``;
+   it is not filled from ``environment_builder.num_envs``.
 #. Delete ``add_cli_args()``. Command-line flags are generated from the configuration fields.
 #. Replace Policy Runner commands that used ``--external_environment_class_path`` with an
    Experiment that selects the factory by its class path, as shown above. Note that the
    Experiment uses a dotted path (``module_path.ClassName``), while the command-line flag uses
    ``module_path:ClassName``.
 
-The ``name`` must not match a built-in environment. Arena rejects a factory whose name is
-already registered by another class.
+Use a ``name`` that no built-in environment uses. When the Experiment Runner or
+``--external_environment_class_path`` imports your module, a factory whose name is already
+registered by another class is rejected.
 
 Next Steps
 ----------
