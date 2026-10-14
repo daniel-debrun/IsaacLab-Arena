@@ -21,8 +21,10 @@ class _AssetDouble:
         self.object_type = object_type
         self.object_min_z = -1.0
 
-    def get_contact_sensor_cfg(self, contact_against_object=None):
-        filter_prim_paths = [f"/World/{contact_against_object.name}"] if contact_against_object else []
+    def get_contact_sensor_cfg(self, contact_against_objects=()):
+        filter_prim_paths = [
+            f"/World/{contact_against_object.name}" for contact_against_object in contact_against_objects
+        ]
         return SimpleNamespace(prim_path=f"/World/{self.name}", filter_prim_paths_expr=filter_prim_paths)
 
 

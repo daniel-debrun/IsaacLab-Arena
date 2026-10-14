@@ -141,13 +141,8 @@ class PickAndPlaceTask(TaskBase):
         if self.contact_sensor_cfg is None:
             return None
         sensor_cfg = self.pick_up_object.get_contact_sensor_cfg(
-            contact_against_object=self.destination_location,
+            contact_against_objects=[self.destination_location, *self.other_objects_on_destination],
         )
-        for other_object in self.other_objects_on_destination:
-            other_object_filter_paths = self.pick_up_object.get_contact_sensor_cfg(
-                contact_against_object=other_object,
-            ).filter_prim_paths_expr
-            sensor_cfg.filter_prim_paths_expr = [*sensor_cfg.filter_prim_paths_expr, *other_object_filter_paths]
         scene_cfg_type = make_configclass(
             "SceneCfg",
             [(self.contact_sensor_cfg.name, type(sensor_cfg), sensor_cfg)],

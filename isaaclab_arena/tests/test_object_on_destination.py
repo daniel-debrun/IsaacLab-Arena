@@ -308,9 +308,9 @@ def _check_pick_and_place_deformable_skips_contact_sensor(pick_and_place_task_ty
             self.object_type = asset_object_type
             self.object_min_z = -1.0
 
-        def get_contact_sensor_cfg(self, contact_against_object=None):
+        def get_contact_sensor_cfg(self, contact_against_objects=()):
             if self.object_type != object_type.RIGID:
-                raise AssertionError(f"Unexpected contact sensor request against {contact_against_object}")
+                raise AssertionError(f"Unexpected contact sensor request against {contact_against_objects}")
             return SimpleNamespace()
 
     rigid_object = AssetDouble("rigid", object_type.RIGID)
