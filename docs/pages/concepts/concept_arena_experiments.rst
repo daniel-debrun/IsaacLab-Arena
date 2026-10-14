@@ -187,8 +187,8 @@ Choosing a runner
    Use the **Experiment Runner** for policy evaluations defined in YAML. Use the **Environment
    Runner** (``isaaclab_arena/scripts/environment_runner.py``) to inspect and physically manipulate
    an environment without a policy. The **Policy Runner** is currently needed only for ``torchrun``
-   multi-GPU execution or policy evaluation of an external environment loaded with
-   ``--external_environment_class_path``.
+   multi-GPU execution. An environment defined in your own repository is selected by the dotted
+   class path of its factory; see :doc:`../arena_in_your_repo/external_environments`.
 
 
 Related concepts
