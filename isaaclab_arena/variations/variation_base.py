@@ -115,7 +115,7 @@ class VariationBase(ABC):
             self._host_ref is not None
         ), f"Variation '{self.name}' has not been added to an asset; add it with Asset.add_variation()."
         host = self._host_ref()
-        assert host is not None, f"Variation '{self.name}': its host asset was garbage-collected."
+        assert host is not None, f"Variation '{self.name}' has no host: its asset was garbage-collected."
         return host
 
     def set_host(self, asset: Asset) -> None:
@@ -128,8 +128,10 @@ class VariationBase(ABC):
         Args:
             asset: Asset the variation is being added to.
         """
+        # Read the weak reference directly: the host property would assert if the first host is gone.
         assert self._host_ref is None, (
-            f"Variation '{self.name}' already has host asset '{self.host.name}' and cannot also be added to"
+            f"Variation '{self.name}' already has host asset"
+            f" '{getattr(self._host_ref(), 'name', '<garbage-collected>')}' and cannot also be added to"
             f" '{asset.name}'. Create one variation instance per asset."
         )
         # Weak because add_variation gives every variation on every asset this back-reference, and configclass

@@ -347,6 +347,17 @@ def test_host_reference_does_not_keep_the_asset_alive():
         variation.host
 
 
+def test_variation_whose_host_was_garbage_collected_cannot_be_added_again():
+    variation = _CustomVariation()
+    Asset(name="first").add_variation(variation)
+    gc.collect()
+
+    with pytest.raises(
+        AssertionError, match="already has host asset '<garbage-collected>' and cannot also be added to 'second'"
+    ):
+        Asset(name="second").add_variation(variation)
+
+
 def test_variation_with_a_host_does_not_create_a_config_validation_cycle():
     # Validating a config that holds an asset follows object attributes without cycle detection, so a
     # strong asset -> variation -> asset reference would recurse until RecursionError.
