@@ -25,6 +25,7 @@ from isaaclab_arena_environments.cli import (
     add_environment_cli_args,
     build_environment_from_cli,
     ensure_environments_registered,
+    get_isaaclab_arena_environments_cli_parser,
     import_external_environment,
 )
 from isaaclab_arena_environments.gr1_put_and_close_door_environment import GR1PutAndCloseDoorEnvironment
@@ -166,22 +167,24 @@ def _add_importable_test_module(monkeypatch, module_name: str, **module_attribut
     monkeypatch.setitem(sys.modules, module_name, test_module)
 
 
-def test_external_environment_flag_imports_the_registered_factory():
-    """Import an external typed factory and build its config from generated flags."""
+def test_external_environment_flag_adds_the_registered_factory_subcommand(monkeypatch):
+    """Select an external typed factory through the environment subcommand parser used by runner scripts."""
     from isaaclab_arena_examples.external_environments.basic import (
         ExternalFrankaTableEnvironment,
         ExternalFrankaTableEnvironmentCfg,
     )
 
     environment_class_path = "isaaclab_arena_examples.external_environments.basic:ExternalFrankaTableEnvironment"
-    assert import_external_environment(environment_class_path) is ExternalFrankaTableEnvironment
-    # Graph-YAML Runs rebuild the argparse parser, which imports the same factory again.
-    assert import_external_environment(environment_class_path) is ExternalFrankaTableEnvironment
+    cli_args = ["--external_environment_class_path", environment_class_path, "franka_table", "--object", "mug"]
+    monkeypatch.setattr(sys, "argv", ["environment_runner.py", *cli_args])
+
+    args_cli = get_isaaclab_arena_environments_cli_parser().parse_args(cli_args)
+    # Graph-YAML Runs rebuild this parser, which imports the same factory again.
+    get_isaaclab_arena_environments_cli_parser()
+
+    assert args_cli.example_environment == "franka_table"
     assert EnvironmentRegistry().get_component_by_name("franka_table") is ExternalFrankaTableEnvironment
-
-    legacy_arguments = _parse_legacy_arguments(ExternalFrankaTableEnvironment, ["--object", "mug"])
-    environment_cfg = _environment_cfg_from_cli(ExternalFrankaTableEnvironment, legacy_arguments)
-
+    environment_cfg = _environment_cfg_from_cli(ExternalFrankaTableEnvironment, args_cli)
     assert environment_cfg == ExternalFrankaTableEnvironmentCfg(object="mug")
 
 

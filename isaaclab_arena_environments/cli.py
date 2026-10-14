@@ -63,7 +63,7 @@ def import_registered_environment_factory(module_path: str, class_name: str) -> 
 
 # Legacy argparse compatibility
 #
-# First-party factories now expose only build(cfg). Until the argparse frontend is
+# Environment factories expose only build(cfg). Until the argparse frontend is
 # retired, this section generates their environment-subcommand flags from the config
 # registered with EnvironmentRegistry and reconstructs that config from the resulting
 # Namespace.
@@ -180,9 +180,8 @@ def add_example_environments_cli_args(args_parser: argparse.ArgumentParser) -> a
     return args_parser
 
 
-# TODO(cvolk, 2026-07-03): [typed-config-migration] Delete this environment-subparser pipeline with the
-# per-environment add_cli_args() and get_env(args_cli) adapters after runner scripts
-# receive typed environment configs.
+# TODO(cvolk, 2026-07-03): [typed-config-migration] Delete this environment-subparser pipeline after
+# runner scripts receive typed environment configs.
 def get_isaaclab_arena_environments_cli_parser(
     args_parser: argparse.ArgumentParser | None = None,
 ) -> argparse.ArgumentParser:
