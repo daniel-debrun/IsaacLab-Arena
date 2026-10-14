@@ -35,7 +35,6 @@ class VariationRecord:
         self._samples_by_env_episode: dict[EnvEpisodeKey, Any] = {}
         # Draw made without env ids, by a variation of either lifecycle; applies to every episode of every env.
         self._shared_sample: Any = None
-        self._has_shared_sample = False
         # Build-time per-env draws; each applies to every episode of its env, so release_episode keeps them.
         self._build_time_samples_by_env: dict[int, Any] = {}
 
@@ -72,43 +71,40 @@ class VariationRecord:
             not self._build_time_samples_by_env
         ), f"Variation '{self.name}' mixes shared and per-environment build-time draws."
         self._shared_sample = sample[0]
-        self._has_shared_sample = True
 
     def record_per_env_build_time_sample(self, sample: Any, env_ids: Sequence[int]) -> None:
         """Record a build-time variation's per-env draw; row ``i`` applies to every episode of ``env_ids[i]``.
 
-        A later draw for other envs is accepted. A draw for an env that already has a value, or for a
-        variation with a shared draw, is rejected and records nothing.
+        A build makes one per-env draw for all its envs. A second per-env draw, or one after a shared
+        draw, is rejected.
 
         Args:
             sample: The drawn rows, one for each entry of ``env_ids``.
             env_ids: The envs the rows were drawn for.
         """
         env_ids = list(env_ids)
-        # Validate the whole draw first, so a rejected draw leaves no partial record.
         assert len(sample) == len(env_ids), (
             f"Variation '{self.name}' per-environment build-time draw has {len(sample)} rows for "
             f"{len(env_ids)} environments."
         )
-        assert (
-            not self._has_shared_sample
-        ), f"Variation '{self.name}' mixes shared and per-environment build-time draws."
         assert len(set(env_ids)) == len(
             env_ids
         ), f"Variation '{self.name}' per-environment build-time draw repeats an environment id: {env_ids}."
-        already_recorded_env_ids = sorted(set(env_ids) & self._build_time_samples_by_env.keys())
+        assert not self._build_time_samples_by_env, (
+            f"Variation '{self.name}' already recorded a per-environment build-time draw; draw all environments"
+            " in one call."
+        )
         assert (
-            not already_recorded_env_ids
-        ), f"Variation '{self.name}' already recorded a build-time sample for envs {already_recorded_env_ids}."
-        for row, env_id in enumerate(env_ids):
-            self._build_time_samples_by_env[env_id] = sample[row]
+            self._shared_sample is None
+        ), f"Variation '{self.name}' mixes shared and per-environment build-time draws."
+        self._build_time_samples_by_env = dict(zip(env_ids, sample))
 
     def sample_for_episode(self, env_id: int, episode_idx: int) -> Any:
         """Return the value drawn for ``env_id``'s ``episode_idx``, or ``None`` if none was drawn.
 
         This is the run-time draw made during that episode, else the env's per-env build-time draw,
-        else the shared draw. A variation fills either the per-episode or the per-env build-time
-        draws, never both.
+        else the shared draw. VariationRecorder stores a variation's per-env draws in only one of the
+        first two, chosen by whether it is a build-time variation.
         """
         key = EnvEpisodeKey(env_id, episode_idx)
         if key in self._samples_by_env_episode:

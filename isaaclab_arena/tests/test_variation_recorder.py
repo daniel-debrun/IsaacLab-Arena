@@ -174,7 +174,7 @@ def test_recorder_records_shared_build_time_sample_for_every_env_and_episode():
 
 def test_variation_record_tracks_per_env_episode_values():
     """Each (env, episode) draw is stored and surfaced separately across envs and episodes."""
-    record = VariationRecord(name="asset.var", cfg=_ScalarVariationCfg())
+    record = VariationRecord(name="asset.var")
 
     # Runtime-style draw: rows map to the given env ids, all in episode 0.
     record.record_runtime_sample(torch.tensor([[1.0], [2.0]]), env_ids=[2, 5], episode_indices=[0, 0])
@@ -363,43 +363,45 @@ def test_recorder_keeps_per_env_run_time_samples_for_one_episode():
 @pytest.mark.parametrize(
     ("sample", "env_ids", "expected_error"),
     [
-        pytest.param(
-            torch.tensor([[3.0], [4.0]]), [1, 2], "already recorded a build-time sample", id="env_already_has_value"
-        ),
-        pytest.param(torch.tensor([[3.0], [4.0]]), [3, 3], "repeats an environment id", id="repeated_env_id"),
-        pytest.param(torch.tensor([[3.0]]), [3, 4], "rows for", id="row_count_mismatch"),
+        pytest.param(torch.tensor([[1.0], [2.0]]), [0, 0], "repeats an environment id", id="repeated_env_id"),
+        pytest.param(torch.tensor([[1.0]]), [0, 1], "rows for", id="row_count_mismatch"),
     ],
 )
-def test_record_rejects_invalid_per_env_build_time_draw_and_records_nothing(sample, env_ids, expected_error):
-    record = VariationRecord(name="asset.var", cfg=_ScalarVariationCfg())
-    record.record_per_env_build_time_sample(torch.tensor([[1.0], [2.0]]), env_ids=[0, 2])
+def test_record_rejects_malformed_per_env_build_time_draw(sample, env_ids, expected_error):
+    record = VariationRecord(name="asset.var")
 
     with pytest.raises(AssertionError, match=expected_error):
         record.record_per_env_build_time_sample(sample, env_ids)
 
-    assert record.sample_for_episode(0, 0).tolist() == [1.0]
-    assert record.sample_for_episode(2, 0).tolist() == [2.0]
-    # A partial write would give one of the other envs a value.
-    for env_id in (1, 3, 4):
+    for env_id in (0, 1):
         assert record.sample_for_episode(env_id, 0) is None
 
 
+def test_record_rejects_a_second_per_env_build_time_draw():
+    """A build makes one per-env draw for all its envs, so a second one is rejected even for other envs."""
+    record = VariationRecord(name="asset.var")
+    record.record_per_env_build_time_sample(torch.tensor([[1.0], [2.0]]), env_ids=[0, 2])
+
+    with pytest.raises(AssertionError, match="already recorded a per-environment build-time draw"):
+        record.record_per_env_build_time_sample(torch.tensor([[3.0]]), env_ids=[1])
+
+    assert record.sample_for_episode(0, 0).tolist() == [1.0]
+    assert record.sample_for_episode(1, 0) is None
+    assert record.sample_for_episode(2, 0).tolist() == [2.0]
+
+
 def test_record_rejects_shared_draw_after_per_env_build_time_draw():
-    record = VariationRecord(name="asset.var", cfg=_ScalarVariationCfg())
+    record = VariationRecord(name="asset.var")
     record.record_per_env_build_time_sample(torch.tensor([[1.0]]), env_ids=[0])
 
     with pytest.raises(AssertionError, match="mixes shared and per-environment"):
         record.record_shared_sample(torch.tensor([[2.0]]))
     # A stored shared value would show up for every env without its own value.
     assert record.sample_for_episode(1, 0) is None
-    # The rejected shared draw does not block a later per-env draw for another env.
-    record.record_per_env_build_time_sample(torch.tensor([[3.0]]), env_ids=[1])
-    assert record.sample_for_episode(0, 0).tolist() == [1.0]
-    assert record.sample_for_episode(1, 0).tolist() == [3.0]
 
 
 def test_record_rejects_per_env_build_time_draw_after_shared_draw():
-    record = VariationRecord(name="asset.var", cfg=_ScalarVariationCfg())
+    record = VariationRecord(name="asset.var")
     record.record_shared_sample(torch.tensor([[1.0]]))
 
     with pytest.raises(AssertionError, match="mixes shared and per-environment"):
@@ -407,20 +409,9 @@ def test_record_rejects_per_env_build_time_draw_after_shared_draw():
     assert record.sample_for_episode(0, 0).tolist() == [1.0]
 
 
-def test_record_accepts_a_later_per_env_build_time_draw_for_other_envs():
-    record = VariationRecord(name="asset.var", cfg=_ScalarVariationCfg())
-    record.record_per_env_build_time_sample(torch.tensor([[1.0], [2.0]]), env_ids=[0, 2])
-
-    record.record_per_env_build_time_sample(torch.tensor([[3.0]]), env_ids=[1])
-
-    assert record.sample_for_episode(0, 0).tolist() == [1.0]
-    assert record.sample_for_episode(1, 0).tolist() == [3.0]
-    assert record.sample_for_episode(2, 0).tolist() == [2.0]
-
-
 def test_record_replaces_a_repeated_shared_draw():
     """Only per-env draws are checked for repeats; a repeated shared draw replaces the earlier one."""
-    record = VariationRecord(name="asset.var", cfg=_ScalarVariationCfg())
+    record = VariationRecord(name="asset.var")
     record.record_shared_sample(torch.tensor([[1.0]]))
 
     record.record_shared_sample(torch.tensor([[3.0]]))
