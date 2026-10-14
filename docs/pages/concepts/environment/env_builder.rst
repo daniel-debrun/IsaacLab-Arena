@@ -65,6 +65,10 @@ supported robot embodiments. Set
 Arena command-line runners expose the equivalent ``--no_solve_relations``
 option.
 
+Build-time variations are applied before relation placement, so placement uses
+the object geometry they leave. A build-time variation therefore cannot read
+solved poses.
+
 Seeds during compilation
 ------------------------
 
