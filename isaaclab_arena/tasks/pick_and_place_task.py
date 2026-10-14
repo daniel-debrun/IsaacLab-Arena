@@ -91,7 +91,6 @@ class PickAndPlaceTask(TaskBase):
         self.contact_sensor_cfg = SceneEntityCfg(self.contact_sensor_name) if self.contact_sensor_name else None
         self.other_objects_on_destination: list[Asset] = []
         """Rigid objects that other subtasks place on the same destination. Contact with them counts as support."""
-        self.scene_config = self.make_scene_cfg()
         self.force_threshold = force_threshold
         assert velocity_threshold >= 0.0, f"velocity_threshold must be non-negative, got {velocity_threshold}"
         self.velocity_threshold = velocity_threshold
@@ -119,25 +118,22 @@ class PickAndPlaceTask(TaskBase):
 
     def configure_for_other_subtasks(self, other_subtasks: list[TaskBase]) -> None:
         """Count contact with rigid objects that other subtasks place on the same destination as support."""
-        # Deformable pick-up objects use geometric support and have no contact sensor.
-        if self.contact_sensor_cfg is None:
-            return
         self.other_objects_on_destination = []
         for other_subtask in other_subtasks:
             if not isinstance(other_subtask, PickAndPlaceTask):
                 continue
             other_object = other_subtask.pick_up_object
-            # Contact sensors cannot filter contacts against deformable objects.
+            # Contact sensors filter contacts only against rigid bodies, and an object cannot support itself.
             places_rigid_object_on_same_destination = (
                 other_subtask.destination_location.name == self.destination_location.name
                 and other_object.name != self.pick_up_object.name
-                and other_object.object_type != ObjectType.DEFORMABLE
+                and other_object.object_type == ObjectType.RIGID
             )
             if places_rigid_object_on_same_destination:
                 self.other_objects_on_destination.append(other_object)
-        self.scene_config = self.make_scene_cfg()
 
-    def make_scene_cfg(self):
+    def get_scene_cfg(self):
+        """Return a scene config with the pick-up object's contact sensor, or None for a deformable object."""
         if self.contact_sensor_cfg is None:
             return None
         sensor_cfg = self.pick_up_object.get_contact_sensor_cfg(
@@ -148,9 +144,6 @@ class PickAndPlaceTask(TaskBase):
             [(self.contact_sensor_cfg.name, type(sensor_cfg), sensor_cfg)],
         )
         return scene_cfg_type()
-
-    def get_scene_cfg(self):
-        return self.scene_config
 
     def get_events_cfg(self):
         return self.events_cfg
