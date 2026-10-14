@@ -65,7 +65,6 @@ def get_placement_collision_objects(
                 and torch.all(bounds.min_point <= bounds.max_point)
             )
             if not has_geometry:
-                print(f"Skipping object reference '{asset.name}' as a collision obstacle: no geometry bounds.")
                 continue
         collision_objects.append(asset)
     if not include_background:

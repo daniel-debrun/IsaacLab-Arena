@@ -44,13 +44,13 @@ class GearInsertionCriteria:
     gear_insertion_offset_xyz: tuple[float, float, float] = (0.0, 0.0, 0.0)
     """Insertion point in the gear's local frame."""
 
-    xy_threshold: float = 0.015
-    """Maximum lateral insertion-point error in meters."""
+    xy_threshold: float = 0.0035
+    """Maximum lateral insertion-point error, including the reduced peg's radial clearance, in meters."""
 
-    z_threshold: float = 0.010
+    z_threshold: float = 0.002
     """Maximum absolute insertion-depth error in meters."""
 
-    upright_axis_threshold_deg: float = 15.0
+    upright_axis_threshold_deg: float = 5.0
     """Maximum angle between the gear and target up axes in degrees."""
 
     linear_velocity_threshold: float = 0.05
@@ -59,7 +59,7 @@ class GearInsertionCriteria:
     angular_velocity_threshold: float = 0.5
     """Maximum gear angular speed in radians per second."""
 
-    support_z_threshold: float = 0.005
+    support_z_threshold: float = 0.001
     """Maximum distance that the gear may remain above the target frame."""
 
     consecutive_success_steps: int = 10

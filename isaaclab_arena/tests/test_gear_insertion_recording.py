@@ -75,7 +75,8 @@ def environment_registration_callback() -> list[str]:
 
 @pytest.mark.with_newton
 @pytest.mark.with_subprocess
-def test_gear_insertion_recording_exports_two_successful_episodes(tmp_path):
+@pytest.mark.parametrize("enable_cameras", [False, True], ids=["states", "cameras"])
+def test_gear_insertion_recording_exports_two_successful_episodes(tmp_path, enable_cameras):
     """Native recording must save two distinct successful episodes at the requested path."""
     import h5py
     import numpy as np
@@ -84,6 +85,7 @@ def test_gear_insertion_recording_exports_two_successful_episodes(tmp_path):
 
     script = Path(isaaclab.__file__).resolve().parents[3] / "scripts/tools/record_demos.py"
     dataset_path = tmp_path / "gear_insertion.hdf5"
+    camera_args = ["--enable_cameras"] if enable_cameras else ["--disable_external_cameras"]
     result = run_subprocess(
         [
             TestConstants.python_path,
@@ -98,7 +100,7 @@ def test_gear_insertion_recording_exports_two_successful_episodes(tmp_path):
             "cuda:0",
             "--teleop_device",
             "keyboard",
-            "--disable_external_cameras",
+            *camera_args,
             "--cloudxr_env",
             "none",
             # Use the supported recording mode that preserves Newton's simulation buffers.
@@ -135,6 +137,13 @@ def test_gear_insertion_recording_exports_two_successful_episodes(tmp_path):
             actions = episode["actions"][:]
             assert SOURCE_STEPS < len(actions) <= MAX_EPISODE_STEPS
             np.testing.assert_array_equal(actions, np.zeros_like(actions))
+            if enable_cameras:
+                assert len(episode["camera_obs"]) == 3
+                for images in episode["camera_obs"].values():
+                    assert images.shape == (len(actions), 360, 640, 3)
+                    assert images.dtype == np.uint8
+                    assert images.compression == "gzip"
+                    assert images[:].max() > images[:].min(), "Recorded images must not be blank."
             gear_poses = episode["states/rigid_object/gear_insertion_medium_gear/root_pose"][:]
             assert np.isfinite(gear_poses).all()
             assert np.linalg.norm(gear_poses[0, :2] - target[:2]) > 0.1

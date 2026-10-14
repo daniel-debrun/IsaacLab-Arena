@@ -71,6 +71,7 @@ class GearInsertionEnvironment(ArenaEnvironmentFactory[GearInsertionEnvironmentC
         from isaaclab_arena.assets.object_type import ObjectType
         from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
         from isaaclab_arena.relations.object_placer_params import ObjectPlacerParams
+        from isaaclab_arena.relations.relation_solver_params import RelationSolverParams
         from isaaclab_arena.relations.relations import AtPosition, IsAnchor, On, PositionLimitsBox
         from isaaclab_arena.relations.validation.types import PlacementCheck
         from isaaclab_arena.scene.scene import Scene
@@ -117,6 +118,10 @@ class GearInsertionEnvironment(ArenaEnvironmentFactory[GearInsertionEnvironmentC
 
         embodiment = self.asset_registry.get_asset_by_name("droid_differential_ik")(enable_cameras=cfg.enable_cameras)
         embodiment.set_joint_initial_pos(DROID_GEAR_APPROACH_JOINT_POSITIONS)
+        for camera_name in embodiment.camera_config.camera_names():
+            camera = getattr(embodiment.camera_config, camera_name)
+            camera.width = 640
+            camera.height = 360
 
         teleop_device = (
             self.device_registry.get_device_by_name(cfg.teleop_device)() if cfg.teleop_device is not None else None
@@ -148,6 +153,8 @@ class GearInsertionEnvironment(ArenaEnvironmentFactory[GearInsertionEnvironmentC
             env_cfg_callback=gear_insertion_newton_env_cfg_callback,
             default_physics_backend=PhysicsBackend.NEWTON,
             placer_params=ObjectPlacerParams(
+                # Millimetre optimizer steps keep fixed placements accurate for these small parts.
+                solver_params=RelationSolverParams(lr=0.001),
                 enabled_checks={
                     PlacementCheck.NO_OVERLAP,
                     PlacementCheck.ON_RELATION,

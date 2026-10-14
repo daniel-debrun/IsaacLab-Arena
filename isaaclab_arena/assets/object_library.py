@@ -22,7 +22,7 @@ from isaaclab_arena.affordances.placeable import Placeable
 from isaaclab_arena.affordances.pressable import Pressable
 from isaaclab_arena.affordances.turnable import Turnable
 from isaaclab_arena.assets.lightwheel_lazy import LightwheelLazyPath
-from isaaclab_arena.assets.nucleus import ARENA_NUCLEUS_DIR, GEAR_INSERTION_ASSET_DIR
+from isaaclab_arena.assets.nucleus import ARENA_NUCLEUS_DIR
 from isaaclab_arena.assets.object import Object
 from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.assets.object_utils import (
@@ -2028,9 +2028,9 @@ class GearInsertionBase(LibraryObject):
 
     name = "gear_insertion_base"
     tags = ["object", "gear", "gear_insertion"]
-    usd_path = f"{GEAR_INSERTION_ASSET_DIR}/factory_gear_base.usda"
+    usd_path = f"{ARENA_NUCLEUS_DIR}/Arena/assets/object_library/gear_insertion/factory_gear_base.usda"
     object_type = ObjectType.RIGID
-    spawn_cfg_addon = _newton_gear_insertion_spawn_cfg(mass=0.05, kinematic=True, friction=1.0e-4)
+    spawn_cfg_addon = _newton_gear_insertion_spawn_cfg(mass=0.05, kinematic=True, friction=0.3)
 
 
 @register_asset
@@ -2039,6 +2039,6 @@ class GearInsertionMediumGear(LibraryObject):
 
     name = "gear_insertion_medium_gear"
     tags = ["object", "gear", "gear_insertion"]
-    usd_path = f"{GEAR_INSERTION_ASSET_DIR}/factory_gear_medium.usda"
+    usd_path = f"{ARENA_NUCLEUS_DIR}/Arena/assets/object_library/gear_insertion/factory_gear_medium.usda"
     object_type = ObjectType.RIGID
     spawn_cfg_addon = _newton_gear_insertion_spawn_cfg(mass=0.019, kinematic=False, friction=3.0)

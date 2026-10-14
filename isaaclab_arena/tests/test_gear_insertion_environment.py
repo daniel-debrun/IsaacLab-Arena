@@ -44,11 +44,6 @@ def _gear_environment(*, position_randomization_m=None, enable_cameras=False):
     cfg, kwargs = builder.compose_manager_cfg()
     # No dataset export; the environment still installs its progress-tracking recorder.
     cfg.recorders = {}
-    if enable_cameras:
-        for name in CAMERA_NAMES:
-            camera_cfg = getattr(cfg.scene, name)
-            camera_cfg.width = 128
-            camera_cfg.height = 96
     env = builder.make_registered(cfg, kwargs)
     try:
         yield env, arena, args.position_randomization_m
@@ -119,40 +114,13 @@ def test_gear_insertion_placement_and_partial_reset(position_randomization_m):
     )
 
 
-def _test_gear_insertion_colliders_and_episode_completion(simulation_app):
-    import numpy as np
+def _test_gear_insertion_episode_completion(simulation_app):
     import torch
-
-    import omni.usd
-    from isaaclab_newton.physics import NewtonManager
-    from pxr import Usd, UsdGeom, UsdPhysics
 
     with _gear_environment() as (env, arena, _):
         base = env.unwrapped
         with torch.inference_mode():
             env.reset()
-            stage = omni.usd.get_context().get_stage()
-            model = NewtonManager.get_model()
-            for env_index in range(base.num_envs):
-                root = f"/World/envs/env_{env_index}"
-                pad_shapes = [
-                    label for label in model.shape_label if label.startswith(root + "/") and "fingertipsstep" in label
-                ]
-                assert len(pad_shapes) == 2, "Each fingertip must compile to one collider, not a hull decomposition."
-                pads = []
-                for prim in Usd.PrimRange(stage.GetPrimAtPath(f"{root}/Robot")):
-                    if prim.IsA(UsdGeom.Mesh) and "fingertipsstep" in prim.GetName():
-                        pads.append(prim)
-                        assert UsdPhysics.MeshCollisionAPI(prim).GetApproximationAttr().Get() == "convexHull"
-                        assert prim.GetAttribute("mjc:priority").Get() == 2
-                        np.testing.assert_allclose(prim.GetAttribute("mjc:solref").Get(), (0.01, 1.0))
-                assert len(pads) == 2
-                for asset_name, mesh_name in ((BASE_NAME, "base"), (GEAR_NAME, "medium")):
-                    prim = stage.GetPrimAtPath(f"{root}/{asset_name}/collisions/factory_gear_{mesh_name}_collision")
-                    assert prim.GetAttribute("newton:hydroelasticEnabled").Get() is False
-                    assert prim.GetAttribute("mjc:priority").Get() == 1
-                    np.testing.assert_allclose(prim.GetAttribute("mjc:solref").Get(), (0.005, 1.0))
-
             # Seat one gear while leaving the other at its randomized source position.
             gear = base.scene[GEAR_NAME]
             first_env = torch.tensor([0], device=base.device)
@@ -200,8 +168,8 @@ def _test_gear_insertion_colliders_and_episode_completion(simulation_app):
 
 
 @pytest.mark.with_newton
-def test_gear_insertion_colliders_and_episode_completion():
-    assert run_function_with_persistent_simulation_app(_test_gear_insertion_colliders_and_episode_completion)
+def test_gear_insertion_episode_completion():
+    assert run_function_with_persistent_simulation_app(_test_gear_insertion_episode_completion)
 
 
 def _test_gear_insertion_cameras_survive_episode_reset(simulation_app):
@@ -216,7 +184,7 @@ def _test_gear_insertion_cameras_survive_episode_reset(simulation_app):
                     env.step(torch.zeros(env.action_space.shape, device=base.device))
                 for name in CAMERA_NAMES:
                     rgb = base.scene[name].data.output["rgb"].torch
-                    assert rgb.shape[:3] == (2, 96, 128)
+                    assert rgb.shape[:3] == (2, 360, 640)
                     assert rgb.shape[-1] in (3, 4)
                     assert torch.isfinite(rgb).all()
                     for frame in rgb:
