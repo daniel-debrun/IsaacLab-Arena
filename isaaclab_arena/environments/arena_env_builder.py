@@ -317,7 +317,8 @@ class ArenaEnvBuilder:
         # (drawn just below) and run-time samples (drawn during simulation).
         variation_recorder = VariationRecorder()
         variation_recorder.attach(variations)
-        # A RigidObjectSet's selected member identity is absent from pose-only samples, so skip unreplayable records.
+        # Pose-only samples do not record which asset an object with several spawn entries spawned,
+        # so skip placement records that could not be replayed.
         if placement_sampler is not None and supports_recorded_placement(self.arena_env.get_placement_assets()):
             variation_recorder.attach_placement_sampler(
                 placement_sampler,
