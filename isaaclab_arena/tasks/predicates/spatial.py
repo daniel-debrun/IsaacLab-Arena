@@ -397,7 +397,7 @@ def object_supported_by(
 ) -> torch.Tensor:
     """Check whether a large fraction of object's lowest vertices are close to the destination's top surface.
 
-    This is a geometric-only implementation to replace contact-sensor based contact_force_is_upward_support.
+    This is a geometric-only alternative to the contact-force support check used for rigid objects.
     Use this for deformable objects which don't have contact sensor support yet, see
     https://github.com/isaac-sim/IsaacLab/issues/4410
 

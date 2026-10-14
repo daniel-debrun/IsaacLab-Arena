@@ -84,8 +84,9 @@ def _check_upward_support_from_several_contacts(spatial) -> None:
     contact_forces_w = torch.tensor([
         [[0.0, 0.0, 2.0], [0.0, 0.0, 0.0]],  # resting on the destination only
         [[0.0, 0.0, 0.0], [0.0, 0.0, 2.0]],  # resting on another object only
-        [[1.5, 0.0, 1.0], [-1.5, 0.0, 1.0]],  # wedged: each force is too steep, their sum points up
+        [[1.5, 0.0, 1.0], [-1.5, 0.0, 1.0]],  # wedged: each force pushes too far sideways, their sum points up
         [[0.0, 0.0, 1.0], [1.5, 0.0, -0.8]],  # pushed sideways by an object on top while the destination supports it
+        [[1.5, 0.0, -0.8], [0.0, 0.0, 1.0]],  # pushed sideways by the destination while another object supports it
         [[0.2, 0.0, 0.0], [0.0, 0.0, 0.0]],  # horizontal contact only
         [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],  # no contact
     ])
@@ -94,7 +95,7 @@ def _check_upward_support_from_several_contacts(spatial) -> None:
         force_threshold=0.1,
         support_cone_half_angle_rad=math.pi / 4,
     )
-    torch.testing.assert_close(result, torch.tensor([True, True, True, True, False, False]))
+    torch.testing.assert_close(result, torch.tensor([True, True, True, True, True, False, False]))
 
 
 def _check_deformable_support(spatial, axis_aligned_bounding_box_type) -> None:
