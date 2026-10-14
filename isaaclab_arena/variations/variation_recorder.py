@@ -74,7 +74,7 @@ class VariationRecord:
         self._shared_sample = sample[0]
         self._has_shared_sample = True
 
-    def record_per_env_build_time_samples(self, sample: Any, env_ids: Sequence[int]) -> None:
+    def record_per_env_build_time_sample(self, sample: Any, env_ids: Sequence[int]) -> None:
         """Record a build-time variation's per-env draw; row ``i`` applies to every episode of ``env_ids[i]``.
 
         A later draw for other envs is accepted. A draw for an env that already has a value, or for a
@@ -212,7 +212,7 @@ class VariationRecorder:
             elif is_build_time_variation:
                 # Per-env build-time draw: fixed for every episode of each env. It happens
                 # before the env exists, so it needs no bind_env().
-                record.record_per_env_build_time_samples(sample, env_ids.tolist())
+                record.record_per_env_build_time_sample(sample, env_ids.tolist())
             else:
                 assert self._env is not None, "VariationRecorder needs bind_env() before per-env run-time draws."
                 env_id_list = env_ids.tolist()
