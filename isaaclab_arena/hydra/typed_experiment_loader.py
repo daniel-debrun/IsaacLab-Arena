@@ -256,7 +256,7 @@ def _build_arena_run_cfg_from_yaml_values(
         run_name,
         "policy",
         policy_values,
-        _resolve_selected_cfg_type(policy_values, policy_cfg_type_resolver),
+        policy_cfg_type_resolver,
         PolicyCfg,
     )
 
@@ -298,33 +298,9 @@ def _build_environment_cfg_from_yaml_values(
             run_name,
             "environment",
             environment_values,
-            _resolve_selected_cfg_type(environment_values, environment_cfg_type_resolver),
+            environment_cfg_type_resolver,
             ArenaEnvironmentCfg,
         )
-
-
-def _resolve_selected_cfg_type(
-    section_values: Any,
-    cfg_type_resolver: Callable[[str], type[Any]],
-) -> dict[str, type[Any]]:
-    """Resolve the configuration class named by one YAML section's type selector.
-
-    A missing or non-string selector resolves to an empty mapping, which
-    _compose_typed_config_from_yaml_selector then reports with the Run name.
-
-    Args:
-        section_values: YAML values of an environment or policy section.
-        cfg_type_resolver: Function returning the configuration class for a selector.
-
-    Returns:
-        The selector mapped to its configuration class, or an empty mapping.
-    """
-    if not isinstance(section_values, dict):
-        return {}
-    selector = section_values.get("type")
-    if not isinstance(selector, str) or not selector:
-        return {}
-    return {selector: cfg_type_resolver(selector)}
 
 
 # TODO(cvolk, 2026-07-07): [typed-config-migration] Delete this factory when graph-YAML
@@ -370,13 +346,13 @@ def _compose_typed_config_from_yaml_selector(
     run_name: str,
     section_name: str,
     section_values_with_selector: dict[str, Any],
-    cfg_types: dict[str, type[Any]],
+    cfg_type_resolver: Callable[[str], type[Any]],
     expected_base_type: type[Any],
 ) -> Any:
     """Resolve one YAML type selector into a concrete typed configuration.
 
-    The value under type selects a class from cfg_types. All remaining
-    values are composed and validated against that class by Hydra.
+    The value under type is passed to cfg_type_resolver. All remaining
+    values are composed and validated against the resolved class by Hydra.
 
     Args:
         config_store: Hydra store used for the temporary typed schema.
@@ -384,7 +360,7 @@ def _compose_typed_config_from_yaml_selector(
         run_name: Run containing the selected environment or policy.
         section_name: YAML section being composed, such as environment or policy.
         section_values_with_selector: YAML field values for the section, including its type selector.
-        cfg_types: Available selector names mapped to typed configuration classes.
+        cfg_type_resolver: Function returning the configuration class for the type selector.
         expected_base_type: Base class that the selected configuration must inherit.
 
     Returns:
@@ -394,12 +370,12 @@ def _compose_typed_config_from_yaml_selector(
     values = section_values_with_selector.copy()
     selector = values.pop("type", None)
     assert isinstance(selector, str) and selector, f"Run '{run_name}' is missing '{section_name}.type'"
-    available = ", ".join(sorted(cfg_types)) or "(none)"
-    assert (
-        selector in cfg_types
-    ), f"Run '{run_name}' selects unknown {section_name} type '{selector}'. Available types: {available}"
+    try:
+        cfg_type = cfg_type_resolver(selector)
+    except (AssertionError, ImportError, AttributeError) as exc:
+        # Resolvers do not know which Run selected the type; add it so multi-Run Experiments point at the bad Run.
+        raise ValueError(f"Run '{run_name}' selects unknown {section_name} type '{selector}': {exc}") from exc
 
-    cfg_type = cfg_types[selector]
     assert isinstance(cfg_type, type) and issubclass(cfg_type, expected_base_type), (
         f"Configuration type registered for {section_name} selector '{selector}' "
         f"must inherit from {expected_base_type.__name__}"

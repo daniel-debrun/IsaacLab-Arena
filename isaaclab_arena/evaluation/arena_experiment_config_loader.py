@@ -100,6 +100,10 @@ def _resolve_environment_cfg_type_from_name_or_class_path(
     if registry.is_registered(environment_name_or_class_path):
         environment_factory_type = registry.get_component_by_name(environment_name_or_class_path)
     else:
+        assert ":" not in environment_name_or_class_path, (
+            f"Environment type {environment_name_or_class_path!r} uses the command-line form"
+            " 'module_path:ClassName'. Experiments use the dotted form 'module_path.ClassName'."
+        )
         registered_names = ", ".join(sorted(registry.get_all_keys()))
         assert "." in environment_name_or_class_path, (
             f"Unknown environment type {environment_name_or_class_path!r}. Use a registered name"

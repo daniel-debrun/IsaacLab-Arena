@@ -230,23 +230,37 @@ runs:
     assert load_arena_experiment_from_config_file(serialized_path, device="cuda:0") == experiment_cfg
 
 
-def test_unknown_environment_type_lists_registered_names(tmp_path):
+@pytest.mark.parametrize(
+    ("environment_type", "error"),
+    [
+        ("missing_environment", "Use a registered name \\(.*pick_and_place_maple_table"),
+        ("missing_package.environments.MissingEnvironment", "No module named 'missing_package'"),
+        (
+            "isaaclab_arena_examples.external_environments.basic:ExternalFrankaTableEnvironment",
+            "uses the command-line form 'module_path:ClassName'",
+        ),
+    ],
+)
+def test_unknown_environment_type_names_the_run(tmp_path, environment_type, error):
     config_path = tmp_path / "experiment.yaml"
     config_path.write_text(
-        """
+        f"""
 runs:
+  valid:
+    environment:
+      type: pick_and_place_maple_table
+    policy:
+      type: zero_action
   invalid:
     environment:
-      type: missing_environment
+      type: {environment_type}
     policy:
       type: zero_action
 """,
         encoding="utf-8",
     )
 
-    with pytest.raises(
-        AssertionError, match="Unknown environment type 'missing_environment'.*pick_and_place_maple_table"
-    ):
+    with pytest.raises(ValueError, match=f"Run 'invalid' selects unknown environment type .*{error}"):
         load_arena_experiment_from_config_file(config_path, device="cuda:0")
 
 
