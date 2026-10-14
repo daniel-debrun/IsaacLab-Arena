@@ -69,9 +69,7 @@ def align_rigid_body_paths(spawn_cfgs: Sequence[SpawnerCfg]) -> list[SpawnerCfg]
         )
         _assert_settings_do_not_name_asset_prims(spawn_cfg)
     # Build every copy before saving any of them, so a rejected spawn configuration leaves no cache files behind.
-    copied_layers = [
-        _build_copy_with_body_moved(geometry, body_path) for geometry, body_path in zip(geometries, body_paths)
-    ]
+    copied_layers = [_build_copy_with_body_moved(geometry) for geometry in geometries]
     aligned_spawn_cfgs = []
     for spawn_cfg, copied_layer in zip(spawn_cfgs, copied_layers):
         aligned_spawn_cfg = deepcopy(spawn_cfg)
@@ -121,12 +119,11 @@ def _assert_settings_do_not_name_asset_prims(spawn_cfg: UsdFileCfg) -> None:
         ), f"{cannot_move}: physics_material_prim_path names source prims."
 
 
-def _build_copy_with_body_moved(geometry: SpawnCfgGeometry, body_path: str) -> Sdf.Layer:
+def _build_copy_with_body_moved(geometry: SpawnCfgGeometry) -> Sdf.Layer:
     """Return a flattened copy of one USD asset with its rigid body moved to /rigid_body.
 
     Args:
         geometry: Geometry of a UsdFileCfg spawn configuration.
-        body_path: Its rigid-body path relative to the default prim, "" for the default prim.
 
     Returns:
         The copy as a layer, not yet saved to the cache.
@@ -134,7 +131,7 @@ def _build_copy_with_body_moved(geometry: SpawnCfgGeometry, body_path: str) -> S
     stage = geometry.open_usd_stage()
     source_root = stage.GetDefaultPrim().GetPath()
     _make_asset_editable(stage, source_root, geometry.spawn_cfg)
-    source_body_path = Sdf.Path(str(source_root) + body_path)
+    source_body_path = Sdf.Path(str(source_root) + geometry.get_contact_body_path())
     # The copy first holds the whole asset below /AlignedAsset/source; the body is then moved out to
     # /AlignedAsset/rigid_body.
     body_path_under_source = source_body_path.ReplacePrefix(source_root, _COPY_REST_OF_ASSET)
