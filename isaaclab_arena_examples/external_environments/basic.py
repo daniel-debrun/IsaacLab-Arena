@@ -14,16 +14,33 @@ into Isaac Lab Arena via the ``--external_environment_class_path`` CLI flag::
         franka_table
 """
 
-import argparse
+from __future__ import annotations
 
-from isaaclab_arena_environments.example_environment_base import ExampleEnvironmentBase
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+from isaaclab_arena.assets.register import register_environment
+from isaaclab_arena.environments.arena_environment_factory import ArenaEnvironmentCfg, ArenaEnvironmentFactory
+
+if TYPE_CHECKING:
+    from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
 
 
-class ExternalFrankaTableEnvironment(ExampleEnvironmentBase):
+@dataclass
+class ExternalFrankaTableEnvironmentCfg(ArenaEnvironmentCfg):
+    """Configure the external Franka table environment."""
+
+    object: str = "cracker_box"
+    """Registered name of the object placed on the table."""
+
+
+@register_environment
+class ExternalFrankaTableEnvironment(ArenaEnvironmentFactory[ExternalFrankaTableEnvironmentCfg]):
 
     name: str = "franka_table"
 
-    def get_env(self, args_cli: argparse.Namespace):  # -> IsaacLabArenaEnvironment:
+    def build(self, cfg: ExternalFrankaTableEnvironmentCfg) -> IsaacLabArenaEnvironment:
+        """Build the environment from its typed configuration."""
         from isaaclab_arena.assets.object_reference import ObjectReference
         from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
         from isaaclab_arena.relations.relations import IsAnchor, On
@@ -33,7 +50,7 @@ class ExternalFrankaTableEnvironment(ExampleEnvironmentBase):
         # Grab some assets from the registry.
         background = self.asset_registry.get_asset_by_name("maple_table_robolab")()
         light = self.asset_registry.get_asset_by_name("light")()
-        pick_up_object = self.asset_registry.get_asset_by_name(args_cli.object)()
+        pick_up_object = self.asset_registry.get_asset_by_name(cfg.object)()
         embodiment = self.asset_registry.get_asset_by_name("franka_ik")()
 
         # Position the assets
@@ -56,7 +73,3 @@ class ExternalFrankaTableEnvironment(ExampleEnvironmentBase):
             task=NoTask(),
         )
         return isaaclab_arena_environment
-
-    @staticmethod
-    def add_cli_args(parser: argparse.ArgumentParser) -> None:
-        parser.add_argument("--object", type=str, default="cracker_box")

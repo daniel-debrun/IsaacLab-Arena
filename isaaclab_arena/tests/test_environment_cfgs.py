@@ -11,10 +11,13 @@ exercise that boundary without constructing an Isaac Sim environment.
 """
 
 import argparse
-from dataclasses import fields, is_dataclass
+import sys
+import types
+from dataclasses import dataclass, fields, is_dataclass
 
 import pytest
 
+from isaaclab_arena.assets.register import register_environment
 from isaaclab_arena.assets.registries import EnvironmentRegistry
 from isaaclab_arena.environments.arena_environment_factory import ArenaEnvironmentCfg, ArenaEnvironmentFactory
 from isaaclab_arena_environments.cli import (
@@ -22,8 +25,8 @@ from isaaclab_arena_environments.cli import (
     add_environment_cli_args,
     build_environment_from_cli,
     ensure_environments_registered,
+    import_external_environment,
 )
-from isaaclab_arena_environments.example_environment_base import ExampleEnvironmentBase
 from isaaclab_arena_environments.gr1_put_and_close_door_environment import GR1PutAndCloseDoorEnvironment
 from isaaclab_arena_environments.gr1_table_multi_object_no_collision_environment import (
     GR1TableMultiObjectNoCollisionEnvironment,
@@ -155,31 +158,71 @@ def test_build_environment_from_cli_calls_typed_build(monkeypatch):
     assert captured["environment_cfg"] == PickAndPlaceMapleTableEnvironmentCfg(light_intensity=750.0)
 
 
-def test_build_environment_from_cli_keeps_external_legacy_path():
-    """Dispatch an external compatibility factory through its own argparse methods."""
-    expected_environment = object()
+def _add_importable_test_module(monkeypatch, module_name: str, **module_attributes) -> None:
+    """Make a throwaway module importable by name for the duration of one test."""
+    test_module = types.ModuleType(module_name)
+    for attribute_name, attribute_value in module_attributes.items():
+        setattr(test_module, attribute_name, attribute_value)
+    monkeypatch.setitem(sys.modules, module_name, test_module)
 
-    class LegacyExternalEnvironment(ExampleEnvironmentBase):
-        name = "legacy_external"
 
-        def __init__(self):
-            pass
+def test_external_environment_flag_imports_the_registered_factory():
+    """Import an external typed factory and build its config from generated flags."""
+    from isaaclab_arena_examples.external_environments.basic import (
+        ExternalFrankaTableEnvironment,
+        ExternalFrankaTableEnvironmentCfg,
+    )
 
-        @staticmethod
-        def add_cli_args(parser):
-            parser.add_argument("--selection", default="default")
+    environment_class_path = "isaaclab_arena_examples.external_environments.basic:ExternalFrankaTableEnvironment"
+    assert import_external_environment(environment_class_path) is ExternalFrankaTableEnvironment
+    # Graph-YAML Runs rebuild the argparse parser, which imports the same factory again.
+    assert import_external_environment(environment_class_path) is ExternalFrankaTableEnvironment
+    assert EnvironmentRegistry().get_component_by_name("franka_table") is ExternalFrankaTableEnvironment
 
-        def get_env(self, args_cli):
-            assert args_cli.selection == "custom"
-            return expected_environment
+    legacy_arguments = _parse_legacy_arguments(ExternalFrankaTableEnvironment, ["--object", "mug"])
+    environment_cfg = _environment_cfg_from_cli(ExternalFrankaTableEnvironment, legacy_arguments)
 
-    parser = argparse.ArgumentParser(exit_on_error=False)
-    add_environment_cli_args(parser, LegacyExternalEnvironment)
-    legacy_arguments = parser.parse_args(["--selection", "custom"])
+    assert environment_cfg == ExternalFrankaTableEnvironmentCfg(object="mug")
 
-    environment = build_environment_from_cli(LegacyExternalEnvironment, legacy_arguments)
 
-    assert environment is expected_environment
+def test_external_environment_flag_rejects_an_unregistered_factory(monkeypatch):
+    """Require the factory's @register_environment decorator instead of registering it without a config."""
+
+    @dataclass
+    class UnregisteredEnvironmentCfg(ArenaEnvironmentCfg):
+        pass
+
+    class UnregisteredEnvironment(ArenaEnvironmentFactory[UnregisteredEnvironmentCfg]):
+        name = "unregistered_external_environment"
+
+    _add_importable_test_module(
+        monkeypatch, "arena_test_unregistered_environment", UnregisteredEnvironment=UnregisteredEnvironment
+    )
+
+    with pytest.raises(AssertionError, match="Decorate it with @register_environment"):
+        import_external_environment("arena_test_unregistered_environment:UnregisteredEnvironment")
+    assert not EnvironmentRegistry().is_registered("unregistered_external_environment")
+
+
+def test_external_environment_flag_rejects_a_built_in_name(monkeypatch):
+    """Reject an external factory whose name the decorator left with a built-in environment."""
+    ensure_environments_registered()
+
+    @dataclass
+    class DuplicateNameEnvironmentCfg(ArenaEnvironmentCfg):
+        pass
+
+    # The decorator keeps the built-in kitchen_pick_and_place factory and skips this one.
+    @register_environment
+    class DuplicateNameEnvironment(ArenaEnvironmentFactory[DuplicateNameEnvironmentCfg]):
+        name = "kitchen_pick_and_place"
+
+    _add_importable_test_module(
+        monkeypatch, "arena_test_duplicate_name_environment", DuplicateNameEnvironment=DuplicateNameEnvironment
+    )
+
+    with pytest.raises(AssertionError, match="'kitchen_pick_and_place', which is already registered"):
+        import_external_environment("arena_test_duplicate_name_environment:DuplicateNameEnvironment")
 
 
 def test_maple_teleop_device_remains_a_cli_only_option():
