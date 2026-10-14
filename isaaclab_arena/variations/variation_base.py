@@ -52,25 +52,11 @@ class VariationBuildContext:
     num_envs: int
     """Number of parallel environments in the build."""
 
-    seed: int | None
-    """Seed of this environment build, ArenaEnvBuilderCfg.seed.
-
-    With None, make_generator seeds from system entropy, so draws do not repeat.
-    """
+    seed: int
+    """Seed of this environment build, ArenaEnvBuilderCfg.seed."""
 
     variation_key: str
     """Key of the variation in this build, as returned by get_variation_key."""
-
-    def __post_init__(self) -> None:
-        assert (
-            isinstance(self.num_envs, int) and not isinstance(self.num_envs, bool) and self.num_envs > 0
-        ), f"VariationBuildContext.num_envs must be a positive int; got {self.num_envs!r}."
-        assert self.seed is None or (
-            isinstance(self.seed, int) and not isinstance(self.seed, bool)
-        ), f"VariationBuildContext.seed must be an int or None; got {self.seed!r}."
-        assert (
-            isinstance(self.variation_key, str) and self.variation_key
-        ), f"VariationBuildContext.variation_key must be a non-empty string; got {self.variation_key!r}."
 
     def make_generator(self) -> torch.Generator:
         """Return a CPU generator for this variation's random draws in this build.
@@ -78,18 +64,13 @@ class VariationBuildContext:
         The stream depends only on seed and variation_key: a build with the same seed repeats it,
         other variations get independent streams, and the global torch random state is neither read
         nor advanced. Each call starts the stream again, so make all of the variation's draws in a
-        build from one generator. With a None seed, each generator is seeded from system entropy.
+        build from one generator.
         """
-        generator = torch.Generator(device="cpu")
-        if self.seed is None:
-            generator.seed()
-            return generator
         seed_material = f"{self.seed}:{self.variation_key}".encode()
         # Python's hash() of a str changes between processes, so use a stable digest; torch generator
         # seeds are 64-bit, so keep its first 8 bytes. Changing this derivation changes every seeded draw.
         generator_seed = int.from_bytes(hashlib.sha256(seed_material).digest()[:8], "big")
-        generator.manual_seed(generator_seed)
-        return generator
+        return torch.Generator(device="cpu").manual_seed(generator_seed)
 
 
 @configclass

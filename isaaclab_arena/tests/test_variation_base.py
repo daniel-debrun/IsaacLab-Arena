@@ -253,26 +253,6 @@ def test_reading_build_context_before_configure_at_build_time_fails():
         variation.build_context
 
 
-_VALID_BUILD_CONTEXT_FIELDS = {"num_envs": 2, "seed": 1, "variation_key": "asset.variation"}
-
-
-@pytest.mark.parametrize(
-    ("field_name", "invalid_value"),
-    [
-        ("num_envs", 0),
-        ("num_envs", True),
-        ("num_envs", 2.0),
-        ("seed", True),
-        ("seed", "1"),
-        ("variation_key", ""),
-        ("variation_key", None),
-    ],
-)
-def test_build_context_rejects_invalid_field(field_name, invalid_value):
-    with pytest.raises(AssertionError, match=f"VariationBuildContext.{field_name} must"):
-        VariationBuildContext(**{**_VALID_BUILD_CONTEXT_FIELDS, field_name: invalid_value})
-
-
 def test_build_context_requires_every_field():
     with pytest.raises(TypeError):
         VariationBuildContext(num_envs=2, seed=1)
@@ -283,9 +263,8 @@ def _draw(generator: torch.Generator) -> torch.Tensor:
     return torch.randint(0, 1_000_000, (16,), generator=generator)
 
 
-def test_build_context_generator_is_keyed_by_seed_and_variation_key():
+def test_build_context_generator_depends_only_on_seed_and_variation_key():
     context = VariationBuildContext(num_envs=1, seed=7, variation_key="pickup.asset_selection")
-    original_global_state = torch.random.get_rng_state()
 
     first_draw = _draw(context.make_generator())
     repeated_draw = _draw(context.make_generator())
@@ -301,32 +280,23 @@ def test_build_context_generator_is_keyed_by_seed_and_variation_key():
     assert torch.equal(other_num_envs_draw, first_draw)
     assert not torch.equal(other_key_draw, first_draw)
     assert not torch.equal(other_seed_draw, first_draw)
-    assert torch.equal(torch.random.get_rng_state(), original_global_state)
+
+
+def test_build_context_generator_leaves_global_random_state_alone():
+    context = VariationBuildContext(num_envs=1, seed=7, variation_key="pickup.asset_selection")
+    global_state_before_draw = torch.random.get_rng_state()
+
+    _draw(context.make_generator())
+
+    assert torch.equal(torch.random.get_rng_state(), global_state_before_draw)
 
 
 def test_build_context_generator_seed_derivation_is_pinned():
-    """Pins how the generator seed is derived, so a change to it, which changes every seeded draw, is deliberate."""
+    """Changing how the generator seed is derived changes every seeded draw, so this test fails on such a change."""
     context = VariationBuildContext(num_envs=1, seed=7, variation_key="pickup.asset_selection")
     expected_generator_seed = int.from_bytes(hashlib.sha256(b"7:pickup.asset_selection").digest()[:8], "big")
 
     assert torch.equal(_draw(context.make_generator()), _draw(torch.Generator().manual_seed(expected_generator_seed)))
-
-
-def test_build_context_generator_treats_seed_zero_as_a_seed():
-    context = VariationBuildContext(num_envs=1, seed=0, variation_key="asset.variation")
-
-    assert torch.equal(_draw(context.make_generator()), _draw(context.make_generator()))
-
-
-def test_build_context_generator_without_seed_uses_system_entropy():
-    context = VariationBuildContext(num_envs=1, seed=None, variation_key="asset.variation")
-    original_global_state = torch.random.get_rng_state()
-
-    first_generator = context.make_generator()
-    second_generator = context.make_generator()
-
-    assert first_generator.initial_seed() != second_generator.initial_seed()
-    assert torch.equal(torch.random.get_rng_state(), original_global_state)
 
 
 def test_add_variation_sets_the_host():
