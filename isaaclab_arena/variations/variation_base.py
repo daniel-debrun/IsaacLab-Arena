@@ -190,7 +190,7 @@ class VariationBase(ABC):
         """
 
     def _realize_at_build_time(self) -> None:
-        """Sample and mutate the bound asset config(s) in place during construction. Default: no-op.
+        """Draw values and apply them in place to asset configs before the env is built. Default: no-op.
 
         A build-time variation realises its whole effect here; a run-time variation leaves it a no-op.
         The build's settings are available through ``build_context``.
@@ -249,15 +249,15 @@ class BuildTimeVariationBase(VariationBase):
     or on assets they keep references to.
 
     A draw without ``env_ids`` gives one value for all environments. For one value per
-    environment, draw ``self.build_context.num_envs`` samples with
+    environment, make one draw of ``self.build_context.num_envs`` samples with
     ``env_ids=torch.arange(self.build_context.num_envs)``; each environment's value is recorded
-    for every episode of that environment. Recorded variation replay supports only the
-    shared form. To make a draw follow the build seed, pass
+    for every episode of that environment. Recorded variation replay supports only draws
+    without ``env_ids``. To make a draw follow the build seed, pass
     ``generator=self.build_context.make_generator()`` to a sampler that accepts one, such as
     ChoiceSampler.
     """
 
     @abstractmethod
     def _realize_at_build_time(self) -> None:
-        """Sample and apply this variation to the target configuration once per env build."""
+        """Draw this variation's values and apply them to asset configs, once per env build."""
         ...
