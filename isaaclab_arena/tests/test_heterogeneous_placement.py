@@ -20,6 +20,7 @@ from isaaclab_arena.relations.placement_result import PlacementResult
 from isaaclab_arena.relations.pooled_object_placer import PooledObjectPlacer
 from isaaclab_arena.relations.relation_solver import RelationSolver
 from isaaclab_arena.relations.relation_solver_params import RelationSolverParams
+from isaaclab_arena.relations.relation_solver_state import RelationSolverState
 from isaaclab_arena.relations.relations import IsAnchor, On
 from isaaclab_arena.relations.validation.types import PlacementValidationResults
 from isaaclab_arena.tests.dummy_object import DummyObject
@@ -219,6 +220,72 @@ def test_relation_solver_uses_env_bboxes():
     for pos_dict in result:
         assert box in pos_dict
         assert desk in pos_dict
+
+
+def test_solver_state_uses_each_environment_bounds_for_anchors():
+    """Each environment's anchor bounds come from env_bboxes, moved to the fixed anchor position."""
+    anchor = HeterogeneousDummyObject(
+        name="support",
+        bboxes=[
+            AxisAlignedBoundingBox(min_point=(-1.0, -2.0, -0.5), max_point=(1.0, 2.0, 0.5)),
+            AxisAlignedBoundingBox(min_point=(-3.0, -4.0, -1.5), max_point=(3.0, 4.0, 1.5)),
+        ],
+        initial_pose=Pose(position_xyz=(10.0, 20.0, 1.0), rotation_xyzw=(0.0, 0.0, 2**-0.5, 2**-0.5)),
+        relations=[IsAnchor()],
+    )
+    box = DummyObject(
+        name="box",
+        bounding_box=AxisAlignedBoundingBox(min_point=(-0.05, -0.05, -0.05), max_point=(0.05, 0.05, 0.05)),
+        relations=[On(anchor)],
+    )
+    obstacle = DummyObject(
+        name="passive_obstacle",
+        bounding_box=AxisAlignedBoundingBox(min_point=(0.0, 0.0, 0.0), max_point=(1.0, 1.0, 1.0)),
+        initial_pose=Pose(position_xyz=(-5.0, 0.0, 2.0), rotation_xyzw=(0.0, 0.0, 0.0, 1.0)),
+    )
+    env_bboxes = build_per_env_bounding_boxes([anchor, box], num_envs=2).object_bboxes
+    initial_positions = [
+        {anchor: (10.0, 20.0, 1.0), box: (10.0, 20.0, 1.6)},
+        {anchor: (10.0, 20.0, 1.0), box: (10.0, 20.0, 2.6)},
+    ]
+
+    state = RelationSolverState([anchor, box], initial_positions, env_bboxes=env_bboxes, collision_objects=[obstacle])
+
+    # The quarter-turn swaps x and y: env 0 spans 4 m x 2 m, env 1 spans 8 m x 6 m.
+    anchor_world_bbox = state.get_fixed_obstacle_world_bbox(anchor)
+    assert torch.allclose(anchor_world_bbox.min_point, torch.tensor([[8.0, 19.0, 0.5], [6.0, 17.0, -0.5]]))
+    assert torch.allclose(anchor_world_bbox.max_point, torch.tensor([[12.0, 21.0, 1.5], [14.0, 23.0, 2.5]]))
+    obstacle_world_bbox = state.get_fixed_obstacle_world_bbox(obstacle)
+    assert torch.equal(obstacle_world_bbox.min_point, torch.tensor([[-5.0, 0.0, 2.0]]))
+    assert torch.equal(obstacle_world_bbox.max_point, torch.tensor([[-4.0, 1.0, 3.0]]))
+
+
+def test_box_on_multi_asset_anchor_rests_on_each_environment_top():
+    """A box On a multi-asset anchor rests on the top of the anchor entry in its own environment."""
+    low_table = AxisAlignedBoundingBox(min_point=(-0.5, -0.5, 0.0), max_point=(0.5, 0.5, 0.1))
+    high_table = AxisAlignedBoundingBox(min_point=(-0.5, -0.5, 0.0), max_point=(0.5, 0.5, 0.5))
+    table = HeterogeneousDummyObject(name="table", bboxes=[low_table, high_table])
+    table.set_initial_pose(Pose(position_xyz=(0.0, 0.0, 0.0), rotation_xyzw=(0.0, 0.0, 0.0, 1.0)))
+    table.add_relation(IsAnchor())
+    box = DummyObject(
+        name="box",
+        bounding_box=AxisAlignedBoundingBox(min_point=(-0.05, -0.05, -0.05), max_point=(0.05, 0.05, 0.05)),
+    )
+    box.add_relation(On(table, clearance_m=0.01))
+    params = ObjectPlacerParams(
+        solver_params=RelationSolverParams(max_iters=300, convergence_threshold=1e-4, verbose=False),
+        apply_positions_to_objects=False,
+        placement_seed=7,
+    )
+
+    results = ObjectPlacer(params=params).place([table, box], num_envs=2)
+
+    # Table top, plus the On clearance, plus half the box height.
+    expected_z_per_env = [0.1 + 0.01 + 0.05, 0.5 + 0.01 + 0.05]
+    for env_id, (result, expected_z) in enumerate(zip(results, expected_z_per_env, strict=True)):
+        box_z = result.positions[box][2]
+        assert abs(box_z - expected_z) < 0.02, f"Env {env_id}: box z={box_z:.4f}, expected ~{expected_z:.2f}"
+        assert result.success, f"Env {env_id}: {result.validation_results.get_failed_validation_check_names}"
 
 
 # ---------------------------------------------------------------------------
