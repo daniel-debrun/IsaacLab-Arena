@@ -12,13 +12,13 @@ from isaaclab_arena.progress_tracking.progress_tracking_utils import Predicate, 
 
 @dataclass
 class PredicateGroup:
-    """Record each fresh completion of a named collection of predicates."""
+    """Record recurring completions, requiring the observed condition to clear between occurrences."""
 
     name: str
     """Unique name within the task, used in recorded group events."""
 
     predicates: list[Predicate]
-    """Predicates whose completion history is cleared after every occurrence."""
+    """Predicates whose completion history is cleared before each new occurrence."""
 
     predicates_are_sequential: bool = False
     """Require list order; the next predicate starts on the following control step."""

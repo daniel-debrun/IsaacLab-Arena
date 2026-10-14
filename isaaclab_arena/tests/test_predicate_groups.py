@@ -58,28 +58,25 @@ def _test_recurring_groups_and_success(_app):
         baseline.step(env, env.episode_length_buf)
         assert tracker.get_state() == baseline.get_state()
         assert tracker.get_events() == baseline.get_events()
-    assert _events(tracker) == [
-        ("instant", 1),
-        ("instant", 2),
-        ("held", 2),
-        ("instant", 3),
-        ("instant", 4),
-        ("held", 4),
-        ("instant", 5),
-        ("instant", 6),
-        ("held", 6),
-    ]
+    assert _events(tracker) == [("instant", 1), ("held", 2)]
+    for value in (False, True, True):
+        env.conditions[:] = value
+        _step(tracker, env)
+        baseline.step(env, env.episode_length_buf)
+        assert tracker.get_state() == baseline.get_state()
+        assert tracker.get_events() == baseline.get_events()
+    assert _events(tracker) == [("instant", 1), ("held", 2), ("instant", 8), ("held", 9)]
     snapshot = tracker.get_group_events()
     tracker.reset([0])
     env.episode_length_buf[0] = 0
-    assert len(snapshot[0]) == 9
+    assert len(snapshot[0]) == 4
     assert tracker.get_group_events()[0] == []
     _step(tracker, env)
     assert _events(tracker, 0) == [("instant", 1)]
-    assert _events(tracker, 1)[-1] == ("instant", 7)
+    assert _events(tracker, 1)[-1] == ("held", 9)
     _step(tracker, env)
     assert _events(tracker, 0)[-1] == ("held", 2)
-    assert _events(tracker, 1)[-1] == ("held", 8)
+    assert _events(tracker, 1)[-1] == ("held", 9)
     return True
 
 
@@ -112,7 +109,14 @@ def _test_order_and_fresh_history(_app):
     _step(tracker, env)
     assert _events(tracker)[-1] == ("unordered", 5)
     _step(tracker, env)
-    assert ("ordered", 6) in _events(tracker)
+    assert ("ordered", 6) not in _events(tracker), "The final condition has not cleared."
+    env.conditions[:] = False
+    _step(tracker, env)
+    env.conditions[:, 0] = True
+    _step(tracker, env)
+    env.conditions[:, 1] = True
+    _step(tracker, env)
+    assert _events(tracker)[-2:] == [("ordered", 9), ("unordered", 9)]
     assert not tracker.is_complete().any(), "Observations alone never make the task succeed."
     return True
 
@@ -176,22 +180,25 @@ def _test_temporal_group_isolation(_app):
     env.conditions[0, 0] = True
     _step(tracker, env)
     _step(tracker, env)
-    assert _events(tracker, 0) == [("independent", 2), ("independent", 4)]
+    assert _events(tracker, 0) == [("independent", 2)]
     _step(tracker, env)
-    assert _events(tracker, 0)[-2:] == [("gated", 6), ("independent", 6)]
-    assert _events(tracker, 1)[-2:] == [("gated", 6), ("independent", 6)]
+    assert _events(tracker, 0) == [("independent", 2), ("gated", 6)]
+    assert _events(tracker, 1) == [("independent", 2), ("gated", 3)]
+    env.conditions[1, 1] = False
     _step(tracker, env)
-    # Reset one episode with a partially accumulated streak in the other environment.
+    env.conditions[1, 1] = True
+    # Reset one episode while the other has just cleared its failure condition.
     tracker.reset([0])
     env.episode_length_buf[0] = 0
     _step(tracker, env)
     assert _events(tracker, 0) == []
-    assert _events(tracker, 1)[-1] == ("independent", 8)
+    assert _events(tracker, 1)[-1] == ("gated", 3)
     _step(tracker, env)
     assert _events(tracker, 0) == [("independent", 2)]
-    assert _events(tracker, 1)[-1] == ("gated", 9)
+    assert _events(tracker, 1)[-1] == ("independent", 9)
     _step(tracker, env)
     assert _events(tracker, 0)[-1] == ("gated", 3)
+    assert _events(tracker, 1)[-1] == ("gated", 10)
     return True
 
 
@@ -234,8 +241,120 @@ def _test_callable_groups(_app):
             _step(tracker, env)
             baseline.step(env, env.episode_length_buf)
             assert tracker.get_state() == baseline.get_state()
-        for name, expected_steps in (("instant", [1, 2, 3, 4, 5]), ("held", [2, 4]), ("ordered", [4])):
+        for name, expected_steps in (("instant", [1]), ("held", [2]), ("ordered", [4])):
             assert [step for group, step in _events(tracker) if group == name] == expected_steps
+    return True
+
+
+def _test_single_tracker_and_shared_cache(_app):
+    from unittest.mock import patch
+
+    from isaaclab_arena.progress_tracking import progress_tracker
+    from isaaclab_arena.progress_tracking.completion_criteria import CompletionCriteria
+    from isaaclab_arena.progress_tracking.predicate_group import PredicateGroup
+    from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
+
+    calls = 0
+
+    def condition(env):
+        nonlocal calls
+        calls += 1
+        return _condition(env)
+
+    env = _env([[True], [True]])
+    held = TrueForConsecutiveStepsCfg(condition, 2)
+    with patch.object(progress_tracker, "ProgressTracker", wraps=progress_tracker.ProgressTracker) as constructor:
+        tracker = progress_tracker.ProgressTracker(
+            [CompletionCriteria("success", [held])],
+            2,
+            "cpu",
+            tracking_groups=[PredicateGroup("instant", [condition]), PredicateGroup("held", [held])],
+        )
+        assert constructor.call_count == 1, "Groups must not construct nested ProgressTrackers."
+    for step, value in enumerate([True] * 5 + [False, True, True], start=1):
+        env.conditions[0, 0] = value
+        _step(tracker, env)
+        assert calls == step, "Success, advancing groups, and waiting groups share one predicate cache."
+    assert _events(tracker, 0) == [("instant", 1), ("held", 2), ("instant", 7), ("held", 8)]
+    assert _events(tracker, 1) == [("instant", 1), ("held", 2)]
+    assert tracker.is_complete().all(), "Clearing a group must not clear task success."
+    return True
+
+
+def _test_rearm_requires_fresh_temporal_sequence(_app):
+    from isaaclab_arena.progress_tracking.predicate_group import PredicateGroup
+    from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
+    from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
+
+    env = _env([[True, True]])
+    tracker = ProgressTracker(
+        [],
+        1,
+        "cpu",
+        tracking_groups=[
+            PredicateGroup(
+                "failure",
+                [
+                    TrueForConsecutiveStepsCfg(_condition, 2),
+                    TrueForConsecutiveStepsCfg(partial(_condition, index=1), 3),
+                ],
+                predicates_are_sequential=True,
+            )
+        ],
+    )
+    for step in range(1, 16):
+        env.conditions[0, 1] = step != 10
+        _step(tracker, env)
+        expected = [("failure", 5)] if step >= 5 else []
+        if step == 15:
+            expected.append(("failure", 15))
+        assert _events(tracker) == expected
+    return True
+
+
+def _test_any_order_rearm_and_desired_states(_app):
+    from isaaclab_arena.progress_tracking.predicate_group import PredicateGroup
+    from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
+
+    env = _env([[True, False]])
+    first, second = _condition, partial(_condition, index=1)
+    tracker = ProgressTracker(
+        [],
+        1,
+        "cpu",
+        tracking_groups=[
+            PredicateGroup("forward", [first, second]),
+            PredicateGroup("reverse", [second, first]),
+            PredicateGroup("cleared", [first], desired_predicate_state=[False]),
+            PredicateGroup("ignored_tail", [first, second], True, [True, None]),
+        ],
+    )
+    for values in (
+        [True, False],
+        [False, True],
+        [True, True],
+        [False, True],
+        [False, False],
+        [True, False],
+        [False, True],
+    ):
+        env.conditions[0] = env.conditions.new_tensor(values)
+        _step(tracker, env)
+    for name in ("forward", "reverse"):
+        assert [step for group, step in _events(tracker) if group == name] == [2, 7]
+    assert [step for group, step in _events(tracker) if group == "cleared"] == [2, 7]
+    assert [step for group, step in _events(tracker) if group == "ignored_tail"] == [1, 3, 6]
+    # A single true clearing step is not reused as the next cycle's history.
+    env.conditions[0, 0] = True
+    _step(tracker, env)
+    env.conditions[0, 0] = False
+    _step(tracker, env)
+    assert [step for group, step in _events(tracker) if group == "cleared"] == [2, 7]
+    env.conditions[0, 0] = True
+    _step(tracker, env)
+    env.conditions[0, 0] = False
+    _step(tracker, env)
+    assert [step for group, step in _events(tracker) if group == "cleared"] == [2, 7, 11]
     return True
 
 
@@ -302,17 +421,12 @@ def _test_finished_episode_groups(_app, output_dir):
                 assert base.progress_tracker.get_group_events()[0] == finished_events
                 assert base.extras["progress_tracking"]["group_events"][0] == finished_events
         assert not base.active_episode_mask.any()
-        assert _events(base.progress_tracker, 0) == [("instant", 1), ("instant", 2), ("held", 2)]
+        assert _events(base.progress_tracker, 0) == [("instant", 1), ("held", 2)]
         assert _events(base.progress_tracker, 1) == [
             ("instant", 1),
-            ("instant", 2),
             ("held", 2),
-            ("instant", 3),
             ("cleared", 3),
-            ("instant", 4),
-            ("held", 4),
             ("ordered", 4),
-            ("instant", 5),
         ]
         records = [json.loads(line) for line in results_path.read_text().splitlines()]
         assert len(records) == 2
@@ -411,6 +525,18 @@ def test_temporal_group_isolation():
 
 def test_callable_groups():
     assert run_function_with_persistent_simulation_app(_test_callable_groups)
+
+
+def test_single_tracker_and_shared_cache():
+    assert run_function_with_persistent_simulation_app(_test_single_tracker_and_shared_cache)
+
+
+def test_rearm_requires_fresh_temporal_sequence():
+    assert run_function_with_persistent_simulation_app(_test_rearm_requires_fresh_temporal_sequence)
+
+
+def test_any_order_rearm_and_desired_states():
+    assert run_function_with_persistent_simulation_app(_test_any_order_rearm_and_desired_states)
 
 
 def test_finished_episode_groups(tmp_path):

@@ -362,8 +362,8 @@ Recurring observations independent of success
 
 Override ``TaskBase.get_tracking_groups()`` to observe named predicate groups throughout an
 episode. These observations do not change success, failure termination, or task progress scores.
-Each group records an occurrence when it completes, clears its own history and counters, and
-starts a fresh cycle on the following control step. Groups remain active during every subtask,
+Each group records an occurrence when it completes and waits for its completion condition to clear
+before resetting its history and counters. Groups remain active during every subtask,
 including in sequential composite tasks. They also work in tasks without success criteria.
 
 .. code-block:: python
@@ -406,8 +406,8 @@ History and resets
 Use the existing ``TrueForConsecutiveStepsCfg`` to require an instantaneous predicate to stay true
 for consecutive control steps. Each group member gets independent counters, even when the same configuration
 is reused across groups or task success criteria. In ordered groups, a member's counter starts only after its turn
-begins. Completing a group resets its progress and counters for that environment while other groups and
-task success tracking keep their state.
+begins. After completion, the group will reset it's progress and counters once the completion condition clears for
+at least one time step.
 
 Group resets clear tracker-owned history. They do not reset underlying predicate callables or state
 stored in the environment. Supply instantaneous checks and express temporal holds through
