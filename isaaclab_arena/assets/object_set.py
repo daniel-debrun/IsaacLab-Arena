@@ -10,6 +10,7 @@ import isaaclab.sim as sim_utils
 
 from isaaclab_arena.assets.object import Object
 from isaaclab_arena.assets.object_type import ObjectType
+from isaaclab_arena.assets.pinned_multi_asset_spawner_cfg import PinnedMultiAssetSpawnerCfg
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 from isaaclab_arena.utils.pose import Pose
 from isaaclab_arena.utils.usd.rigid_body_path_alignment import align_rigid_body_paths
@@ -59,7 +60,7 @@ class RigidObjectSet(Object):
         if len(member_spawn_cfgs) == 1:
             spawn_cfg = member_spawn_cfgs[0]
         else:
-            spawn_cfg = sim_utils.MultiAssetSpawnerCfg(
+            spawn_cfg = PinnedMultiAssetSpawnerCfg(
                 assets_cfg=member_spawn_cfgs,
                 # Arena assigns members to environments. Isaac Lab ignores this flag and warns when it is True.
                 random_choice=False,
