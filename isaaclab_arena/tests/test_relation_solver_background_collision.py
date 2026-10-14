@@ -550,6 +550,7 @@ def _test_discover_passive_assets_filters(simulation_app) -> bool:
     from isaaclab_arena.assets.background import Background
     from isaaclab_arena.assets.object import Object
     from isaaclab_arena.assets.object_reference import ObjectReference
+    from isaaclab_arena.assets.object_type import ObjectType
     from isaaclab_arena.relations.relations import IsAnchor
     from isaaclab_arena.scene.scene import Scene
     from isaaclab_arena.utils.pose import Pose, PoseRange
@@ -577,12 +578,17 @@ def _test_discover_passive_assets_filters(simulation_app) -> bool:
     counter_ref.parent_asset = kitchen
     anchored = fake_object("anchored", [IsAnchor()], "a.usd", fixed_pose)
     no_usd = fake_object("no_usd", [], None, fixed_pose)
+    no_usd.object_type = ObjectType.BASE
+    # A rigid object without a USD path, such as a primitive shape, takes its bounds from its spawn config.
+    rigid_no_usd = fake_object("rigid_no_usd", [], None, fixed_pose)
+    rigid_no_usd.object_type = ObjectType.RIGID
     no_pose = fake_object("no_pose", [], "n.usd", None)
     ranged = fake_object("ranged", [], "r.usd", pose_range)
 
     scene = Scene()
     scene.assets = {
-        o.name: o for o in [furniture, counter_ref, kitchen, kitchen_no_pose, anchored, no_usd, no_pose, ranged]
+        o.name: o
+        for o in [furniture, counter_ref, kitchen, kitchen_no_pose, anchored, no_usd, no_pose, ranged, rigid_no_usd]
     }
 
     from isaaclab_arena.relations.collision_mode import CollisionMode
@@ -595,9 +601,9 @@ def _test_discover_passive_assets_filters(simulation_app) -> bool:
         combined = passive_collision_module.get_placement_collision_objects(
             [], scene.assets.values(), CollisionMode.MESH
         )
-    assert sources == [furniture, counter_ref]
-    assert all_sources == [furniture, counter_ref, kitchen, kitchen_no_pose]
-    assert combined == [furniture, kitchen, kitchen_no_pose]
+    assert sources == [furniture, counter_ref, rigid_no_usd]
+    assert all_sources == [furniture, counter_ref, kitchen, kitchen_no_pose, rigid_no_usd]
+    assert combined == [furniture, kitchen, kitchen_no_pose, rigid_no_usd]
     assert all_sources[1] is counter_ref
     return True
 

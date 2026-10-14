@@ -395,7 +395,9 @@ def _test_object_set_expansion_keeps_live_spawn_settings(simulation_app):
 
 
 def _test_relation_free_object_set_is_a_passive_obstacle(simulation_app, tmp_path):
-    """A relation-free set with a fixed pose blocks placement like a fixed object, although it has no usd_path."""
+    """A relation-free set with a fixed pose blocks placement like other fixed rigid objects without a usd_path."""
+    import isaaclab.sim as sim_utils
+
     from isaaclab_arena.assets.object import Object
     from isaaclab_arena.assets.object_set import RigidObjectSet
     from isaaclab_arena.assets.object_type import ObjectType
@@ -412,7 +414,16 @@ def _test_relation_free_object_set_is_a_passive_obstacle(simulation_app, tmp_pat
     fixed_cube = Object(
         name="fixed_cube", object_type=ObjectType.RIGID, usd_path=member_usd_path, initial_pose=fixed_pose
     )
-    assert discover_passive_assets([fixed_set, fixed_cube]) == [fixed_set, fixed_cube]
+    fixed_primitive = Object(
+        name="fixed_primitive",
+        object_type=ObjectType.RIGID,
+        spawner_cfg=sim_utils.CuboidCfg(size=(0.1, 0.2, 0.3), rigid_props=sim_utils.RigidBodyPropertiesCfg()),
+        initial_pose=fixed_pose,
+    )
+    assert discover_passive_assets([fixed_set, fixed_cube, fixed_primitive]) == [fixed_set, fixed_cube, fixed_primitive]
+    primitive_bounds = fixed_primitive.get_world_bounding_box()
+    assert torch.allclose(primitive_bounds.min_point, torch.tensor([[-0.05, -0.1, -0.05]]))
+    assert torch.allclose(primitive_bounds.max_point, torch.tensor([[0.05, 0.1, 0.25]]))
     return True
 
 
