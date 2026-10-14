@@ -155,7 +155,13 @@ class RigidObjectSet(Object):
             spawn_entries = spawn_cfg.assets_cfg
         else:
             spawn_entries = [spawn_cfg]
-        return self.prim_path + self._get_shared_contact_body_path(spawn_entries)
+        # Isaac Lab finds the rigid body in one environment and uses its path in every environment.
+        body_paths = {self._get_spawn_cfg_geometry(entry).get_contact_body_path() for entry in spawn_entries}
+        assert len(body_paths) == 1, (
+            f"RigidObjectSet '{self.name}' spawn entries must have the same contact-sensor prim path; "
+            f"got rigid-body paths {sorted(body_paths)}."
+        )
+        return self.prim_path + body_paths.pop()
 
     def _choose_member_indices(self, num_envs: int, seed: int | None = None) -> list[int]:
         """Return one member index per env.
