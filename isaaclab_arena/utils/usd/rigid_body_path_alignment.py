@@ -3,13 +3,6 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Move rigid bodies to one common prim path, so several assets can spawn as one Isaac Lab rigid object.
-
-Isaac Lab finds a rigid object's body in the first environment and looks for it at the same path below the spawn
-root in every other environment. When the environments spawn assets that keep their rigid body at different paths,
-a copy of each USD file is written with the body at /rigid_body.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -45,17 +38,30 @@ def align_rigid_body_paths(spawn_cfgs: Sequence[SpawnerCfg]) -> list[SpawnerCfg]
     """Return spawn configurations whose rigid bodies sit at the same path inside their assets.
 
     Isaac Lab finds a rigid object's body at one path in all environments, so assets spawned as one object must
-    agree on it. For example, the cracker box's rigid body is its root prim, while the sweet potato's is the child
-    prim ``/SweetPotato005``. Spawned together, each gets a cached copy of its USD file with the body at
-    ``/rigid_body``. If the paths already match, unchanged copies of the configurations are returned and no file is
-    written.
+    agree on it. If they already do, unchanged copies of the configurations are returned. Otherwise each USD asset
+    gets a cached copy with its rigid body moved to ``/rigid_body``, for example::
+
+        cracker box                         copy
+        /_03_cracker_box  (rigid body)      /AlignedAsset
+            /Looks                              /rigid_body  (rigid body)
+            /_03_cracker_box                        /Looks
+                                                    /_03_cracker_box
+
+        sweet potato                        copy
+        /root                               /AlignedAsset
+            /Looks                              /source
+            /Physics                                /Looks
+            /SweetPotato005  (rigid body)           /Physics
+                /Collisions                     /rigid_body  (rigid body)
+                /Visuals                            /Collisions
+                /Sites                              /Visuals
+                                                    /Sites
 
     Args:
         spawn_cfgs: Spawn configurations of the assets spawned as one object.
 
     Returns:
-        Spawn configurations in the same order. When the paths differ, each points at a cached copy of its USD file,
-        with its USD variant selections baked in.
+        Spawn configurations in the same order. Those pointing at a copy have their USD variant selections baked in.
     """
     assert spawn_cfgs, "At least one spawn configuration is required."
     geometries = [SpawnCfgGeometry(spawn_cfg) for spawn_cfg in spawn_cfgs]
