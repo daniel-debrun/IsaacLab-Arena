@@ -31,8 +31,9 @@ class Asset:
     def add_variation(self, variation: VariationBase) -> None:
         """Add ``variation`` under its ``name`` and make this asset its host.
 
-        The name must be unused on this asset, and the variation must not have a host yet.
-        Subclasses call this from their ``__init__`` to declare the variations they support.
+        The name must be unused on this asset, and the variation must not have a host yet. Asset subclasses
+        call this from their ``__init__`` for the variations they support; environment code calls it to add
+        any variation the asset class does not declare.
         """
         assert (
             variation.name not in self.variations

@@ -109,28 +109,33 @@ class VariationBase(ABC):
         self.apply_cfg(cfg)
 
     @property
-    def host(self) -> Asset | None:
-        """Asset this variation was added to; None before it is added or after that asset is garbage-collected."""
-        if self._host_ref is None:
-            return None
-        return self._host_ref()
+    def host(self) -> Asset:
+        """Asset this variation was added to with Asset.add_variation."""
+        assert (
+            self._host_ref is not None
+        ), f"Variation '{self.name}' has not been added to an asset; add it with Asset.add_variation()."
+        host = self._host_ref()
+        assert host is not None, f"Variation '{self.name}': its host asset was garbage-collected."
+        return host
 
     def set_host(self, asset: Asset) -> None:
-        """Set ``asset`` as this variation's host; Asset.add_variation calls this when it adds the variation.
+        """Set ``asset`` as this variation's host; Asset.add_variation calls this before it stores the variation.
 
-        A variation has one host. Subclasses may override this to reject an unsupported host
-        and then call ``super().set_host(asset)``.
+        A variation has one host. Subclasses may override this to reject an unsupported host and then
+        call ``super().set_host(asset)``. During the call, ``asset.get_variations()`` does not include
+        this variation yet, and an asset rejected here does not get it.
 
         Args:
             asset: Asset the variation is being added to.
         """
         assert self._host_ref is None, (
-            f"Variation '{self.name}' already has host asset '{getattr(self.host, 'name', '<garbage-collected>')}'"
-            f" and cannot also be added to '{asset.name}'. Create one variation instance per asset."
+            f"Variation '{self.name}' already has host asset '{self.host.name}' and cannot also be added to"
+            f" '{asset.name}'. Create one variation instance per asset."
         )
-        # Weak because an asset can be a configclass field (for example JointStateRecorderCfg.object), and
-        # configclass validation follows object attributes without cycle detection: a strong
-        # asset -> variation -> asset reference would recurse when that config is validated.
+        # Weak because add_variation gives every variation on every asset this back-reference, and configclass
+        # validation follows object attributes without cycle detection. A strong reference would recurse when a
+        # config holding an asset with variations is validated, such as an EventTermCfg whose params hold a
+        # DROID embodiment and its camera variations (as in test_embodiment_collision_mesh).
         self._host_ref = weakref.ref(asset)
 
     @property

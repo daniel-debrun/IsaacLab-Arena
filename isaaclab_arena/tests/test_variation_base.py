@@ -302,7 +302,8 @@ def test_build_context_generator_seed_derivation_is_pinned():
 def test_add_variation_sets_the_host():
     asset = Asset(name="test_asset")
     variation = _CustomVariation()
-    assert variation.host is None
+    with pytest.raises(AssertionError, match="has not been added to an asset"):
+        variation.host
 
     asset.add_variation(variation)
 
@@ -342,13 +343,13 @@ def test_host_reference_does_not_keep_the_asset_alive():
     gc.collect()
 
     assert asset_reference() is None
-    assert variation.host is None
+    with pytest.raises(AssertionError, match="garbage-collected"):
+        variation.host
 
 
 def test_variation_with_a_host_does_not_create_a_config_validation_cycle():
-    # An asset stored in a configclass field is validated with it, and validation follows object
-    # attributes without cycle detection, so a strong asset -> variation -> asset reference would
-    # recurse until RecursionError.
+    # Validating a config that holds an asset follows object attributes without cycle detection, so a
+    # strong asset -> variation -> asset reference would recurse until RecursionError.
     asset = Asset(name="test_asset")
     asset.add_variation(_CustomVariation())
 
