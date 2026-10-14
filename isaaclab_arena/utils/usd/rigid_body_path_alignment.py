@@ -18,16 +18,16 @@ import pathlib
 import tempfile
 from collections.abc import Sequence
 from copy import deepcopy
-from dataclasses import fields
 from functools import partial
 
-from isaaclab.sim import UsdFileCfg
+from isaaclab.sim import UsdFileCfg, UsdFileWithCompliantContactCfg
 from isaaclab.sim.spawners._utils import fragment_mapping
 from isaaclab.sim.spawners.spawner_cfg import SpawnerCfg
 from isaaclab.sim.utils import make_uninstanceable, standardize_xform_ops
 from pxr import Sdf, Usd, UsdGeom, UsdShade
 
 from isaaclab_arena.assets.asset_cache import get_arena_asset_cache_dir
+from isaaclab_arena.assets.physics_config import UsdFileCfgPrimPhysicsWrapper
 from isaaclab_arena.assets.spawn_cfg_geometry import SpawnCfgGeometry
 from isaaclab_arena.utils.usd.rigid_bodies import get_all_rigid_body_prim_paths_from_stage
 
@@ -88,18 +88,25 @@ def _assert_settings_do_not_name_asset_prims(spawn_cfg: UsdFileCfg) -> None:
     # below /AlignedAsset/source. A setting that names a prim by its original path, for example a prim_physics
     # entry or a visual_material_bindings target, would then point at nothing and be skipped without an error.
     cannot_move = f"Cannot move the rigid body of {spawn_cfg.usd_path} to a common path"
-    assert not getattr(spawn_cfg, "prim_physics", None), f"{cannot_move}: prim_physics names source prims."
-    # Isaac Lab names every physics property field *_props (rigid_props, mass_props, ...), and each one accepts
-    # schema fragments keyed by prim path patterns. The suffix also covers fields Isaac Lab adds later.
-    property_field_names = [
-        spawn_field.name for spawn_field in fields(spawn_cfg) if spawn_field.name.endswith("_props")
-    ]
-    for field_name in property_field_names:
+    if isinstance(spawn_cfg, UsdFileCfgPrimPhysicsWrapper):
+        assert not spawn_cfg.prim_physics, f"{cannot_move}: prim_physics names source prims."
+    # These physics property fields also accept schema fragments keyed by prim path patterns. deformable_props is
+    # not listed because it takes only a properties config.
+    property_settings = {
+        "mass_props": spawn_cfg.mass_props,
+        "rigid_props": spawn_cfg.rigid_props,
+        "collision_props": spawn_cfg.collision_props,
+        "articulation_props": spawn_cfg.articulation_props,
+        "fixed_tendons_props": spawn_cfg.fixed_tendons_props,
+        "spatial_tendons_props": spawn_cfg.spatial_tendons_props,
+        "joint_drive_props": spawn_cfg.joint_drive_props,
+    }
+    for field_name, property_setting in property_settings.items():
         # fragment_mapping is Isaac Lab's private helper for these fields. Using it keeps this check in line with how
         # Isaac Lab reads them: a mapping for schema fragments, None for a properties config such as MassPropertiesCfg.
         # TODO(cvolk, 2026.10.13): Allow bare fragments. Isaac Lab applies them to the whole asset, so they still
         # apply after the move.
-        assert not fragment_mapping(getattr(spawn_cfg, field_name)), (
+        assert not fragment_mapping(property_setting), (
             f"{cannot_move}: {field_name} uses schema fragments or target patterns. "
             "Use a properties config such as MassPropertiesCfg, or spawn configurations with the same rigid-body path."
         )
@@ -108,9 +115,10 @@ def _assert_settings_do_not_name_asset_prims(spawn_cfg: UsdFileCfg) -> None:
     assert spawn_cfg.visual_material is None or spawn_cfg.visual_material_path.startswith(
         "/"
     ), f"{cannot_move}: visual_material_path is relative to the asset root."
-    assert (
-        getattr(spawn_cfg, "physics_material_prim_path", None) is None
-    ), f"{cannot_move}: physics_material_prim_path names source prims."
+    if isinstance(spawn_cfg, UsdFileWithCompliantContactCfg):
+        assert (
+            spawn_cfg.physics_material_prim_path is None
+        ), f"{cannot_move}: physics_material_prim_path names source prims."
 
 
 def _build_copy_with_body_moved(geometry: SpawnCfgGeometry, body_path: str) -> Sdf.Layer:

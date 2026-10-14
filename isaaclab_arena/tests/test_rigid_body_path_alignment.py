@@ -497,6 +497,31 @@ def _test_moving_the_body_rejects_path_keyed_overrides(simulation_app, tmp_path,
     return True
 
 
+def _test_moving_the_body_rejects_fragments_in_every_property_field(simulation_app, tmp_path):
+    from dataclasses import fields
+
+    from isaaclab.sim import UsdFileCfg
+
+    from isaaclab_arena.utils.usd.rigid_body_path_alignment import align_rigid_body_paths
+
+    root_path = tmp_path / "root.usda"
+    nested_path = tmp_path / "nested.usda"
+    _write_asset(root_path, "/Asset")
+    _write_asset(nested_path, "/Asset/Group/Body")
+    # Every *_props field except deformable_props also accepts schema fragments, so a field Isaac Lab adds later
+    # fails here until the check lists it.
+    property_field_names = []
+    for spawn_field in fields(UsdFileCfg):
+        if spawn_field.name.endswith("_props") and spawn_field.name != "deformable_props":
+            property_field_names.append(spawn_field.name)
+    assert property_field_names, "UsdFileCfg has no physics property fields."
+    for field_name in property_field_names:
+        spawn_cfgs = [_make_spawn_cfg(root_path), _make_spawn_cfg(nested_path, **{field_name: {"/.*": []}})]
+        with pytest.raises(AssertionError, match=f"{field_name} uses schema fragments"):
+            align_rigid_body_paths(spawn_cfgs)
+    return True
+
+
 def _test_legacy_physics_cfgs_apply_to_moved_body(simulation_app, tmp_path):
     import isaaclab.sim as sim_utils
     from isaaclab.sim.utils import use_stage
@@ -658,6 +683,12 @@ def test_moving_the_body_rejects_path_keyed_overrides(tmp_path, override_name):
         headless=HEADLESS,
         tmp_path=tmp_path,
         override_name=override_name,
+    )
+
+
+def test_moving_the_body_rejects_fragments_in_every_property_field(tmp_path):
+    assert run_function_with_persistent_simulation_app(
+        _test_moving_the_body_rejects_fragments_in_every_property_field, headless=HEADLESS, tmp_path=tmp_path
     )
 
 
