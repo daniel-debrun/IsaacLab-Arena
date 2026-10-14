@@ -192,7 +192,7 @@ class VariationBase(ABC):
         """Build settings from the latest ``configure_at_build_time`` call; kept until the next call replaces them."""
         assert (
             self._build_context is not None
-        ), f"Variation '{self.name}' has no build context; pass a VariationBuildContext to configure_at_build_time()."
+        ), f"Variation '{self.name}' has no build context; it is set when configure_at_build_time() runs."
         return self._build_context
 
     def _prepare_at_build_time(self) -> None:
@@ -210,14 +210,12 @@ class VariationBase(ABC):
         The build's settings are available through ``build_context``.
         """
 
-    def configure_at_build_time(self, context: VariationBuildContext | None = None) -> None:
+    def configure_at_build_time(self, context: VariationBuildContext) -> None:
         """Run this variation's build-time preparation and realization, once per env build.
 
         Args:
             context: Settings of this build, read by the hooks through ``build_context``.
-                Without one, a hook that reads ``build_context`` fails.
         """
-        # Replace any earlier context, so a build without one never sees a previous build's settings.
         self._build_context = context
         self._prepare_at_build_time()
         self._realize_at_build_time()

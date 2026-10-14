@@ -225,17 +225,6 @@ class _BuildContextReadingVariation(BuildTimeVariationBase):
         self.build_steps.append(("realize", self.build_context))
 
 
-class _ContextFreeVariation(BuildTimeVariationBase):
-    """Build-time variation that draws a shared value without reading the build context."""
-
-    def __init__(self):
-        super().__init__(VariationBaseCfg(sampler_cfg=UniformSamplerCfg(low=[0.5], high=[0.5])), name="context_free")
-        self.realized_values: list[float] = []
-
-    def _realize_at_build_time(self) -> None:
-        self.realized_values.append(float(self.sampler.sample(num_samples=1)[0, 0]))
-
-
 def test_get_variation_key_joins_asset_and_variation_names():
     assert get_variation_key("pickup", "asset_selection") == "pickup.asset_selection"
 
@@ -257,25 +246,11 @@ def test_build_context_is_immutable():
         context.num_envs = 4
 
 
-def test_build_context_must_be_supplied_for_every_build():
+def test_reading_build_context_before_configure_at_build_time_fails():
     variation = _BuildContextReadingVariation()
+
     with pytest.raises(AssertionError, match="has no build context"):
         variation.build_context
-    with pytest.raises(AssertionError, match="has no build context"):
-        variation.configure_at_build_time()
-
-    variation.configure_at_build_time(VariationBuildContext(num_envs=2, seed=1, variation_key="object.build_time"))
-    # A later build without a context must not reuse the previous build's settings.
-    with pytest.raises(AssertionError, match="has no build context"):
-        variation.configure_at_build_time()
-
-
-def test_hooks_that_do_not_read_the_build_context_run_without_one():
-    variation = _ContextFreeVariation()
-
-    variation.configure_at_build_time()
-
-    assert variation.realized_values == [0.5]
 
 
 _VALID_BUILD_CONTEXT_FIELDS = {"num_envs": 2, "seed": 1, "variation_key": "asset.variation"}

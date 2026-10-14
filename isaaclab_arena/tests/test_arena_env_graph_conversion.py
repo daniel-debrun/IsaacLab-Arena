@@ -225,6 +225,7 @@ def test_default_light_is_injected_when_scene_has_none():
 
 def _test_direction_variation_lights_injected_directional_light(simulation_app):
     from isaaclab_arena.assets.object_library import DirectionalLight, DomeLight
+    from isaaclab_arena.variations.variation_base import VariationBuildContext, get_variation_key
 
     spec = _minimal_scene_spec(objects=[AssetSpec(id="mug", registry_name="mug_ycb_robolab")])
     arena_env = spec.to_arena_env()
@@ -233,7 +234,11 @@ def _test_direction_variation_lights_injected_directional_light(simulation_app):
 
     direction_variation = directional_light.get_variation("direction")
     direction_variation.enable()
-    direction_variation.configure_at_build_time()
+    direction_variation.configure_at_build_time(
+        VariationBuildContext(
+            num_envs=1, seed=0, variation_key=get_variation_key(directional_light.name, direction_variation.name)
+        )
+    )
 
     # Enabling the variation lights the sun and dims the dome so the sun's shadows are visible.
     assert directional_light.spawner_cfg.intensity == DirectionalLight.default_intensity
