@@ -61,7 +61,8 @@ def align_rigid_body_paths(spawn_cfgs: Sequence[SpawnerCfg]) -> list[SpawnerCfg]
         spawn_cfgs: Spawn configurations of the assets spawned as one object.
 
     Returns:
-        Spawn configurations in the same order. Those pointing at a copy have their USD variant selections baked in.
+        Spawn configurations in the same order. When the paths differ, each points at its copy and has variants set
+        to None.
     """
     assert spawn_cfgs, "At least one spawn configuration is required."
     geometries = [SpawnCfgGeometry(spawn_cfg) for spawn_cfg in spawn_cfgs]
@@ -74,28 +75,24 @@ def align_rigid_body_paths(spawn_cfgs: Sequence[SpawnerCfg]) -> list[SpawnerCfg]
             f"to one path; got {type(spawn_cfg).__name__} and rigid-body paths {body_paths}."
         )
         _assert_settings_do_not_name_asset_prims(spawn_cfg)
-    # Build every copy before saving any of them, so a rejected spawn configuration leaves no cache files behind.
+    # Build all copies before saving any, so a rejected asset leaves no cache files behind.
     copied_layers = [_build_copy_with_body_moved(geometry) for geometry in geometries]
     aligned_spawn_cfgs = []
     for spawn_cfg, copied_layer in zip(spawn_cfgs, copied_layers):
         aligned_spawn_cfg = deepcopy(spawn_cfg)
         aligned_spawn_cfg.usd_path = str(_save_to_cache(copied_layer))
-        # The copy has the selections baked in and has no variant sets of its own.
+        # The copy has the variant selections baked in.
         aligned_spawn_cfg.variants = None
         aligned_spawn_cfgs.append(aligned_spawn_cfg)
     return aligned_spawn_cfgs
 
 
 def _assert_settings_do_not_name_asset_prims(spawn_cfg: UsdFileCfg) -> None:
-    """Assert that no spawn setting refers to a prim inside the USD file by its path."""
-    # The copy gives the asset's prims new paths: the body moves to /AlignedAsset/rigid_body and everything else
-    # below /AlignedAsset/source. A setting that names a prim by its original path, for example a prim_physics
-    # entry or a visual_material_bindings target, would then point at nothing and be skipped without an error.
+    """Assert that no spawn setting names a prim inside the USD file, since the copy moves those prims."""
     cannot_move = f"Cannot move the rigid body of {spawn_cfg.usd_path} to a common path"
     if isinstance(spawn_cfg, UsdFileCfgPrimPhysicsWrapper):
         assert not spawn_cfg.prim_physics, f"{cannot_move}: prim_physics names source prims."
-    # These physics property fields also accept schema fragments keyed by prim path patterns. deformable_props is
-    # not listed because it takes only a properties config.
+    # Fields that also accept schema fragments keyed by prim path pattern; deformable_props takes only a config.
     property_settings = {
         "mass_props": spawn_cfg.mass_props,
         "rigid_props": spawn_cfg.rigid_props,
@@ -105,11 +102,10 @@ def _assert_settings_do_not_name_asset_prims(spawn_cfg: UsdFileCfg) -> None:
         "spatial_tendons_props": spawn_cfg.spatial_tendons_props,
         "joint_drive_props": spawn_cfg.joint_drive_props,
     }
+    # Isaac Lab reads these fields with its private fragment_mapping: a mapping for fragments, None for a config.
+    # TODO(cvolk, 2026.10.13): Allow bare fragments. Isaac Lab applies them to the whole asset, so they still apply
+    # after the move.
     for field_name, property_setting in property_settings.items():
-        # fragment_mapping is Isaac Lab's private helper for these fields. Using it keeps this check in line with how
-        # Isaac Lab reads them: a mapping for schema fragments, None for a properties config such as MassPropertiesCfg.
-        # TODO(cvolk, 2026.10.13): Allow bare fragments. Isaac Lab applies them to the whole asset, so they still
-        # apply after the move.
         assert not fragment_mapping(property_setting), (
             f"{cannot_move}: {field_name} uses schema fragments or target patterns. "
             "Use a properties config such as MassPropertiesCfg, or spawn configurations with the same rigid-body path."
@@ -138,8 +134,6 @@ def _build_copy_with_body_moved(geometry: SpawnCfgGeometry) -> Sdf.Layer:
     source_root = stage.GetDefaultPrim().GetPath()
     _make_asset_editable(stage, source_root, geometry.spawn_cfg)
     source_body_path = Sdf.Path(str(source_root) + geometry.get_contact_body_path())
-    # The copy first holds the whole asset below /AlignedAsset/source; the body is then moved out to
-    # /AlignedAsset/rigid_body.
     body_path_under_source = source_body_path.ReplacePrefix(source_root, _COPY_REST_OF_ASSET)
     _assert_single_rigid_body(stage, source_body_path, geometry.spawn_cfg.usd_path)
 
@@ -152,11 +146,10 @@ def _build_copy_with_body_moved(geometry: SpawnCfgGeometry) -> Sdf.Layer:
 
 def _make_asset_editable(stage: Usd.Stage, source_root: Sdf.Path, spawn_cfg: UsdFileCfg) -> None:
     """Make the asset at ``source_root`` editable in its in-memory stage and clear the spawn root's placement."""
-    # Instance proxies cannot be edited or found by Traverse(), so make the whole asset editable before looking
-    # for bodies.
+    # Traverse() skips instance proxies, and Flatten would move instanced prims out of the asset into prototypes.
     make_uninstanceable(source_root, stage=stage)
-    # Isaac Lab sets the spawn root's translation and orientation, and a tuple spawn scale replaces its scale.
-    # Clear them here, so the moved body keeps only its transform relative to the spawn root.
+    # Isaac Lab sets the spawn root's pose, and a tuple spawn scale replaces its scale, so neither may end up in the
+    # moved body's transform.
     standardize_xform_ops(
         stage.GetPrimAtPath(source_root),
         translation=(0.0, 0.0, 0.0),
@@ -176,8 +169,7 @@ def _assert_single_rigid_body(stage: Usd.Stage, body_path: Sdf.Path, usd_path: s
 def _move_body_to_common_path(stage: Usd.Stage, source_root: Sdf.Path, body_path_under_source: Sdf.Path) -> Usd.Stage:
     """Flatten the asset into a new stage with its rigid body moved to /AlignedAsset/rigid_body.
 
-    The rest of the asset goes to /AlignedAsset/source, and properties that pointed into the body point at its new
-    path.
+    The rest of the asset goes to /AlignedAsset/source, and paths that pointed into the body follow it.
 
     Args:
         stage: Source stage with the asset at ``source_root``.
@@ -187,12 +179,11 @@ def _move_body_to_common_path(stage: Usd.Stage, source_root: Sdf.Path, body_path
     Returns:
         A stage on the new layer.
     """
-    # Flatten resolves references and USD variant selections and makes asset paths absolute, so the copy can
-    # live in another directory.
+    # Flatten bakes in references and variant selections and makes asset paths absolute, so the copy can live anywhere.
     layer = stage.Flatten(addSourceFileComment=False)
     copy_stage = Usd.Stage.Open(layer)
     copy_root = UsdGeom.Xform.Define(copy_stage, _COPY_ROOT).GetPrim()
-    # Keep the rest of the source asset: materials and other content the body uses may sit outside the body.
+    # Keep the rest of the asset: the body may use materials and other prims outside it.
     copied_rest_of_asset = Sdf.CopySpec(layer, source_root, layer, _COPY_REST_OF_ASSET)
     assert copied_rest_of_asset, f"Could not copy {source_root} to {_COPY_REST_OF_ASSET}."
     copied_body = Sdf.CopySpec(layer, body_path_under_source, layer, _COPY_BODY)
@@ -206,8 +197,8 @@ def _move_body_to_common_path(stage: Usd.Stage, source_root: Sdf.Path, body_path
 
 def _point_links_at_moved_body(layer: Sdf.Layer, body_path_under_source: Sdf.Path) -> None:
     """Point relationship targets and attribute connections into body_path_under_source at the moved body."""
-    # Sdf.CopySpec remaps only paths inside the subtree it copies, so prims outside the body that point into it,
-    # such as joints, filtered pairs or collections, still name the removed body below /AlignedAsset/source.
+    # Sdf.CopySpec remaps paths only inside the copied subtree, so joints, filtered pairs or collections outside
+    # the body still name its old path.
     path_after_body_move = partial(_path_after_body_move, body_path_under_source=body_path_under_source)
     property_paths = []
 
@@ -215,7 +206,7 @@ def _point_links_at_moved_body(layer: Sdf.Layer, body_path_under_source: Sdf.Pat
         if spec_path.IsPropertyPath():
             property_paths.append(spec_path)
 
-    # Collect the paths first, so the list edits below never run while the layer is being traversed.
+    # Collect the paths first, so the list edits below never run during the traversal.
     layer.Traverse(Sdf.Path.absoluteRootPath, collect_property_path)
     for property_path in property_paths:
         property_spec = layer.GetPropertyAtPath(property_path)
@@ -226,11 +217,7 @@ def _point_links_at_moved_body(layer: Sdf.Layer, body_path_under_source: Sdf.Pat
 
 
 def _path_after_body_move(path: Sdf.Path, body_path_under_source: Sdf.Path) -> Sdf.Path:
-    """Return where a path in the copy points after the body moved to /AlignedAsset/rigid_body.
-
-    Paths at or below body_path_under_source, below /AlignedAsset/source, map into /AlignedAsset/rigid_body; others
-    are unchanged.
-    """
+    """Map a path at or below ``body_path_under_source`` to the moved body; return other paths unchanged."""
     if path.HasPrefix(body_path_under_source):
         return path.ReplacePrefix(body_path_under_source, _COPY_BODY)
     return path
@@ -245,10 +232,9 @@ def _keep_inherited_placement_and_materials(
         source_body: The rigid body in the source stage.
         copy_stage: Stage with the moved body at /AlignedAsset/rigid_body.
         source_root: Path of the source asset in the source stage.
-        body_path_under_source: The path the body's copy had below /AlignedAsset/source before it moved.
+        body_path_under_source: Path of the rigid body once the asset is copied to /AlignedAsset/source.
     """
-    # The moved body no longer sits below its parents, so their transforms and material bindings no longer apply to
-    # it. The source stage is not edited while the copy is built, so it still shows what the body inherited.
+    # The body's parents are not in the copy, so read what it inherited from them in the source stage.
     moved_body = copy_stage.GetPrimAtPath(_COPY_BODY)
     # The source root has no parent, so the body's world transform is its transform within the asset.
     body_transform = UsdGeom.Xformable(source_body).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
@@ -268,15 +254,12 @@ def _keep_inherited_placement_and_materials(
 
 
 def _save_to_cache(layer: Sdf.Layer) -> pathlib.Path:
-    """Save the layer to a cache file named by a hash of its content, and return the file path.
-
-    A file that already exists is reused and not written again.
-    """
+    """Save the layer to a cache file named by its content hash, reusing an existing file, and return the path."""
     content_hash = hashlib.sha256(layer.ExportToString().encode()).hexdigest()
     cache_path = get_arena_asset_cache_dir() / f"rigid_{content_hash}.usd"
     if cache_path.exists():
         return cache_path
-    # Export to a temporary file and rename it, so another process never reads a half-written file.
+    # Export to a temporary file and rename it, so cache_path never names a half-written file.
     temporary_path = None
     try:
         with tempfile.NamedTemporaryFile(dir=cache_path.parent, suffix=".usd", delete=False) as temporary_file:
