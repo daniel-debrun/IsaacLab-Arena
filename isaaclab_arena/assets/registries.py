@@ -287,8 +287,8 @@ class EnvironmentRegistry(Registry):
         self._factory_types_by_cfg_type[cfg_type] = factory_type
 
     # TODO(cvolk, 2026-07-07): [typed-config-migration] Remove this factory-to-config
-    # lookup and _cfg_types_by_factory_type when the legacy JSON adapter no longer
-    # resolves an environment name into its config type.
+    # lookup and _cfg_types_by_factory_type when the legacy JSON and argparse adapters
+    # no longer resolve an environment into its config type.
     def get_environment_cfg_type(
         self,
         factory_type: type["ArenaEnvironmentFactory"],
