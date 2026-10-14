@@ -18,7 +18,7 @@ from isaaclab_arena.relations.collision_mode import object_uses_mesh_collision
 from isaaclab_arena.relations.object_placer_params import ObjectPlacerParams
 from isaaclab_arena.relations.placement_candidate_batch import PlacementCandidateBatch
 from isaaclab_arena.relations.placement_candidate_generator import PlacementCandidateGenerator
-from isaaclab_arena.relations.placement_events import get_rotation_xyzw
+from isaaclab_arena.relations.placement_poses import get_base_rotation_xyzw
 from isaaclab_arena.relations.placement_result import PlacementResult
 from isaaclab_arena.relations.placement_validation_runner import PlacementValidationRunner
 from isaaclab_arena.relations.placement_visualizer import get_or_create_placement_visualizer
@@ -182,7 +182,7 @@ class ObjectPlacer:
                     get_relation(support, RandomAroundSolution) is None
                 ), f"ClutterOn support '{support.name}' cannot randomize after placement validation"
                 # Validate that the release region stays axis-aligned; the quarter count is unused.
-                quaternion_to_90_deg_z_quarters(get_rotation_xyzw(support))
+                quaternion_to_90_deg_z_quarters(get_base_rotation_xyzw(support))
             marker = get_relation(obj, RotateAroundSolution)
             if clutter is not None and marker is not None:
                 # Mesh loss and validation use yaw only; tilted release bounds would disagree.

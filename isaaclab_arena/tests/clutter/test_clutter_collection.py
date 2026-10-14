@@ -216,6 +216,7 @@ def test_clutter_collection_uses_shared_batches(tmp_path, backend):
 
 
 def _test_clutter_recording_replays_movable_supports(simulation_app, tmp_path, backend):
+    import json
     import torch
     from unittest.mock import patch
 
@@ -224,8 +225,12 @@ def _test_clutter_recording_replays_movable_supports(simulation_app, tmp_path, b
     from isaaclab_arena.offline_placement.clutter_validators import SupportContainmentValidator
     from isaaclab_arena.offline_placement.post_physics_validation import evaluate_settled_batch
     from isaaclab_arena.offline_placement.settled_placement_params import SettledPlacementParams
-    from isaaclab_arena.relations.placement_events import get_placement_pool, get_pose_from_layout
-    from isaaclab_arena.relations.placement_layouts import PlacementLayouts
+    from isaaclab_arena.relations.placement_events import get_placement_pool
+    from isaaclab_arena.relations.placement_poses import get_pose_from_layout
+    from isaaclab_arena.relations.placement_sampler import (
+        deserialize_placement_samples,
+        placement_samples_to_pose_columns,
+    )
     from isaaclab_arena.scripts.record_placement_layouts import record_placements_to_jsonl
 
     arena_env = _make_primitive_clutter_scene(tmp_path, movable_supports=True)
@@ -261,11 +266,13 @@ def _test_clutter_recording_replays_movable_supports(simulation_app, tmp_path, b
         assert summary.accepted == summary.attempted == 4, summary.rejections
         assert not summary.rejections and summary.output == output
         assert len(batches) == 2 and all(outcome.passed for outcome in outcomes)
-        layouts = PlacementLayouts.from_episode_jsonl(output)
-        assert layouts.num_layouts == 4
-        assert set(layouts.poses) == {"floor", "cube_body", *fixture_keys}
+        records = [json.loads(line)["placement"] for line in output.read_text().splitlines()]
+        samples = deserialize_placement_samples(records)
+        poses_by_root = placement_samples_to_pose_columns(samples)
+        assert len(samples) == 4
+        assert set(poses_by_root) == {"floor", "cube_body", *fixture_keys}
         for key in fixture_keys:
-            assert len({pose.position_xyz for pose in layouts.poses[key]}) > 1
+            assert len({pose.position_xyz for pose in poses_by_root[key]}) > 1
         for batch_index, batch in enumerate(batches):
             for env_id in range(2):
                 layout = batch.source_layouts[env_id]
@@ -276,13 +283,13 @@ def _test_clutter_recording_replays_movable_supports(simulation_app, tmp_path, b
                     expected = get_pose_from_layout(fixture, layout).to_tensor(base.device)
                     torch.testing.assert_close(batch.initial_root_poses[key][env_id], expected, atol=1e-5, rtol=0)
                     torch.testing.assert_close(batch.final_root_poses[key][env_id], expected, atol=1e-5, rtol=0)
-                    torch.testing.assert_close(layouts.poses[key][index].to_tensor(base.device), expected)
+                    torch.testing.assert_close(poses_by_root[key][index].to_tensor(base.device), expected)
                 # Both fixture boxes are 0.04 m tall; the falling cube is 0.1 m tall.
-                support_z = layouts.poses[support_key][index].position_xyz[2]
-                resting_height = layouts.poses["cube_body"][index].position_xyz[2] - support_z
+                support_z = poses_by_root[support_key][index].position_xyz[2]
+                resting_height = poses_by_root["cube_body"][index].position_xyz[2] - support_z
                 assert resting_height == pytest.approx(0.07, abs=0.005)
                 release = get_pose_from_layout(cube, layout)
-                assert release.position_xyz[2] - layouts.poses["cube_body"][index].position_xyz[2] > 0.15
+                assert release.position_xyz[2] - poses_by_root["cube_body"][index].position_xyz[2] > 0.15
 
         # Reject either a wrong reset pose or drift, without borrowing another environment's fixture pose.
         validator = SupportContainmentValidator()
@@ -299,13 +306,15 @@ def _test_clutter_recording_replays_movable_supports(simulation_app, tmp_path, b
         env.close()
 
     arena_env.placer_params.placement_seed = None
-    replay_cfg = ArenaEnvBuilderCfg(num_envs=2, env_spacing=5.0, presets=backend, placement_layouts_path=str(output))
+    replay_cfg = ArenaEnvBuilderCfg(
+        num_envs=2, env_spacing=5.0, presets=backend, recorded_variation_samples_path=str(output)
+    )
     env = ArenaEnvBuilder(arena_env, replay_cfg).make_registered()
     try:
         base = env.unwrapped
-        assert get_placement_pool(env) is None
+        assert base.variation_replay_scheduler.variation_record.has_placement_samples
         env.reset()
-        for key, poses in layouts.poses.items():
+        for key, poses in poses_by_root.items():
             expected = torch.stack([pose.to_tensor(base.device) for pose in poses[:2]])
             torch.testing.assert_close(base.arena_world.get_pose_e(key), expected, atol=2e-5, rtol=0)
             body = base.scene[key]
@@ -314,9 +323,9 @@ def _test_clutter_recording_replays_movable_supports(simulation_app, tmp_path, b
             displaced[:, 2] += 0.25
             body.write_root_pose_to_sim(displaced)
             body.write_root_velocity_to_sim(torch.ones((2, 6), device=base.device))
-        before = {key: base.arena_world.get_pose_e(key).clone() for key in layouts.poses}
-        base._reset_idx(torch.tensor([1], device=base.device))
-        for key, poses in layouts.poses.items():
+        before = {key: base.arena_world.get_pose_e(key).clone() for key in poses_by_root}
+        base.reset(env_ids=torch.tensor([1], device=base.device))
+        for key, poses in poses_by_root.items():
             actual = base.arena_world.get_pose_e(key)
             torch.testing.assert_close(actual[0], before[key][0], atol=2e-5, rtol=0)
             torch.testing.assert_close(actual[1], poses[2].to_tensor(base.device), atol=2e-5, rtol=0)
@@ -349,8 +358,11 @@ def _test_movable_bowl_recording_and_replay(simulation_app, tmp_path):
     from isaaclab_arena.offline_placement.clutter_validators import default_clutter_validators
     from isaaclab_arena.offline_placement.post_physics_validation import evaluate_settled_batch
     from isaaclab_arena.offline_placement.recording_config import PlacementRecordingCfg
-    from isaaclab_arena.relations.placement_events import get_pose_from_layout
-    from isaaclab_arena.relations.placement_layouts import PlacementLayouts
+    from isaaclab_arena.relations.placement_poses import get_pose_from_layout
+    from isaaclab_arena.relations.placement_sampler import (
+        deserialize_placement_samples,
+        placement_samples_to_pose_columns,
+    )
     from isaaclab_arena.scripts.record_placement_layouts import record_settled_placement_layouts
     from isaaclab_arena.tests.utils.constants import TestConstants
 
@@ -387,28 +399,31 @@ def _test_movable_bowl_recording_and_replay(simulation_app, tmp_path):
     # Partial output is valid; two layouts suffice to verify distinct support poses during replay.
     assert 2 <= summary.accepted <= cfg.min_layouts, summary.rejections
     assert summary.output == output
-    layouts = PlacementLayouts.from_episode_jsonl(output)
-    assert layouts.num_layouts == summary.accepted
-    assert {"bowl", "cube_0", "cube_1", "cube_2"} <= layouts.poses.keys()
-    assert len({pose.position_xyz for pose in layouts.poses["bowl"]}) > 1
-    records = [json.loads(line)["variations"]["scene.relation_placement"] for line in output.read_text().splitlines()]
+    records = [json.loads(line)["placement"] for line in output.read_text().splitlines()]
+    samples = deserialize_placement_samples(records)
+    poses_by_root = placement_samples_to_pose_columns(samples)
+    assert len(samples) == summary.accepted
+    assert {"bowl", "cube_0", "cube_1", "cube_2"} <= poses_by_root.keys()
+    assert len({pose.position_xyz for pose in poses_by_root["bowl"]}) > 1
     for index, record in enumerate(records):
         reports = {report["check"]: report for report in record["validation"]["post_physics"]}
         assert all(report["passed"] is not False for report in reports.values())
         assert all(reports[check]["passed"] for check in ("physics_settled", "pose_shift", "support_containment"))
         batch, env_id = accepted[index]
-        for key, poses in layouts.poses.items():
+        for key, poses in poses_by_root.items():
             torch.testing.assert_close(poses[index].to_tensor("cpu"), batch.final_root_poses[key][env_id])
 
     arena_env = ArenaEnvGraphSpec.from_yaml(source).to_arena_env()
-    replay_cfg = ArenaEnvBuilderCfg(num_envs=2, device="cpu", presets="physx", placement_layouts_path=str(output))
+    replay_cfg = ArenaEnvBuilderCfg(
+        num_envs=2, device="cpu", presets="physx", recorded_variation_samples_path=str(output)
+    )
     env = ArenaEnvBuilder(arena_env, replay_cfg).make_registered()
     try:
         # Compare every saved layout immediately after reset, before policy or physics steps.
-        for start in range(0, layouts.num_layouts, replay_cfg.num_envs):
+        for start in range(0, len(samples), replay_cfg.num_envs):
             env.reset()
-            indices = [(start + env_id) % layouts.num_layouts for env_id in range(replay_cfg.num_envs)]
-            for key, poses in layouts.poses.items():
+            indices = [(start + env_id) % len(samples) for env_id in range(replay_cfg.num_envs)]
+            for key, poses in poses_by_root.items():
                 expected = torch.stack([poses[index].to_tensor("cpu") for index in indices])
                 torch.testing.assert_close(env.unwrapped.arena_world.get_pose_e(key), expected, atol=2e-5, rtol=0)
     finally:

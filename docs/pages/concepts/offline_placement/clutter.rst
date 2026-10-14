@@ -277,17 +277,19 @@ partial output and zero acceptance follow :ref:`recording-and-replay-notes`.
        bowl positions. Compare poses immediately after reset; physics continues
        afterward.
 
-Open the first recorded layout in the viewer:
+Replay the first recorded layout using the bowl Experiment Definition:
 
 .. code-block:: bash
 
-   python isaaclab_arena/scripts/environment_runner.py \
-       --env_spec isaaclab_arena_environments/clutter/franka_movable_bowl_clutter_no_task.yaml \
-       --placement_layouts outputs/clutter/movable_bowl.jsonl \
-       --num_envs 1 --device cpu --viz kit
+   python isaaclab_arena/evaluation/experiment_runner.py \
+       --experiment_config isaaclab_arena_environments/experiment_configs/placement_record_replay/clutter_replay_bowls_experiment.yaml \
+       runs.bowl_clutter_replay.environment.env_spec_path=isaaclab_arena_environments/clutter/franka_movable_bowl_clutter_no_task.yaml \
+       runs.bowl_clutter_replay.environment_builder.recorded_variation_samples_path=outputs/clutter/movable_bowl.jsonl \
+       --device cpu --viz kit \
+       --output_base_dir outputs/clutter/movable_bowl_replay
 
-As in the other ``NoTask`` examples, this viewer does not trigger further
-resets. The automated test below targets four layouts from this YAML and requires
+This ``NoTask`` scene has no timeout; stop the viewer with Ctrl+C.
+The automated test below targets four layouts from this YAML and requires
 two to four accepted layouts with at least two distinct bowl positions. It
 compares the bowl's solved, pre-physics and post-physics poses, then verifies
 every recorded root pose immediately after replay reset:

@@ -12,7 +12,7 @@ import pytest
 from isaaclab_arena.relations.object_placer import ObjectPlacer
 from isaaclab_arena.relations.object_placer_params import ObjectPlacerParams
 from isaaclab_arena.relations.placement_candidate_generator import PlacementCandidateGenerator
-from isaaclab_arena.relations.placement_events import get_pose_from_layout
+from isaaclab_arena.relations.placement_poses import get_pose_from_layout
 from isaaclab_arena.relations.pooled_object_placer import PooledObjectPlacer
 from isaaclab_arena.relations.relation_solver import RelationSolver
 from isaaclab_arena.relations.relation_solver_params import RelationSolverParams
