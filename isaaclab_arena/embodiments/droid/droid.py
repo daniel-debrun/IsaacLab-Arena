@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, ClassVar
 import isaaclab.envs.mdp as mdp_isaac_lab
 import isaaclab.sim as sim_utils
 from isaaclab.actuators import ImplicitActuatorCfg
+from isaaclab.actuators.actuator_base import resolve_joint_parameter
 from isaaclab.assets.articulation.articulation_cfg import ArticulationCfg
 from isaaclab.controllers.differential_ik_cfg import DifferentialIKControllerCfg
 from isaaclab.envs.mdp.actions.actions_cfg import (
@@ -32,6 +33,7 @@ from isaaclab.sim.schemas import JointDriveFragment, UsdPhysicsDriveCfg
 from isaaclab.sim.spawners.from_files import spawn_from_usd
 from isaaclab.sim.utils import clone
 from isaaclab.utils.configclass import configclass
+from isaaclab.utils.string import resolve_matching_names
 
 from isaaclab_arena.assets.nucleus import ARENA_NUCLEUS_DIR
 from isaaclab_arena.assets.register import register_asset
@@ -225,20 +227,30 @@ class DroidEmbodimentBase(EmbodimentBase, ABC):
         robot_cfg = self.scene_config.robot
         joint_properties = {}
         for actuator in robot_cfg.actuators.values():
-            fragments = [
-                UsdPhysicsDriveCfg(
-                    drive_type="force",
-                    stiffness=actuator.stiffness,
-                    damping=actuator.damping,
-                    max_force=actuator.joint_effort_limit,
-                ),
-                _NewtonJointPropertiesCfg(
-                    armature=actuator.armature,
-                    velocity_limit=actuator.joint_velocity_limit,
-                ),
-            ]
-            for joint_name_expr in actuator.joint_names_expr:
-                joint_properties[f"/.*/{joint_name_expr}"] = fragments
+            _, joint_names = resolve_matching_names(actuator.joint_names_expr, _DROID_JOINT_NAMES)
+            resolved = {}
+            for parameter in ("stiffness", "damping", "joint_effort_limit", "armature", "joint_velocity_limit"):
+                value = getattr(actuator, parameter)
+                # None preserves the USD value. Dictionaries use Lab's per-joint matching
+                # and zero-fill semantics, just as they do when constructing an actuator.
+                resolved[parameter] = (
+                    [None] * len(joint_names)
+                    if value is None
+                    else resolve_joint_parameter(value, None, joint_names, num_envs=1, device="cpu")[0].tolist()
+                )
+            for index, joint_name in enumerate(joint_names):
+                joint_properties[f"/.*/{joint_name}"] = [
+                    UsdPhysicsDriveCfg(
+                        drive_type="force",
+                        stiffness=resolved["stiffness"][index],
+                        damping=resolved["damping"][index],
+                        max_force=resolved["joint_effort_limit"][index],
+                    ),
+                    _NewtonJointPropertiesCfg(
+                        armature=resolved["armature"][index],
+                        velocity_limit=resolved["joint_velocity_limit"][index],
+                    ),
+                ]
         robot_cfg.spawn.joint_drive_props = joint_properties
         robot_cfg.spawn.joint_drive_props_create_if_missing = True
 

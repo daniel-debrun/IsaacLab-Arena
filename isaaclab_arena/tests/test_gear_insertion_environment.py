@@ -172,6 +172,57 @@ def test_gear_insertion_episode_completion():
     assert run_function_with_persistent_simulation_app(_test_gear_insertion_episode_completion)
 
 
+def _test_gear_insertion_grasp_and_hold(simulation_app):
+    """Pick up the gear through robot actions and hold it against gravity without slipping."""
+    import torch
+
+    from isaaclab.utils.math import quat_apply_inverse
+
+    with _gear_environment(position_randomization_m=0.0) as (env, _, _):
+        base = env.unwrapped
+        robot = base.scene["robot"]
+        gear = base.scene[GEAR_NAME]
+        ee_frame = base.scene["ee_frame"]
+        arm = base.action_manager.get_term("arm_action")
+        with torch.inference_mode():
+            env.reset()
+            initial_position = gear.data.root_pos_w.torch.clone()
+            action = torch.zeros(env.action_space.shape, device=base.device)
+
+            def step_toward(target, closed):
+                displacement = target - ee_frame.data.target_pos_w.torch[:, 0]
+                displacement = quat_apply_inverse(robot.data.root_quat_w.torch, displacement)
+                action[:, :3] = displacement.clamp(-0.015, 0.015) / arm.cfg.scale
+                action[:, -1] = float(closed)
+                _, _, terminated, truncated, _ = env.step(action)
+                assert not terminated.any() and not truncated.any(), "Grasp ended the episode unexpectedly."
+                assert torch.isfinite(robot.data.joint_pos.torch).all()
+                assert torch.isfinite(gear.data.root_pos_w.torch).all()
+
+            # Approach, descend around the hub, close, then lift. Only env.step moves the gear.
+            for steps, height, closed in ((60, 0.1, False), (65, 0.025, False), (50, 0.025, True), (65, 0.145, True)):
+                target = initial_position.clone()
+                target[:, 2] += height
+                for _ in range(steps):
+                    step_toward(target, closed)
+
+            held_offset = gear.data.root_pos_w.torch - ee_frame.data.target_pos_w.torch[:, 0]
+            held_offset = held_offset.clone()
+            for _ in range(60):
+                step_toward(target, True)
+                lift = gear.data.root_pos_w.torch[:, 2] - initial_position[:, 2]
+                assert (lift > 0.08).all(), f"Gear was not held above the table: {lift}"
+                offset = gear.data.root_pos_w.torch - ee_frame.data.target_pos_w.torch[:, 0]
+                slip = torch.linalg.vector_norm(offset - held_offset, dim=-1)
+                assert (slip < 0.005).all(), f"Gear slipped in the gripper: {slip}"
+    return True
+
+
+@pytest.mark.with_newton
+def test_gear_insertion_grasp_and_hold():
+    assert run_function_with_persistent_simulation_app(_test_gear_insertion_grasp_and_hold)
+
+
 def _test_gear_insertion_cameras_survive_episode_reset(simulation_app):
     import torch
 

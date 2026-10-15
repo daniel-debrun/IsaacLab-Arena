@@ -49,15 +49,28 @@ class ParallelCameraHDF5DatasetFileHandler(HDF5DatasetFileHandler):
             return
 
         episode_index = self.get_num_episodes() if demo_id is None else demo_id
+        self._raise_if_not_initialized()
+        episode_name = f"demo_{episode_index}"
+        if episode_name in self._hdf5_data_group:
+            raise ValueError(f"Episode group '{episode_name}' already exists in the dataset")
+        previous_count = self._demo_count
+        previous_total = self._hdf5_data_group.attrs["total"]
         # Delegate metadata, naming, counters, and non-camera datasets to Isaac Lab. The shallow
         # copy avoids copying tensors or modifying the caller's episode, including on failure.
         metadata_episode = copy(episode)
         metadata_episode.data = {**episode.data, "camera_obs": {}}
-        super().write_episode(metadata_episode, demo_id, dataset_compression)
-
-        camera_group = self._hdf5_data_group[f"demo_{episode_index}/camera_obs"]
-        with ThreadPoolExecutor(max_workers=self._compression_workers) as executor:
-            self._write_cameras(camera_group, cameras, executor)
+        try:
+            super().write_episode(metadata_episode, demo_id, dataset_compression)
+            camera_group = self._hdf5_data_group[f"{episode_name}/camera_obs"]
+            with ThreadPoolExecutor(max_workers=self._compression_workers) as executor:
+                self._write_cameras(camera_group, cameras, executor)
+        except Exception:
+            # A failed export must not appear as a successful, partially filled demo.
+            if episode_name in self._hdf5_data_group:
+                del self._hdf5_data_group[episode_name]
+            self._demo_count = previous_count
+            self._hdf5_data_group.attrs["total"] = previous_total
+            raise
 
     def _write_cameras(self, group: h5py.Group, cameras: dict, executor: ThreadPoolExecutor) -> None:
         """Write nested camera tensors, keeping at most two queued chunks per worker."""
