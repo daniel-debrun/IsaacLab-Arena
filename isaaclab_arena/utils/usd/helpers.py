@@ -201,16 +201,9 @@ def compute_local_bounding_box_from_usd(
 ) -> AxisAlignedBoundingBox:
     """Compute the local bounding box matching Isaac Lab ``UsdFileCfg`` spawn size.
 
-    Opening a USD directly includes the default prim's root ``xformOp:scale``
-    in ``ComputeWorldBound``, but Isaac Lab's spawner ignores it and only
-    Object.scale on the spawn wrapper applies.
-    This helper unbakes the default prim's root scale from the USD, then
-    applies ``Object.scale`` once so relation-solver bboxes match what is
-    actually spawned.
-
     Args:
         usd_path: Path to the USD file.
-        scale: Spawn-time scale passed to ``UsdFileCfg`` / ``Object.scale``.
+        scale: Spawn-time scale that replaces the authored root scale.
         prim_path: Optional sub-prim to bound. When set, returns that prim's AABB
             expressed in the default prim's frame (root-relative). When None,
             bounds the default prim itself.
@@ -221,7 +214,26 @@ def compute_local_bounding_box_from_usd(
     stage = Usd.Stage.Open(usd_path)
     if not stage:
         raise ValueError(f"Failed to open USD file: {usd_path}")
+    return compute_local_bounding_box_from_stage(stage, scale=scale, prim_path=prim_path)
 
+
+def compute_local_bounding_box_from_stage(
+    stage: Usd.Stage,
+    scale: tuple[float, float, float] | None = (1.0, 1.0, 1.0),
+    prim_path: str | None = None,
+) -> AxisAlignedBoundingBox:
+    """Compute the local bounding box of a stage's default prim as Isaac Lab spawns it.
+
+    Args:
+        stage: Stage whose default prim is the asset root.
+        scale: Spawn-time scale that replaces the authored root scale, or None to keep it.
+        prim_path: Optional sub-prim to bound. When set, returns that prim's AABB
+            expressed in the default prim's frame (root-relative). When None,
+            bounds the default prim itself.
+
+    Returns:
+        AxisAlignedBoundingBox containing local min and max points.
+    """
     default_prim = stage.GetDefaultPrim()
     if not default_prim:
         default_prim = stage.GetPseudoRoot()
@@ -242,6 +254,10 @@ def compute_local_bounding_box_from_usd(
             float(sub_world[2] - root_world[2]),
         ))
 
+    if scale is None:
+        return bbox
+    # The spawn scale replaces the authored root scale. Rescaling the world-aligned box per axis
+    # matches Isaac Lab's spawn only for a uniform authored scale or an unrotated root.
     usd_scale = _read_default_prim_scale(default_prim)
     assert not any(
         s == 0.0 for s in usd_scale

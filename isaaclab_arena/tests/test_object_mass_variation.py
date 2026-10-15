@@ -69,6 +69,7 @@ def _test_object_mass_variation_registration(simulation_app):
     from isaaclab_arena.assets.object_set import RigidObjectSet
     from isaaclab_arena.assets.object_type import ObjectType
     from isaaclab_arena.assets.registries import AssetRegistry
+    from isaaclab_arena.assets.spawn_cfg_geometry import SpawnCfgGeometry
     from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 
     registry = AssetRegistry()
@@ -86,8 +87,7 @@ def _test_object_mass_variation_registration(simulation_app):
     can_a.bounding_box = AxisAlignedBoundingBox(min_point=(0.0, 0.0, 0.0), max_point=(0.1, 0.1, 0.2))
     can_b.bounding_box = AxisAlignedBoundingBox(min_point=(0.0, 0.0, 0.0), max_point=(0.2, 0.2, 0.3))
     with (
-        patch("isaaclab_arena.assets.object_set.detect_object_type", return_value=ObjectType.RIGID),
-        patch("isaaclab_arena.assets.object_set.find_shallowest_rigid_body", return_value="/rigid"),
+        patch.object(SpawnCfgGeometry, "get_contact_body_path", return_value="/rigid"),
         patch("isaaclab_arena.assets.object_set.torch.randint", return_value=torch.tensor([0, 1])),
     ):
         obj_set = RigidObjectSet(name="cans", objects=[can_a, can_b], random_choice=True)

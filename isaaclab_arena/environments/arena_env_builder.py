@@ -321,22 +321,24 @@ class ArenaEnvBuilder:
                 self.cfg.recorded_variation_samples_path,
                 variations,
             )
-        # Placement needs its source selected before scene config captures construction poses.
-        placement_sampler = self._prepare_relation_placement(variation_replay_scheduler)
 
         # Attach the variation recorder before any sampling, so it observes both build-time samples
         # (drawn just below) and run-time samples (drawn during simulation).
         variation_recorder = VariationRecorder()
         variation_recorder.attach(variations)
+
+        # Apply build-time variations before self.arena_env.scene.get_scene_cfg() copies each object's object_cfg
+        # into scene_cfg below. They can change object geometry, so relation placement runs after them.
+        self._apply_build_time_variations()
+
+        # Placement needs its source selected before scene config captures construction poses.
+        placement_sampler = self._prepare_relation_placement(variation_replay_scheduler)
         # A RigidObjectSet's selected member identity is absent from pose-only samples, so skip unreplayable records.
         if placement_sampler is not None and supports_recorded_placement(self.arena_env.get_placement_assets()):
             variation_recorder.attach_placement_sampler(
                 placement_sampler,
                 serialize_placement_samples,
             )
-
-        # Apply build-time variations now, before scene_cfg is materialised.
-        self._apply_build_time_variations()
 
         resolved_physics_backend = self.resolved_physics_backend
 

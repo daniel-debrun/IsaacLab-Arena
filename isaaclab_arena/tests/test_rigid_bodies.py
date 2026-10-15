@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from isaaclab_arena.utils.usd.rigid_bodies import (
-    find_shallowest_rigid_body,
+    apply_usd_variant_selections,
     find_shallowest_rigid_body_from_stage,
     read_asset_rigid_body_paths,
 )
@@ -56,30 +56,20 @@ def test_read_asset_rigid_body_paths_counts_bodies_under_the_physics_variant(tmp
     assert variant_set.GetVariantSelection() == "none"
 
 
-def test_find_shallowest_rigid_body_requires_physics_variant(tmp_path: Path):
-    usd_path = tmp_path / "prop.usda"
-    _write_physics_variant_usd(usd_path)
-
-    # No physics until the variant is selected, and then two bodies tie for shallowest.
-    assert find_shallowest_rigid_body(str(usd_path)) is None
-    with pytest.raises(ValueError, match="Expected only one"):
-        find_shallowest_rigid_body(
-            str(usd_path),
-            within_default_prim=True,
-            relative_to_default_prim=True,
-            variants={"Physics": "physics"},
-        )
-
-
-def test_find_shallowest_rigid_body_from_stage_raises_on_a_tie(tmp_path: Path):
+def test_find_shallowest_rigid_body_from_stage_finds_a_tie_once_the_physics_variant_is_selected(tmp_path: Path):
     from pxr import Usd
 
     usd_path = tmp_path / "prop.usda"
     _write_physics_variant_usd(usd_path)
     stage = Usd.Stage.Open(str(usd_path))
-    stage.GetDefaultPrim().GetVariantSets().GetVariantSet("Physics").SetVariantSelection("physics")
+
+    # No physics until the variant is selected, and then two bodies tie for shallowest.
+    assert find_shallowest_rigid_body_from_stage(stage) is None
+    apply_usd_variant_selections(stage, {"Physics": "physics"})
     with pytest.raises(ValueError, match="Expected only one"):
         find_shallowest_rigid_body_from_stage(stage)
+    with pytest.raises(ValueError, match="Expected only one"):
+        find_shallowest_rigid_body_from_stage(stage, within_default_prim=True, relative_to_default_prim=True)
 
 
 def _write_nested_rigid_bodies_usd(
@@ -161,12 +151,9 @@ def test_find_shallowest_rigid_body_is_relative_to_nested_default_prim(tmp_path:
     UsdPhysics.RigidBodyAPI.Apply(auxiliary_body.GetPrim())
     stage.GetRootLayer().Save()
 
-    assert find_shallowest_rigid_body(str(usd_path), within_default_prim=True) == "/Outer/Asset/rigid_body"
+    reopened_stage = Usd.Stage.Open(str(usd_path))
+    assert find_shallowest_rigid_body_from_stage(reopened_stage, within_default_prim=True) == "/Outer/Asset/rigid_body"
     assert (
-        find_shallowest_rigid_body(
-            str(usd_path),
-            within_default_prim=True,
-            relative_to_default_prim=True,
-        )
+        find_shallowest_rigid_body_from_stage(reopened_stage, within_default_prim=True, relative_to_default_prim=True)
         == "/rigid_body"
     )
