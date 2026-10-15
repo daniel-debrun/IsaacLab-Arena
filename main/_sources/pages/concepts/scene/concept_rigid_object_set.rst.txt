@@ -45,7 +45,9 @@ How members are chosen:
        choice reproducible.
 
 Members must be rigid objects. Articulations and empty lists are rejected when
-you construct the set.
+you construct the set. Each member spawns from a copy of its own spawn
+configuration, so its scale, physics settings and USD variant selections are
+kept. Configure members before building the set.
 
 How to Use
 ----------
@@ -135,8 +137,8 @@ Limitations
 - **Choice is fixed per run.** Layouts can change on reset; the assigned member
   cannot.
 - **One shared prim path.** Every environment uses ``{ENV_REGEX_NS}/<name>``.
-  Arena may rewrite and cache member USDs so they spawn correctly together (for
-  example when scales or rigid-body nesting differ).
+  When members keep their rigid body at different paths, Arena spawns a copy of
+  each member's USD with the body moved to one common path.
 - **Single-box geometry has a fallback.** ``get_bounding_box()`` returns one box
   from the tallest member; per-environment placement uses
   ``get_bounding_box_per_env()`` instead.
@@ -146,6 +148,3 @@ Limitations
 - **Don't set an initial pose when placement owns it.** The builder supplies the
   set's creation and reset poses. Anchors are the exception — they stay fixed and
   still need a known pose.
-- **Contact sensors use the first member.** Setup uses the canonical first-member
-  USD after any rewrite, so prefer members whose rigid body lands at the same
-  relative path.

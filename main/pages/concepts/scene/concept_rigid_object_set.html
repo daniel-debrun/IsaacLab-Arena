@@ -630,7 +630,9 @@ choice reproducible.</p></td>
 </table>
 </div>
 <p>Members must be rigid objects. Articulations and empty lists are rejected when
-you construct the set.</p>
+you construct the set. Each member spawns from a copy of its own spawn
+configuration, so its scale, physics settings and USD variant selections are
+kept. Configure members before building the set.</p>
 </section>
 <section id="how-to-use">
 <h2>How to Use<a class="headerlink" href="#how-to-use" title="Link to this heading">#</a></h2>
@@ -717,8 +719,8 @@ Arena resolves the active member through the shared prim path.</p></li>
 <li><p><strong>Choice is fixed per run.</strong> Layouts can change on reset; the assigned member
 cannot.</p></li>
 <li><p><strong>One shared prim path.</strong> Every environment uses <code class="docutils literal notranslate"><span class="pre">{ENV_REGEX_NS}/&lt;name&gt;</span></code>.
-Arena may rewrite and cache member USDs so they spawn correctly together (for
-example when scales or rigid-body nesting differ).</p></li>
+When members keep their rigid body at different paths, Arena spawns a copy of
+each member’s USD with the body moved to one common path.</p></li>
 <li><p><strong>Single-box geometry has a fallback.</strong> <code class="docutils literal notranslate"><span class="pre">get_bounding_box()</span></code> returns one box
 from the tallest member; per-environment placement uses
 <code class="docutils literal notranslate"><span class="pre">get_bounding_box_per_env()</span></code> instead.</p></li>
@@ -728,9 +730,6 @@ members. In Python you pass live instances, so SimReady members are fine.</p></l
 <li><p><strong>Don’t set an initial pose when placement owns it.</strong> The builder supplies the
 set’s creation and reset poses. Anchors are the exception — they stay fixed and
 still need a known pose.</p></li>
-<li><p><strong>Contact sensors use the first member.</strong> Setup uses the canonical first-member
-USD after any rewrite, so prefer members whose rigid body lands at the same
-relative path.</p></li>
 </ul>
 </section>
 </section>
