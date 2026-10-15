@@ -17,19 +17,18 @@ How Validation Fits Placement
 
 ``ObjectPlacer`` builds its validator list once from every registered check
 that passes ``is_available()`` and survives ``enabled_checks`` (see
-:ref:`validation-toggle`). Each batch runs validation in two passes:
+:ref:`validation-toggle`). Each solved batch then runs in two passes:
 
 1. **Inexpensive checks** (``no_overlap``, ``on_relation``, ``clutter_on_relation``, ``next_to``,
    ``not_next_to``, ``face_to``) over every candidate.
 2. **Expensive checks** (``ik_reachable``) only on candidates that already
    passed every *required* inexpensive check.
 
-A ``PlacementCandidate`` stores the participating objects' positions, orientations
-and bounds, plus the actual environment ID and sample ID. Each candidate contains
-the complete placement graph with the original asset identities and relations,
-including when ``ClutterOn`` supports move during solving. Solving updates the
-candidate's positions and loss; validation replaces its check results. These
-operations update the working batch in place and return ``None``.
+A ``PlacementCandidate`` is one working layout of all placement objects in one
+environment. It stores the objects' positions, orientations and bounds, plus the
+environment ID and sample ID. Solving updates the candidate's positions and loss;
+validation replaces its check results. These operations update the working batch
+in place and return ``None``.
 
 ``PlacementCandidateBatch`` groups these layouts. For example, four environments
 with ten attempts each produce a batch of forty candidates. Filtering and ranking
@@ -231,10 +230,10 @@ clutter objects must be dynamic rigid bodies with gravity enabled, and scene
 gravity must point downward along world Z. Supports must have static or
 kinematic collision geometry, with no tilt and a yaw that is a multiple of
 90 degrees. ``IsAnchor`` fixes the placement solve; physics mobility is a separate
-requirement. Non-clutter objects, including destinations, must be fixed anchors
-or solved kinematic rigid bodies. A support without ``IsAnchor`` is positioned
-jointly with its clutter. Containment checks compare each support's poses before
-and after physics with that candidate's solved pose.
+requirement. Non-clutter objects with placement relations, including destinations,
+must be fixed anchors or solved kinematic rigid bodies. A support without
+``IsAnchor`` is positioned jointly with its clutter. Containment checks compare
+each support's poses before and after physics with that candidate's solved pose.
 
 Release candidates must pass ``no_overlap`` and ``clutter_on_relation``.
 ``ClutterOn`` objects cannot require reachability because settling changes the
@@ -286,9 +285,9 @@ limits.
        during placement only; a support placed through relations must be a
        kinematic rigid body for recording.
    * - Unsupported non-clutter placement
-     - Use fixed anchors or solved kinematic rigid bodies for non-clutter objects,
-       including those unrelated to the clutter support. Resolve object sets to concrete assets
-       before collection.
+     - Use fixed anchors or solved kinematic rigid bodies for non-clutter objects
+       with placement relations, including those unrelated to the clutter support.
+       Resolve object sets to concrete assets before collection.
    * - Unsupported support orientation or tilted mesh release
      - Keep supports upright at multiples of 90 degrees in yaw. For clutter
        with roll or pitch, set the object's ``collision_mode="bbox"``; see
@@ -373,7 +372,7 @@ Pre-Physics Validators
 Pre-physics validators check the solver's proposed layout before physics is advanced. Subclass
 ``PrePhysicsPlacementValidator`` and register a unique ``check`` name which should be included in
 ``ObjectPlacerParams.enabled_checks``. Return one boolean per candidate, in batch order. For
-example, check the complete layout for any object origin above 1.5 metres:
+example, reject layouts with any object origin above 1.5 metres:
 
 .. code-block:: python
 

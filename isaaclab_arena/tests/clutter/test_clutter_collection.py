@@ -95,7 +95,7 @@ def _make_primitive_clutter_scene(tmp_path, raised_support=False, movable_suppor
         data["objects"][1]["params"]["initial_pose"]["position_xyz"] = [0, 0, 0]
         data["relations"][0] = {"kind": "is_anchor", "subject": "floor"}
         data["relations"].extend([
-            {"kind": "on", "subject": "table", "reference": "floor"},
+            {"kind": "on", "subject": "table", "reference": "floor", "params": {"clearance_m": 0.0}},
             {
                 "kind": "position_limits_box",
                 "subject": "table",
@@ -112,7 +112,9 @@ def _make_primitive_clutter_scene(tmp_path, raised_support=False, movable_suppor
         data["relations"][1]["reference"] = "tray"
         # The central release region must fit the cube's 0.1 m depth.
         data["relations"][1]["params"]["spread"] = 0.5
-        data["relations"].append({"kind": "on", "subject": "tray", "reference": "table"})
+        data["relations"].append(
+            {"kind": "on", "subject": "tray", "reference": "table", "params": {"clearance_m": 0.0}}
+        )
         data["placer_params"] = {
             "placement_seed": 42,
             "min_unique_layouts_per_env": 1,
@@ -224,6 +226,7 @@ def _test_clutter_recording_replays_movable_supports(simulation_app, tmp_path, b
     from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
     from isaaclab_arena.offline_placement.clutter_validators import SupportContainmentValidator
     from isaaclab_arena.offline_placement.post_physics_validation import evaluate_settled_batch
+    from isaaclab_arena.offline_placement.settled_placement import collect_settled_placements
     from isaaclab_arena.offline_placement.settled_placement_params import SettledPlacementParams
     from isaaclab_arena.relations.placement_events import get_placement_pool
     from isaaclab_arena.relations.placement_poses import get_pose_from_layout
@@ -231,6 +234,7 @@ def _test_clutter_recording_replays_movable_supports(simulation_app, tmp_path, b
         deserialize_placement_samples,
         placement_samples_to_pose_columns,
     )
+    from isaaclab_arena.relations.relations import ClutterOn, On, get_relation
     from isaaclab_arena.scripts.record_placement_layouts import record_placements_to_jsonl
 
     arena_env = _make_primitive_clutter_scene(tmp_path, movable_supports=True)
@@ -256,6 +260,14 @@ def _test_clutter_recording_replays_movable_supports(simulation_app, tmp_path, b
         pool = get_placement_pool(env)
         assert pool.remaining == 1
         assert bool((base.scene.env_origins != 0).any())
+        # Reject a kinematic tray resting on falling clutter before consuming a pooled layout.
+        with (
+            patch.object(get_relation(cube, ClutterOn), "parent", fixtures[0]),
+            patch.object(get_relation(fixtures[1], On), "parent", cube),
+            patch.object(base, "reset", side_effect=AssertionError("must reject before resetting")),
+            pytest.raises(AssertionError, match="tray.*cannot be On falling clutter.*cube_body"),
+        ):
+            collect_settled_placements(env, 1, scene_assets=assets)
         with patch(
             "isaaclab_arena.offline_placement.settled_placement.evaluate_settled_batch", side_effect=capture_batch
         ):
@@ -294,13 +306,17 @@ def _test_clutter_recording_replays_movable_supports(simulation_app, tmp_path, b
         # Reject either a wrong reset pose or drift, without borrowing another environment's fixture pose.
         validator = SupportContainmentValidator()
         batch = batches[-1]
-        for poses in (batch.geometry[support_key].initial_poses, batch.geometry[support_key].final_poses):
-            original = poses[0].clone()
-            poses[0, 0] += 0.05
+        initial = batch.geometry[support_key].initial_poses
+        final = batch.geometry[support_key].final_poses
+        for shifted in ((initial,), (final,), (initial, final)):
+            originals = [poses[0].clone() for poses in shifted]
+            for poses in shifted:
+                poses[0, 0] += 0.05
             reports = validator.validate(batch)
             assert not reports[0].passed and f"support '{support_key}'" in reports[0].reason
             assert reports[1].passed
-            poses[0] = original
+            for poses, original in zip(shifted, originals, strict=True):
+                poses[0] = original
         assert all(report.passed for report in validator.validate(batch))
     finally:
         env.close()
@@ -363,6 +379,7 @@ def _test_movable_bowl_recording_and_replay(simulation_app, tmp_path):
         deserialize_placement_samples,
         placement_samples_to_pose_columns,
     )
+    from isaaclab_arena.relations.relations import On, get_relation
     from isaaclab_arena.scripts.record_placement_layouts import record_settled_placement_layouts
     from isaaclab_arena.tests.utils.constants import TestConstants
 
@@ -374,7 +391,7 @@ def _test_movable_bowl_recording_and_replay(simulation_app, tmp_path):
         num_envs=2,
         layouts_per_env=2,
         min_layouts=4,
-        max_batches=8,
+        max_batches=16,
         presets="physx",
     )
     cfg.settle.num_steps = 480
@@ -388,6 +405,10 @@ def _test_movable_bowl_recording_and_replay(simulation_app, tmp_path):
             layout = batch.source_layouts[env_id]
             bowl = next(asset for asset in layout.positions if asset.get_scene_key() == "bowl")
             expected = get_pose_from_layout(bowl, layout).to_tensor("cpu")
+            table = get_relation(bowl, On).parent
+            table_top = float(table.get_world_bounding_box().max_point[0, 2])
+            bowl_bottom = float(expected[2] + batch.geometry["bowl"].bounds.min_point[env_id, 2])
+            assert bowl_bottom == pytest.approx(table_top, abs=1e-4)
             torch.testing.assert_close(batch.initial_root_poses["bowl"][env_id], expected, atol=1e-5, rtol=0)
             torch.testing.assert_close(batch.final_root_poses["bowl"][env_id], expected, atol=1e-5, rtol=0)
             if outcomes[env_id].passed:
@@ -396,8 +417,7 @@ def _test_movable_bowl_recording_and_replay(simulation_app, tmp_path):
 
     with patch("isaaclab_arena.offline_placement.settled_placement.evaluate_settled_batch", side_effect=check_batch):
         summary = record_settled_placement_layouts(cfg, device="cpu")
-    # Partial output is valid; two layouts suffice to verify distinct support poses during replay.
-    assert 2 <= summary.accepted <= cfg.min_layouts, summary.rejections
+    assert summary.accepted == cfg.min_layouts, summary.rejections
     assert summary.output == output
     records = [json.loads(line)["placement"] for line in output.read_text().splitlines()]
     samples = deserialize_placement_samples(records)

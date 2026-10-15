@@ -137,8 +137,7 @@ Load the same scene and the file just recorded:
        --device cpu --viz kit \
        --output_base_dir outputs/clutter/tools_replay
 
-The viewer starts with the recorded arrangement. These examples use a short
-finite timeout so the experiment records one completed episode and exits.
+The viewer starts with the recorded arrangement and runs until stopped.
 Keep the same backend, asset geometry and joint-reset configuration when
 replaying the recording.
 
@@ -192,10 +191,7 @@ The second maintained scene releases three cubes into a fixed YCB bowl:
    During bowl setup, PhysX may report ``kinematic bodies with CCD enabled are
    not supported! CCD will be ignored.`` The fixed bowl asset enables continuous
    collision detection (CCD), which PhysX ignores for that kinematic body. This
-   message does not disable CCD on the falling cubes. Resets can also log
-   ``Body must be non-kinematic!``: the shared reset path writes zero root
-   velocities, which PhysX rejects for the kinematic bowl. Its pose reset still
-   applies; use the recorded checks to assess acceptance.
+   message does not disable CCD on the falling cubes.
 
 Here ``bowl`` is the support's runtime scene key. ``-0.025`` is a minimum
 resting height in the scaled bowl-local frame, before adding its world position.
@@ -237,25 +233,35 @@ Record Clutter on a Movable Bowl
 
 The bowl uses ``On(table)`` and the cubes use :ref:`ClutterOn(bowl)
 <clutter-on-relation>`. Arena solves the bowl and cube positions together. The
-YAML bounds the bowl's X and Y positions to [-0.2, 0.2] metres. The bowl is
+YAML sets ``PositionLimitsBox`` targets of [-0.2, 0.2] metres for the bowl's X
+and Y positions; the validators do not certify these bounds. The bowl is
 kinematic: its position can vary between layouts, but physics must not move it
-during settling.
+during settling. Its ``On`` relation uses ``clearance_m: 0.0`` to sit flush
+with the table.
 
-Record four accepted layouts:
+.. note::
+
+   Resets can log ``Body must be non-kinematic!``: the shared pose-reset path
+   writes zero root velocities, which PhysX rejects for the kinematic bowl.
+   Its pose reset still applies; use the recorded checks to assess acceptance.
+
+Request four accepted layouts:
 
 .. code-block:: bash
 
    python isaaclab_arena/scripts/record_placement_layouts.py \
        env_spec=isaaclab_arena_environments/clutter/franka_movable_bowl_clutter_no_task.yaml \
        output=outputs/clutter/movable_bowl.jsonl \
-       num_envs=2 min_layouts=4 layouts_per_env=2 max_batches=8 seed=42 \
+       num_envs=2 min_layouts=4 layouts_per_env=2 max_batches=16 seed=42 \
        settle.num_steps=480 \
        +settle.validators.support_containment.minimum_resting_heights_m.bowl=-0.025 \
        presets=physx render=false --device cpu --viz none
 
 The minimum resting height has the same bowl-local meaning as in the fixed-bowl
-example above. The command stops at four accepted layouts or eight batches;
-partial output and zero acceptance follow :ref:`recording-and-replay-notes`.
+example above. The command stops at four accepted layouts or sixteen batches.
+Cubes can still exceed the final velocity limits after settling, so several
+batches may be rejected. Partial output and zero acceptance follow
+:ref:`recording-and-replay-notes`.
 
 .. list-table:: Expected behavior
    :header-rows: 1
@@ -288,11 +294,9 @@ Replay the first recorded layout using the bowl Experiment Definition:
        --device cpu --viz kit \
        --output_base_dir outputs/clutter/movable_bowl_replay
 
-This ``NoTask`` scene has no timeout; stop the viewer with Ctrl+C.
-The automated test below targets four layouts from this YAML and requires
-two to four accepted layouts with at least two distinct bowl positions. It
-compares the bowl's solved, pre-physics and post-physics poses, then verifies
-every recorded root pose immediately after replay reset:
+The viewer runs until stopped.
+The automated test below checks that bowl positions vary between layouts,
+remain fixed during settling, and replay together with their recorded objects:
 
 .. code-block:: bash
 
@@ -318,7 +322,8 @@ The supplied scenes meet these requirements. When adapting another scene:
   and upright quarter-turn rotations about world Z.
 * Use dynamic rigid objects with gravity enabled for clutter. Each has one
   ``ClutterOn`` spatial relation to its support.
-* Use fixed anchors or solved kinematic rigid bodies for non-clutter objects.
+* Non-clutter objects with placement relations must be fixed anchors or solved
+  kinematic rigid bodies. Do not place these bodies ``On`` falling clutter.
   Object sets and reachability requirements on clutter objects are unsupported.
 * Keep recorded roots compatible with pose resets. Joint states and other
   randomized properties are not saved.

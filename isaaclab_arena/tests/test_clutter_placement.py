@@ -260,8 +260,9 @@ def test_clutter_rejects_unsupported_support_configuration(configuration):
         tray.add_relation(RandomAroundSolution(x_half_m=0.1))
         diagnostic = "random"
     elif configuration == "face_to":
+        tray.relations = [relation for relation in tray.relations if not isinstance(relation, RotateAroundSolution)]
         tray.add_relation(FaceTo(table))
-        diagnostic = "FaceTo|rotation"
+        diagnostic = "ClutterOn support 'tray'.*FaceTo"
     elif configuration == "random_yaw":
         params.random_yaw_init = True
         diagnostic = "random_yaw|rotation"

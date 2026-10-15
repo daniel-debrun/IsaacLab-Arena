@@ -178,23 +178,22 @@ Most environments can be described with a small set of relations:
    Supporting arbitrary yaw requires consistent support-frame footprint checks
    in initialization, optimization and validation.
 
-   Each candidate contains the complete layout. The standard
-   :doc:`validation <validation>` and :doc:`pooling <pooled_placement>` rules apply;
-   a low solver loss alone does not guarantee a valid release.
+   The standard :doc:`validation <validation>` and :doc:`pooling <pooled_placement>`
+   rules apply; a low solver loss alone does not guarantee a valid release.
 
    A **settled pose** is the final pose after the configured physics interval.
    An **accepted layout** passes the required pre-physics and enabled, applicable
-   :ref:`post-physics checks <recording-post-physics-checks>` for the complete
-   candidate. Settled objects may use the full support footprint, beyond the
-   smaller release region. Release validation alone does not certify the final pile.
+   :ref:`post-physics checks <recording-post-physics-checks>`. Settled objects may
+   use the full support footprint, beyond the smaller release region. Release
+   validation alone does not certify the final pile.
    Collision checks at the release pose do not check the swept volume during
    falling; clutter may hit other objects before reaching its support.
    For pooled placement, disable ``ObjectPlacerParams.allow_best_loss_fallbacks``
    to reject invalid layouts. Direct ``ObjectPlacer.place()`` callers must check
    each result's ``success`` before using it.
 
-   For recording, placed non-clutter objects must be kinematic rigid bodies so
-   physics does not move them during settling. Try the
+   For recording, non-clutter objects with placement relations must be fixed
+   anchors or kinematic rigid bodies. Try the
    :ref:`movable-bowl example <movable-bowl-clutter>` in the shared
    :doc:`../offline_placement/clutter` recording and replay workflow.
 
@@ -231,7 +230,8 @@ Most environments can be described with a small set of relations:
    between optional minimum and maximum values.
    ``PositionLimitsCylindrical`` constrains the XY distance from a chosen
    center using a minimum radius, maximum radius, or both; it does not
-   constrain Z.
+   constrain Z. Both relations contribute solver losses; no built-in validator
+   certifies these bounds.
 
 ``FaceTo(target)``
    Rotates an object around world Z so that its local +X heading points toward

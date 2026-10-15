@@ -34,6 +34,8 @@ relations:
 - kind: "on"
   subject: bowl
   reference: table
+  params:
+    clearance_m: 0.0
 - kind: position_limits_box
   subject: bowl
   params:
