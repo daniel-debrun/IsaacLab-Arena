@@ -78,6 +78,10 @@ def _mesh_box(name: str, extents: tuple[float, float, float], position: tuple[fl
 
 def _make_usd_background():
     """Background stub for USD mesh extraction tests."""
+    from types import SimpleNamespace
+
+    import isaaclab.sim as sim_utils
+
     from isaaclab_arena.assets.background import Background
     from isaaclab_arena.assets.object_type import ObjectType
     from isaaclab_arena.utils.pose import Pose
@@ -86,6 +90,9 @@ def _make_usd_background():
     background.name = "kitchen"
     background.usd_path = "/tmp/kitchen.usda"
     background.scale = (1.0, 1.0, 1.0)
+    background.object_cfg = SimpleNamespace(
+        spawn=sim_utils.UsdFileCfg(usd_path=background.usd_path, scale=background.scale)
+    )
     background.object_type = ObjectType.BASE
     background.collision_mode = None
     background.initial_pose = Pose.identity()
@@ -153,6 +160,9 @@ def test_background_collision_objects_reject_failed_whole_background(monkeypatch
 
 def test_warp_mesh_cache_caches_unsupported_usd_geometry(monkeypatch):
     """Unsupported USD geometry degrades to cached meshless collision."""
+    from types import SimpleNamespace
+
+    import isaaclab.sim as sim_utils
     import pytest
 
     from isaaclab_arena.assets.object import Object
@@ -164,6 +174,7 @@ def test_warp_mesh_cache_caches_unsupported_usd_geometry(monkeypatch):
     obj.name = "kitchen"
     obj.usd_path = "/tmp/kitchen.usd"
     obj.scale = [1.0, 1.0, 1.0]
+    obj.object_cfg = SimpleNamespace(spawn=sim_utils.UsdFileCfg(usd_path=obj.usd_path, scale=tuple(obj.scale)))
     obj.object_type = ObjectType.BASE
     obj.repair_collision_mesh_non_watertight = True
     calls = {"count": 0}
@@ -184,6 +195,10 @@ def test_warp_mesh_cache_caches_unsupported_usd_geometry(monkeypatch):
 
 def test_warp_mesh_cache_keys_exclusions(monkeypatch):
     """Different anchor exclusions cannot reuse a stale whole-background mesh."""
+    from types import SimpleNamespace
+
+    import isaaclab.sim as sim_utils
+
     from isaaclab_arena.assets.object import Object
     from isaaclab_arena.assets.object_type import ObjectType
     from isaaclab_arena.relations.warp_mesh_manager import WarpMeshAndSphereCache
@@ -192,6 +207,7 @@ def test_warp_mesh_cache_keys_exclusions(monkeypatch):
     obj.name = "kitchen"
     obj.usd_path = "/tmp/kitchen.usda"
     obj.scale = (1.0, 1.0, 1.0)
+    obj.object_cfg = SimpleNamespace(spawn=sim_utils.UsdFileCfg(usd_path=obj.usd_path, scale=tuple(obj.scale)))
     obj.object_type = ObjectType.BASE
     obj.repair_collision_mesh_non_watertight = False
     calls = []
@@ -208,6 +224,53 @@ def test_warp_mesh_cache_keys_exclusions(monkeypatch):
     manager.get_collision_mesh(obj, excluded_prim_paths=["/Kitchen/floor"])
 
     assert calls == [("/Kitchen/counter",), ("/Kitchen/floor",)]
+
+
+def test_warp_mesh_cache_follows_spawn_cfg(monkeypatch):
+    """Mesh extraction and Warp cache keys use the live spawn config, not the declared USD path."""
+    from types import SimpleNamespace
+
+    import isaaclab.sim as sim_utils
+    import pytest
+
+    from isaaclab_arena.assets.object import Object
+    from isaaclab_arena.assets.object_type import ObjectType
+    from isaaclab_arena.relations.warp_mesh_manager import WarpMeshAndSphereCache
+
+    extents_by_path = {"/tmp/small.usda": 1.0, "/tmp/big.usda": 2.0}
+
+    def fake_extract(usd_path, scale, excluded_prim_paths=()):
+        extent = extents_by_path[usd_path]
+        return _mesh_box("mesh", (extent, extent, extent), (0.0, 0.0, 0.0)).get_collision_mesh()
+
+    monkeypatch.setattr("isaaclab_arena.utils.usd.helpers.extract_trimesh_from_usd", fake_extract)
+    obj = Object.__new__(Object)
+    obj.name = "box"
+    obj.usd_path = "/tmp/declared.usda"
+    obj.scale = (1.0, 1.0, 1.0)
+    obj.object_type = ObjectType.RIGID
+    obj.repair_collision_mesh_non_watertight = False
+    obj.object_cfg = SimpleNamespace(spawn=sim_utils.UsdFileCfg(usd_path="/tmp/small.usda", scale=(1.0, 1.0, 1.0)))
+    manager = WarpMeshAndSphereCache(device="cpu")
+
+    small_mesh = manager.get_collision_mesh(obj)
+    small_warp_mesh = manager.get_warp_mesh(small_mesh, obj)
+    assert small_mesh.extents.tolist() == [1.0, 1.0, 1.0]
+
+    obj.object_cfg.spawn = sim_utils.UsdFileCfg(usd_path="/tmp/big.usda", scale=(1.0, 1.0, 1.0))
+    big_mesh = manager.get_collision_mesh(obj)
+    assert big_mesh.extents.tolist() == [2.0, 2.0, 2.0]
+    # A Warp mesh cached under the declared asset would alias the old geometry.
+    big_warp_mesh = manager.get_warp_mesh(big_mesh, obj)
+    assert big_warp_mesh is not small_warp_mesh
+    assert big_warp_mesh.points.numpy().max() == pytest.approx(1.0)
+
+    obj.object_cfg.spawn = sim_utils.CuboidCfg(size=(1.0, 1.0, 1.0))
+    assert manager.get_collision_mesh(obj) is None
+
+    obj.object_cfg.spawn = sim_utils.MultiUsdFileCfg(usd_path=["/tmp/small.usda", "/tmp/big.usda"])
+    assert manager.get_collision_mesh(obj) is None
+    assert manager.get_collision_mesh_or_raise(obj) is None
 
 
 def test_background_anchor_exclusions_can_remove_all_meshes(monkeypatch):
@@ -487,6 +550,7 @@ def _test_discover_passive_assets_filters(simulation_app) -> bool:
     from isaaclab_arena.assets.background import Background
     from isaaclab_arena.assets.object import Object
     from isaaclab_arena.assets.object_reference import ObjectReference
+    from isaaclab_arena.assets.object_type import ObjectType
     from isaaclab_arena.relations.relations import IsAnchor
     from isaaclab_arena.scene.scene import Scene
     from isaaclab_arena.utils.pose import Pose, PoseRange
@@ -514,12 +578,17 @@ def _test_discover_passive_assets_filters(simulation_app) -> bool:
     counter_ref.parent_asset = kitchen
     anchored = fake_object("anchored", [IsAnchor()], "a.usd", fixed_pose)
     no_usd = fake_object("no_usd", [], None, fixed_pose)
+    no_usd.object_type = ObjectType.BASE
+    # A rigid object without a USD path, such as a primitive shape, takes its bounds from its spawn config.
+    rigid_no_usd = fake_object("rigid_no_usd", [], None, fixed_pose)
+    rigid_no_usd.object_type = ObjectType.RIGID
     no_pose = fake_object("no_pose", [], "n.usd", None)
     ranged = fake_object("ranged", [], "r.usd", pose_range)
 
     scene = Scene()
     scene.assets = {
-        o.name: o for o in [furniture, counter_ref, kitchen, kitchen_no_pose, anchored, no_usd, no_pose, ranged]
+        o.name: o
+        for o in [furniture, counter_ref, kitchen, kitchen_no_pose, anchored, no_usd, no_pose, ranged, rigid_no_usd]
     }
 
     from isaaclab_arena.relations.collision_mode import CollisionMode
@@ -532,9 +601,9 @@ def _test_discover_passive_assets_filters(simulation_app) -> bool:
         combined = passive_collision_module.get_placement_collision_objects(
             [], scene.assets.values(), CollisionMode.MESH
         )
-    assert sources == [furniture, counter_ref]
-    assert all_sources == [furniture, counter_ref, kitchen, kitchen_no_pose]
-    assert combined == [furniture, kitchen, kitchen_no_pose]
+    assert sources == [furniture, counter_ref, rigid_no_usd]
+    assert all_sources == [furniture, counter_ref, kitchen, kitchen_no_pose, rigid_no_usd]
+    assert combined == [furniture, kitchen, kitchen_no_pose, rigid_no_usd]
     assert all_sources[1] is counter_ref
     return True
 
@@ -678,33 +747,40 @@ def test_arena_env_builder_forwards_background_collisions_by_default(monkeypatch
         def get_objects_with_relations(self):
             return objects_with_relations
 
-    def fake_solve_and_apply_relation_placement(
+    def fake_prepare_live_relation_placement(
         objects,
         num_envs,
         placer_params,
         collision_objects=None,
         scene_assets=None,
+        **kwargs,
     ):
         calls["objects"] = objects
         calls["num_envs"] = num_envs
         calls["placer_params"] = placer_params
         calls["scene_assets"] = list(scene_assets)
         calls["collision_objects"] = collision_objects
-        return "placement_event"
+        return "placement_sampler"
 
-    monkeypatch.setattr(builder_module, "solve_and_apply_relation_placement", fake_solve_and_apply_relation_placement)
+    monkeypatch.setattr(builder_module, "prepare_live_relation_placement", fake_prepare_live_relation_placement)
     placer_params = ObjectPlacerParams(solver_params=RelationSolverParams(collision_mode=CollisionMode.MESH))
-    arena_env = SimpleNamespace(scene=Scene(), placer_params=placer_params, embodiment=None, task=None)
+    arena_env = SimpleNamespace(
+        scene=Scene(),
+        placer_params=placer_params,
+        embodiment=None,
+        task=None,
+        get_placement_assets=lambda: objects_with_relations,
+    )
     builder = ArenaEnvBuilder(arena_env, ArenaEnvBuilderCfg(num_envs=2))
 
-    builder._solve_relations()
+    sampler = builder._prepare_relation_placement(None)
 
     assert calls["objects"] == objects_with_relations
     assert calls["num_envs"] == 2
     assert calls["placer_params"] is placer_params
     assert calls["scene_assets"] == [background_collision]
     assert calls["collision_objects"] is None
-    assert builder._placement_event_cfg == "placement_event"
+    assert sampler == "placement_sampler"
 
 
 def test_arena_env_builder_forwards_empty_relation_graph(monkeypatch):
@@ -723,22 +799,29 @@ def test_arena_env_builder_forwards_empty_relation_graph(monkeypatch):
         def get_objects_with_relations(self):
             return []
 
-    def fake_solve_and_apply_relation_placement(
+    def fake_prepare_live_relation_placement(
         objects,
         num_envs,
         placer_params,
         collision_objects=None,
         scene_assets=None,
+        **kwargs,
     ):
         calls["objects"] = objects
         calls["scene_assets"] = list(scene_assets)
         calls["collision_objects"] = collision_objects
 
-    monkeypatch.setattr(builder_module, "solve_and_apply_relation_placement", fake_solve_and_apply_relation_placement)
-    arena_env = SimpleNamespace(scene=Scene(), placer_params=None, embodiment=None, task=None)
+    monkeypatch.setattr(builder_module, "prepare_live_relation_placement", fake_prepare_live_relation_placement)
+    arena_env = SimpleNamespace(
+        scene=Scene(),
+        placer_params=None,
+        embodiment=None,
+        task=None,
+        get_placement_assets=lambda: [],
+    )
     builder = ArenaEnvBuilder(arena_env, ArenaEnvBuilderCfg())
 
-    builder._solve_relations()
+    builder._prepare_relation_placement(None)
 
     assert calls["objects"] == []
     assert calls["scene_assets"] == []
@@ -766,15 +849,21 @@ def test_arena_env_builder_includes_embodiment_relations(monkeypatch):
         def get_relations(self):
             return [object()]
 
-    def fake_solve_and_apply_relation_placement(*args, **kwargs):
+    def fake_prepare_live_relation_placement(*args, **kwargs):
         calls.update(kwargs)
         calls["objects"] = args[0]
 
-    monkeypatch.setattr(builder_module, "solve_and_apply_relation_placement", fake_solve_and_apply_relation_placement)
+    monkeypatch.setattr(builder_module, "prepare_live_relation_placement", fake_prepare_live_relation_placement)
     embodiment = Embodiment()
-    arena_env = SimpleNamespace(scene=Scene(), embodiment=embodiment, placer_params=None, task=None)
+    arena_env = SimpleNamespace(
+        scene=Scene(),
+        embodiment=embodiment,
+        placer_params=None,
+        task=None,
+        get_placement_assets=lambda: [embodiment],
+    )
 
-    ArenaEnvBuilder(arena_env, ArenaEnvBuilderCfg())._solve_relations()
+    ArenaEnvBuilder(arena_env, ArenaEnvBuilderCfg())._prepare_relation_placement(None)
 
     assert calls["objects"] == [embodiment]
 
@@ -786,7 +875,7 @@ def test_relation_placement_forwards_anchor_background_mesh_exclusions(monkeypat
     import isaaclab_arena.environments.relation_solver_interface as interface_module
     from isaaclab_arena.assets.background import Background
     from isaaclab_arena.assets.object_reference import ObjectReference
-    from isaaclab_arena.environments.relation_solver_interface import solve_and_apply_relation_placement
+    from isaaclab_arena.environments.relation_solver_interface import prepare_live_relation_placement
     from isaaclab_arena.relations.object_placer_params import ObjectPlacerParams
     from isaaclab_arena.relations.relation_solver_params import CollisionMode, RelationSolverParams
     from isaaclab_arena.relations.relations import IsAnchor
@@ -826,7 +915,7 @@ def test_relation_placement_forwards_anchor_background_mesh_exclusions(monkeypat
     monkeypatch.setattr(interface_module, "PooledObjectPlacer", FakePooledObjectPlacer)
     placer_params = ObjectPlacerParams(solver_params=RelationSolverParams(collision_mode=CollisionMode.BBOX))
 
-    solve_and_apply_relation_placement([reference], num_envs=1, placer_params=placer_params, scene_assets=[])
+    prepare_live_relation_placement([reference], num_envs=1, placer_params=placer_params, scene_assets=[])
 
     assert calls["assets"] == []
     assert calls["include_background"] is True
@@ -839,7 +928,7 @@ def test_relation_placement_includes_background_mesh_for_background_override(mon
     """A passive Background can opt into mesh collision when the solver default is BBOX."""
     import isaaclab_arena.environments.relation_solver_interface as interface_module
     from isaaclab_arena.assets.background import Background
-    from isaaclab_arena.environments.relation_solver_interface import solve_and_apply_relation_placement
+    from isaaclab_arena.environments.relation_solver_interface import prepare_live_relation_placement
     from isaaclab_arena.relations.object_placer_params import ObjectPlacerParams
     from isaaclab_arena.relations.relation_solver_params import CollisionMode, RelationSolverParams
     from isaaclab_arena.relations.relations import IsAnchor
@@ -874,9 +963,7 @@ def test_relation_placement_includes_background_mesh_for_background_override(mon
     monkeypatch.setattr(interface_module, "PooledObjectPlacer", FakePooledObjectPlacer)
     placer_params = ObjectPlacerParams(solver_params=RelationSolverParams(collision_mode=CollisionMode.BBOX))
 
-    solve_and_apply_relation_placement(
-        [placed_object], num_envs=1, placer_params=placer_params, scene_assets=[background]
-    )
+    prepare_live_relation_placement([placed_object], num_envs=1, placer_params=placer_params, scene_assets=[background])
 
     assert calls["assets"] == [background]
     assert calls["include_background"] is True
@@ -888,7 +975,7 @@ def test_relation_placement_skips_background_mesh_for_default_bbox(monkeypatch):
     """Default BBOX mode uses individual passive objects, not aggregate whole-scene meshes."""
     import isaaclab_arena.environments.relation_solver_interface as interface_module
     from isaaclab_arena.assets.background import Background
-    from isaaclab_arena.environments.relation_solver_interface import solve_and_apply_relation_placement
+    from isaaclab_arena.environments.relation_solver_interface import prepare_live_relation_placement
     from isaaclab_arena.relations.object_placer_params import ObjectPlacerParams
     from isaaclab_arena.relations.relation_solver_params import CollisionMode, RelationSolverParams
     from isaaclab_arena.relations.relations import IsAnchor
@@ -923,9 +1010,7 @@ def test_relation_placement_skips_background_mesh_for_default_bbox(monkeypatch):
     monkeypatch.setattr(interface_module, "PooledObjectPlacer", FakePooledObjectPlacer)
     placer_params = ObjectPlacerParams(solver_params=RelationSolverParams(collision_mode=CollisionMode.BBOX))
 
-    solve_and_apply_relation_placement(
-        [placed_object], num_envs=1, placer_params=placer_params, scene_assets=[background]
-    )
+    prepare_live_relation_placement([placed_object], num_envs=1, placer_params=placer_params, scene_assets=[background])
 
     assert calls["assets"] == [background]
     assert calls["include_background"] is False

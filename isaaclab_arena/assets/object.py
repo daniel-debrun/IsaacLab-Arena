@@ -17,15 +17,16 @@ from isaaclab_arena.assets.object_base import ObjectBase, RootedObjectBase
 from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.assets.object_utils import detect_object_type
 from isaaclab_arena.assets.physics_spawner import make_usd_spawn_cfg_with_addons
+from isaaclab_arena.assets.spawn_cfg_geometry import SpawnCfgGeometry, get_geometry_key
 from isaaclab_arena.relations.relations import RelationBase
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 from isaaclab_arena.utils.pose import Pose
-from isaaclab_arena.utils.usd.helpers import compute_local_bounding_box_from_usd, has_light, open_stage
-from isaaclab_arena.utils.usd.rigid_bodies import find_shallowest_rigid_body, read_asset_rigid_body_paths
+from isaaclab_arena.utils.usd.helpers import has_light, open_stage
+from isaaclab_arena.utils.usd.rigid_bodies import read_asset_rigid_body_paths
 
 
 class Object(RootedObjectBase):
-    """Pick-up object config for a pick-and-place environment."""
+    """Scene object spawned from a USD file or a spawn configuration, as a rigid, articulated or static (``BASE``) asset."""
 
     def __init__(
         self,
@@ -63,22 +64,29 @@ class Object(RootedObjectBase):
         # Keep nested addon settings independent when multiple objects reuse the same input mapping.
         self.spawn_cfg_addon = deepcopy(spawn_cfg_addon)
         self.asset_cfg_addon = asset_cfg_addon
-        self.bounding_box = None
+        self.bounding_box: AxisAlignedBoundingBox | None = None
+        """Explicit local bounds. None derives bounds from object_cfg.spawn."""
+        # TODO(cvolk, 2026.10.13): Replace this per-object cache with one cache in spawn_cfg_geometry.py
+        # shared across objects, keyed by get_geometry_key(), so objects and asset-selection candidates that
+        # use the same asset compute its geometry once.
+        self._spawn_cfg_geometry_by_key: dict[tuple, SpawnCfgGeometry] = {}
+        """Geometry per spawn configuration, keyed by get_geometry_key(). Editing a geometric setting of
+        object_cfg.spawn, or replacing it, gives a new key and new geometry. Physics or appearance edits
+        keep the cached entry."""
         self.object_cfg = self._init_object_cfg()
         self._pose_event_cfg = self._build_reset_event()
 
     def get_bounding_box(self) -> AxisAlignedBoundingBox:
-        """Get local bounding box (relative to object origin)."""
-        assert self.usd_path is not None
-        if self.bounding_box is None:
-            self.bounding_box = compute_local_bounding_box_from_usd(self.usd_path, self.scale)
-        return self.bounding_box
+        """Get local bounding box (relative to object origin).
+
+        Returns bounding_box when it is set, otherwise bounds derived from object_cfg.spawn.
+        """
+        if self.bounding_box is not None:
+            return self.bounding_box
+        return self._get_spawn_cfg_geometry(self.object_cfg.spawn).get_bounding_box()
 
     def get_corners(self, pos: torch.Tensor) -> torch.Tensor:
-        assert self.usd_path is not None
-        if self.bounding_box is None:
-            self.bounding_box = compute_local_bounding_box_from_usd(self.usd_path, self.scale)
-        return self.bounding_box.get_corners_at(pos)
+        return self.get_bounding_box().get_corners_at(pos)
 
     def is_initial_pose_set(self) -> bool:
         return self.initial_pose is not None
@@ -91,25 +99,10 @@ class Object(RootedObjectBase):
         self.reset_pose = True
         self._pose_event_cfg = self._build_reset_event()
 
-    def get_contact_sensor_prim_path(self, usd_path: str | None = None) -> str:
-        """Return the scene prim path where this object's contact sensor is attached.
-
-        Args:
-            usd_path: Optional member USD path for object subclasses that spawn from multiple files.
-        """
+    def get_contact_sensor_prim_path(self) -> str:
+        """Return the scene prim path where this object's contact sensor is attached."""
         assert self.object_type == ObjectType.RIGID, "Contact sensor is only supported for rigid objects"
-        usd_path = usd_path or self.usd_path
-        assert usd_path is not None, f"No USD path available for {self.name}. Can't add contact sensor."
-        rigid_body_relative_path = find_shallowest_rigid_body(
-            usd_path,
-            within_default_prim=True,
-            relative_to_default_prim=True,
-            variants=(self.spawn_cfg_addon or {}).get("variants"),
-        )
-        assert (
-            rigid_body_relative_path is not None
-        ), f"No rigid body found in {self.name} USD file: {usd_path}. Can't add contact sensor."
-        return self.prim_path + rigid_body_relative_path
+        return self.prim_path + self._get_spawn_cfg_geometry(self.object_cfg.spawn).get_contact_body_path()
 
     def get_contact_sensor_cfg(self, contact_against_object: ObjectBase | None = None) -> ContactSensorCfg:
         # We override this function from the parent class because some assets do not have their rigid body
@@ -146,6 +139,13 @@ class Object(RootedObjectBase):
             prim_path=contact_sensor_prim_path,
             filter_prim_paths_expr=filter_prim_paths,
         )
+
+    def _get_spawn_cfg_geometry(self, spawn_cfg: SpawnerCfg) -> SpawnCfgGeometry:
+        """Return cached geometry for a spawn configuration, recomputed when its geometric settings change."""
+        key = get_geometry_key(spawn_cfg)
+        if key not in self._spawn_cfg_geometry_by_key:
+            self._spawn_cfg_geometry_by_key[key] = SpawnCfgGeometry(spawn_cfg)
+        return self._spawn_cfg_geometry_by_key[key]
 
     def _get_spawn_cfg(self, activate_contact_sensors: bool = False) -> SpawnerCfg:
         """Return the custom spawn config if set, otherwise a USD spawn config with addons."""

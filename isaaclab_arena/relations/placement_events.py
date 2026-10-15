@@ -8,50 +8,55 @@ from __future__ import annotations
 import torch
 from typing import TYPE_CHECKING
 
-from isaaclab.managers import EventTermCfg, ManagerTermBase
-
-from isaaclab_arena.relations.relations import RotateAroundSolution, get_anchor_objects
-from isaaclab_arena.utils.pose import Pose, PosePerEnv
-from isaaclab_arena.utils.yaw import rotate_quat_by_yaw, yaw_from_quat_xyzw
+from isaaclab_arena.relations.placement_poses import get_base_rotation_xyzw, get_scene_root_poses_from_layout
+from isaaclab_arena.relations.placement_sampler import PlacementSample, PlacementSampler, RecordedPlacementSampler
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedEnv
 
     from isaaclab_arena.relations.placement_asset import PlaceableAsset
-    from isaaclab_arena.relations.placement_layouts import PlacementLayouts
     from isaaclab_arena.relations.placement_result import PlacementResult
     from isaaclab_arena.relations.pooled_object_placer import PooledObjectPlacer
 
-IDENTITY_ROTATION_XYZW = (0.0, 0.0, 0.0, 1.0)
-
-# Name of the reset event term that owns the pooled object placer.
+# Name of the reset event term that owns the placement sampler.
 PLACEMENT_RESET_EVENT_NAME = "placement_reset"
-CACHED_PLACEMENT_RESET_EVENT_NAME = "cached_placement_reset"
 
 
-class PlacementPoolHandle:
-    """Opaque holder for a runtime placement pool to bypass EventTermCfg param deepcopy/validation errors.
+class PlacementSamplerHandle:
+    """Opaque holder for a placement sampler to bypass EventTermCfg param deepcopy/validation errors.
 
-    PooledObjectPlacer is used as an EventTermCfg param to set the initial spawn pose. Isaac Lab deep-copies
-    and validates the configclass param, leading to two crashes: deepcopy fails for the Warp GPU cache
-    wp.Mesh BVHs ("ctypes objects containing pointers cannot be pickled"); validation hits RecursionError
-    when recursively walking all dicts and reaches placement assets (including embodiments with cyclic
-    scene configs).
-
-    This handle wraps PooledObjectPlacer with overrides for deepcopy and validation, while
-    PooledObjectPlacer itself stays a normal class. EventTermCfg params use this handle.
+    The sampler may supply live pool draws or recorded replay.
     """
 
-    __slots__ = ("pool", "last_results")
-    """Keep runtime state out of an instance dictionary so config validation does not traverse it."""
+    __slots__ = ("sampler",)
+    """Keep runtime state out of the instance dictionary inspected by config validation.
 
-    def __init__(self, pool: PooledObjectPlacer) -> None:
-        self.pool = pool
-        self.last_results: dict[int, PlacementResult] = {}
-        """Layouts applied by the most recent placement reset, keyed by environment ID."""
+    Recursively validating the sampler reaches placement assets, including embodiments with cyclic scene configs,
+    and raises ``RecursionError``.
+    """
 
-    def __deepcopy__(self, memo: dict[int, object]) -> PlacementPoolHandle:
-        """Share the live pool across ``copy.deepcopy`` to avoid deep-copying the Warp cache BVHs."""
+    def __init__(self, sampler: PlacementSampler | RecordedPlacementSampler) -> None:
+        self.sampler = sampler
+
+    @property
+    def pool(self) -> PooledObjectPlacer | None:
+        """Return the live placement pool, if this is not recorded replay."""
+        if isinstance(self.sampler, PlacementSampler):
+            return self.sampler.placement_pool
+        return None
+
+    @property
+    def last_results(self) -> dict[int, PlacementResult]:
+        """Return layouts applied by the most recent live reset."""
+        if isinstance(self.sampler, PlacementSampler):
+            return self.sampler.last_results
+        return {}
+
+    def __deepcopy__(self, memo: dict[int, object]) -> PlacementSamplerHandle:
+        """Share the sampler across ``copy.deepcopy``.
+
+        A live placement pool may own Warp cache ``wp.Mesh`` BVHs, whose ctypes pointers cannot be pickled.
+        """
         memo[id(self)] = self
         return self
 
@@ -69,38 +74,16 @@ def get_placement_pool(env) -> PooledObjectPlacer | None:
         term_cfg = env.unwrapped.event_manager.get_term_cfg(PLACEMENT_RESET_EVENT_NAME)
     except ValueError:
         return None
-    handle = term_cfg.params.get("placement_pool")
-    assert handle is not None, f"'{PLACEMENT_RESET_EVENT_NAME}' event is missing its placement_pool parameter."
+    handle = term_cfg.params.get("placement_sampler")
+    assert handle is not None, f"'{PLACEMENT_RESET_EVENT_NAME}' event is missing its placement_sampler parameter."
+    assert handle.pool is not None, "Relation placement is using recorded replay, not a live placement pool."
     return handle.pool
 
 
 def get_reset_placement_results(env: ManagerBasedEnv) -> dict[int, PlacementResult]:
     """Return the layouts applied by the most recent pooled placement reset."""
     term = env.unwrapped.event_manager.get_term_cfg(PLACEMENT_RESET_EVENT_NAME)
-    return dict(term.params["placement_pool"].last_results)
-
-
-def get_rotation_xyzw(asset: PlaceableAsset) -> tuple[float, float, float, float]:
-    """Return the RotateAroundSolution rotation for an asset, or identity if none."""
-    rotate_marker = next((r for r in asset.get_relations() if isinstance(r, RotateAroundSolution)), None)
-    return rotate_marker.get_rotation_xyzw() if rotate_marker else IDENTITY_ROTATION_XYZW
-
-
-def get_base_rotation_per_asset(
-    assets: list[PlaceableAsset],
-) -> dict[PlaceableAsset, tuple[float, float, float, float]]:
-    """Return the base rotation for each asset."""
-    return {asset: get_rotation_xyzw(asset) for asset in assets}
-
-
-def get_pose_from_layout(asset: PlaceableAsset, layout: PlacementResult) -> Pose:
-    """Return an asset pose from a solved layout."""
-    assert asset in layout.positions, f"Placement layout is missing non-anchor asset '{asset.name}'"
-    base_rotation = get_rotation_xyzw(asset)
-    marker_yaw = yaw_from_quat_xyzw(base_rotation)
-    total_yaw = layout.orientations.get(asset, marker_yaw)
-    rotation = rotate_quat_by_yaw(base_rotation, total_yaw - marker_yaw)
-    return Pose(position_xyz=layout.positions[asset], rotation_xyzw=rotation)
+    return dict(term.params["placement_sampler"].last_results)
 
 
 def get_movable_asset_names(
@@ -111,38 +94,11 @@ def get_movable_asset_names(
     return [asset.get_scene_key() for asset in assets if asset not in anchor_assets]
 
 
-def validate_scene_poses(poses: dict[str, torch.Tensor]) -> None:
-    """Require finite xyz/xyzw pose tensors of shape (N, 7) with unit quaternions."""
-    for name, pose in poses.items():
-        assert pose.ndim == 2 and pose.shape[1] == 7, f"Root poses for '{name}' must have shape (N, 7)"
-        assert torch.isfinite(pose).all(), f"Root poses for '{name}' must be finite"
-        assert torch.allclose(
-            pose[:, 3:].square().sum(dim=-1), torch.ones_like(pose[:, 0]), atol=1e-4, rtol=0
-        ), f"Root poses for '{name}' require unit quaternions"
-
-
-def write_scene_poses_to_sim(env: ManagerBasedEnv, env_ids: torch.Tensor, poses: dict[str, torch.Tensor]) -> None:
-    """Apply environment-local root poses and zero velocities for the selected environments.
-
-    Frames E, W, and O denote the environment, simulation world, and object.
-
-    Args:
-        env: Constructed simulation environment.
-        env_ids: Absolute indices of the N resetting environments, shape (N,).
-        poses: Scene entity names mapped to xyz/xyzw tensors, each shaped (N, 7).
-            Compound asset poses must first be expanded with layout_pose_to_scene_writes().
-            Call validate_scene_poses() before writing unvalidated external poses.
-    """
-    for name, pose in poses.items():
-        assert pose.shape == (len(env_ids), 7), f"Root poses for '{name}' must have shape (N, 7)"
-    env_origins = env.scene.env_origins[env_ids]
-    zero_velocity = torch.zeros((len(env_ids), 6), device=env.device)
-    for name, T_E_O in poses.items():
-        T_W_O = T_E_O.clone()
-        T_W_O[:, :3] += env_origins
-        scene_asset = env.scene[name]
-        scene_asset.write_root_pose_to_sim(T_W_O, env_ids=env_ids)
-        scene_asset.write_root_velocity_to_sim(zero_velocity, env_ids=env_ids)
+def get_base_rotation_per_asset(
+    assets: list[PlaceableAsset],
+) -> dict[PlaceableAsset, tuple[float, float, float, float]]:
+    """Return each asset's RotateAroundSolution rotation, or identity."""
+    return {asset: get_base_rotation_xyzw(asset) for asset in assets}
 
 
 def write_layout_to_sim(
@@ -150,152 +106,63 @@ def write_layout_to_sim(
     env_id: int,
     result: PlacementResult,
     anchor_assets: set[PlaceableAsset],
-    base_rotations: dict[PlaceableAsset, tuple[float, float, float, float]],
+    assets: list[PlaceableAsset],
 ) -> None:
-    """Write one env's solved layout into the sim.
-
-    Even writing zero velocity, the sim will still apply gravity and other forces from collisions,
-    so collided assets will still be subject to move.
-
-    Args:
-        env: The Isaac Lab ManagerBasedEnv environment.
-        env_id: The environment index.
-        result: The placement result to write to the sim.
-        anchor_assets: The set of anchor assets.
-        base_rotations: The base rotations for all assets.
-    """
-    missing_assets = [
-        asset.name for asset in base_rotations if asset not in anchor_assets and asset not in result.positions
-    ]
-    assert not missing_assets, f"Placement layout is missing non-anchor assets: {missing_assets}"
-    for asset in result.positions:
-        if asset in anchor_assets:
-            continue
-        layout_pose = get_pose_from_layout(asset, result)
-        asset.write_layout_pose_to_sim(env, env_id, layout_pose)
+    """Write one solved layout for offline pool validation."""
+    poses_by_asset = get_scene_root_poses_from_layout(assets, result, anchor_assets)
+    sample = PlacementSample(
+        layout_id="offline_validation",
+        poses={scene_key: pose for root_poses in poses_by_asset.values() for scene_key, pose in root_poses.items()},
+    )
+    env_ids = torch.tensor([env_id], device=env.device)
+    write_placement_samples_to_sim(env, env_ids, [sample], list(poses_by_asset))
 
 
 def solve_and_place_objects(
     env: ManagerBasedEnv,
     env_ids: torch.Tensor | None,
-    placement_pool: PlacementPoolHandle,
+    placement_sampler: PlacementSamplerHandle,
 ) -> None:
-    """Coordinated reset event that draws layouts from the pool and writes poses.
+    """Coordinated reset event that draws placement samples and writes poses.
 
-    Registered as a single EventTermCfg(mode="reset"). Layouts are env-indexed:
-    one layout is consumed for each requested absolute env id, so partial resets
-    only advance the pools of the resetting envs.
+    Registered as a single EventTermCfg(mode="reset"). Samples are env-indexed:
+    one sample is drawn for each requested absolute env id, so partial resets
+    only advance the corresponding live pools or recorded replay assignments.
 
     Args:
         env: The Isaac Lab environment.
         env_ids: 1-D tensor of environment indices being reset.
-        placement_pool: Opaque handle to the runtime pool of solved placement layouts.
-            Layout assets come from ``placement_pool.pool.objects``.
+        placement_sampler: Opaque handle to the sampler supplying placement poses.
+            Poses are written to ``placement_sampler.sampler.write_assets``.
     """
-    pool = placement_pool.pool
     if env_ids is None or len(env_ids) == 0:
         return
-    assets = pool.objects
-    reset_env_ids = env_ids.tolist()
-    num_scene_envs = env.scene.env_origins.shape[0]
-    assert (
-        pool.num_envs == num_scene_envs
-    ), f"Placement pool has {pool.num_envs} envs, but scene has {num_scene_envs} env origins."
-    placement_pool.last_results = {}
-    results_by_env = pool.sample_for_envs(reset_env_ids)
-    anchor_assets = set(get_anchor_objects(assets))
-    base_rotations = get_base_rotation_per_asset(assets)
+    sampler = placement_sampler.sampler
+    if isinstance(sampler, PlacementSampler):
+        pool = sampler.placement_pool
+        num_scene_envs = env.scene.env_origins.shape[0]
+        assert (
+            pool.num_envs == num_scene_envs
+        ), f"Placement pool has {pool.num_envs} envs, but scene has {num_scene_envs} env origins."
+    samples = sampler.sample(len(env_ids), env_ids)
+    write_placement_samples_to_sim(env, env_ids, samples, sampler.write_assets)
 
-    for cur_env in reset_env_ids:
-        result = results_by_env[cur_env]
-        if not result.success:
-            print(
-                "Warning: Writing best-loss fallback placement for "
-                f"env {cur_env}; failed checks: {result.validation_results.get_failed_validation_check_names}."
+
+def write_placement_samples_to_sim(
+    env: ManagerBasedEnv,
+    env_ids: torch.Tensor,
+    samples: list[PlacementSample],
+    assets: list[PlaceableAsset],
+) -> None:
+    """Write prevalidated placement samples for the selected environments."""
+    assert len(samples) == len(env_ids), "Placement sample count must match env_ids"
+    for asset in assets:
+        root_keys = asset.get_scene_root_keys()
+        owned_poses = {
+            scene_key: torch.tensor(
+                [(*sample.poses[scene_key].position_xyz, *sample.poses[scene_key].rotation_xyzw) for sample in samples],
+                device=env.device,
             )
-        # Only write non-anchor assets to the sim.
-        write_layout_to_sim(env, cur_env, result, anchor_assets, base_rotations)
-
-    placement_pool.last_results = results_by_env
-
-
-class ResetPlacementLayouts(ManagerTermBase):
-    """Complete cached layouts drawn from one shared queue for N environments.
-
-    L is the layout count; each pose contains xyz position and xyzw rotation.
-    """
-
-    def __init__(self, cfg: EventTermCfg, env: ManagerBasedEnv):
-        super().__init__(cfg, env)
-        self._poses = {
-            name: torch.tensor(poses, device=env.device, dtype=torch.float32)
-            for name, poses in cfg.params["poses"].items()
+            for scene_key in root_keys
         }
-        """Object-to-pose tensors, each shaped (L, 7); L is the number of layouts."""
-        assert self._poses, "Cached reset requires at least one object"
-        shapes = {tuple(poses.shape) for poses in self._poses.values()}
-        assert len(shapes) == 1, "Cached reset objects must have equal layout counts"
-        shape = next(iter(shapes))
-        assert len(shape) == 2 and shape[0] > 0 and shape[1] == 7, "Cached reset poses must have shape (L, 7), L > 0"
-        validate_scene_poses(self._poses)
-        self._num_layouts = shape[0]
-        self._all_env_ids = torch.arange(env.num_envs, device=env.device)
-        """Absolute environment indices, shape (N,)."""
-        self._next_layout = 0
-        """Next index in the shared layout queue; wraps after all L layouts are consumed."""
-        for name in self._poses:
-            assert (
-                name in env.scene.rigid_objects or name in env.scene.articulations
-            ), f"Cached object '{name}' must have a writable physics root"
-
-    def __call__(self, env: ManagerBasedEnv, env_ids: torch.Tensor | None, poses: dict[str, list[list[float]]]) -> None:
-        """Apply the next complete layout to each resetting environment.
-
-        Args:
-            env: Environment whose root poses are reset.
-            env_ids: Environments to reset, or None for all environments.
-            poses: Layout configuration required by the event-manager calling contract.
-                Pose tensors are built once in __init__; this argument is unused here.
-        """
-        env_ids = self._all_env_ids if env_ids is None else env_ids
-        if len(env_ids) == 0:
-            return
-        selected_poses = self.draw(env_ids)
-        write_scene_poses_to_sim(env, env_ids, selected_poses)
-
-    def draw(self, env_ids: torch.Tensor) -> dict[str, torch.Tensor]:
-        """Draw complete layouts in env_ids order, wrapping the shared queue on exhaustion.
-
-        Args:
-            env_ids: Absolute indices of the M resetting environments, shape (M,).
-
-        Returns:
-            Scene entity poses in the environment frame, each shaped (M, 7).
-        """
-        layout_ids = (self._next_layout + torch.arange(len(env_ids), device=env_ids.device)) % self._num_layouts
-        poses = {name: values[layout_ids] for name, values in self._poses.items()}
-        self._next_layout = (self._next_layout + len(env_ids)) % self._num_layouts
-        return poses
-
-
-def make_cached_placement_event(
-    layouts: PlacementLayouts, placement_assets: list[PlaceableAsset], num_envs: int
-) -> EventTermCfg:
-    """Replace cached assets' initial root poses and root-reset events with one root writer."""
-    from isaaclab_arena.relations.placement_asset import get_scene_root_owners
-    from isaaclab_arena.relations.placement_layouts import validate_root_reset_for_cached_layouts
-
-    layouts.validate_assets(placement_assets)
-    owners = get_scene_root_owners(placement_assets)
-    initial_poses: dict[PlaceableAsset, dict[str, PosePerEnv]] = {}
-    scene_poses: dict[str, list[list[float]]] = {}
-    for name, poses in layouts.poses.items():
-        initial_poses.setdefault(owners[name], {})[name] = PosePerEnv(
-            [poses[i % layouts.num_layouts] for i in range(num_envs)]
-        )
-        scene_poses[name] = [list(pose.position_xyz + pose.rotation_xyzw) for pose in poses]
-    validate_root_reset_for_cached_layouts(list(initial_poses))
-    for asset, poses in initial_poses.items():
-        asset.clear_pose_reset_event()
-        asset.set_initial_scene_root_poses(poses)
-    return EventTermCfg(func=ResetPlacementLayouts, mode="reset", params={"poses": scene_poses})
+        asset.write_scene_root_poses_to_sim(env, env_ids, owned_poses)

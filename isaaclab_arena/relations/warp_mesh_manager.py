@@ -28,6 +28,30 @@ def _mesh_content_hash(mesh: trimesh.Trimesh) -> int:
     return hash((mesh.vertices.tobytes(), mesh.faces.tobytes()))
 
 
+def _get_single_usd_spawn(obj: CollisionObject) -> tuple[str, tuple[float, float, float]] | None:
+    """Return the USD path and spawn scale of an Object spawned from one USD file, else None.
+
+    A None spawn scale keeps the authored root scale, which mesh extraction keeps for an identity scale.
+    """
+    from isaaclab.sim import MultiUsdFileCfg, UsdFileCfg
+
+    from isaaclab_arena.assets.object import Object
+
+    if not isinstance(obj, Object):
+        return None
+    spawn_cfg = obj.object_cfg.spawn
+    if not isinstance(spawn_cfg, UsdFileCfg) or isinstance(spawn_cfg, MultiUsdFileCfg):
+        return None
+    # TODO(cvolk, 2026.10.12): For a tuple scale, Isaac Lab replaces the USD's authored root scale,
+    # but extract_trimesh_from_usd() multiplies the scale onto it. For assets with an authored root
+    # scale, the mesh therefore differs in size from the spawned object and from its bounds. This
+    # predates spawn-based meshes. None and (1, 1, 1) also share one cache key here, although they
+    # spawn different sizes for such assets. Fix by extracting meshes in SpawnCfgGeometry with
+    # Isaac Lab's spawn scale rule and keeping None separate in the mesh and Warp cache keys.
+    scale = tuple(spawn_cfg.scale) if spawn_cfg.scale is not None else (1.0, 1.0, 1.0)
+    return spawn_cfg.usd_path, scale
+
+
 def greedy_sphere_decomposition(
     mesh: trimesh.Trimesh,
     num_spheres: int = 30,
@@ -150,10 +174,8 @@ class WarpMeshAndSphereCache:
         excluded_prim_paths: Collection[str] = (),
     ) -> trimesh.Trimesh | None:
         """Return the collision mesh, or ``None`` when USD extraction fails."""
-        from isaaclab_arena.assets.object import Object
-
-        if not isinstance(obj, Object) or obj.usd_path is None:
-            assert not excluded_prim_paths, "USD prim exclusions require an Object with a usd_path."
+        if _get_single_usd_spawn(obj) is None:
+            assert not excluded_prim_paths, "USD prim exclusions require an Object spawned from one USD file."
             return obj.get_collision_mesh()
 
         try:
@@ -167,21 +189,21 @@ class WarpMeshAndSphereCache:
         excluded_prim_paths: Collection[str] = (),
     ) -> trimesh.Trimesh | None:
         """Return the collision mesh while preserving USD extraction errors."""
-        from isaaclab_arena.assets.object import Object
-
-        if not isinstance(obj, Object) or obj.usd_path is None:
-            assert not excluded_prim_paths, "USD prim exclusions require an Object with a usd_path."
+        usd_spawn = _get_single_usd_spawn(obj)
+        if usd_spawn is None:
+            assert not excluded_prim_paths, "USD prim exclusions require an Object spawned from one USD file."
             return obj.get_collision_mesh()
 
+        usd_path, scale = usd_spawn
         exclusions = tuple(sorted(excluded_prim_paths))
-        key = (obj.usd_path, tuple(obj.scale), exclusions)
+        key = (usd_path, scale, exclusions)
         if key not in self._trimesh_cache:
             from isaaclab_arena.utils.usd.helpers import extract_trimesh_from_usd  # deferred: pxr import
 
             try:
                 self._trimesh_cache[key] = extract_trimesh_from_usd(
-                    obj.usd_path,
-                    obj.scale,
+                    usd_path,
+                    scale,
                     excluded_prim_paths=exclusions,
                 )
             except ValueError as e:
@@ -202,12 +224,12 @@ class WarpMeshAndSphereCache:
         return self._device
 
     def _cache_key(self, mesh: trimesh.Trimesh, obj: CollisionObject | None = None) -> tuple:
-        """Compute cache key. Uses (usd_path, scale) for USD objects, content hash otherwise."""
-        from isaaclab_arena.assets.object import Object
-
+        """Compute cache key. Uses the spawn's (usd_path, scale) for USD objects, content hash otherwise."""
         repair_non_watertight = obj.repair_collision_mesh_non_watertight if obj is not None else True
-        if isinstance(obj, Object) and obj.usd_path is not None:
-            return (obj.usd_path, tuple(obj.scale), repair_non_watertight, self._num_spheres, self._sphere_radius)
+        usd_spawn = _get_single_usd_spawn(obj) if obj is not None else None
+        if usd_spawn is not None:
+            usd_path, scale = usd_spawn
+            return (usd_path, scale, repair_non_watertight, self._num_spheres, self._sphere_radius)
         return (_mesh_content_hash(mesh), repair_non_watertight, self._num_spheres, self._sphere_radius)
 
     def get_warp_mesh(self, mesh: trimesh.Trimesh, obj: CollisionObject | None = None) -> wp.Mesh:
