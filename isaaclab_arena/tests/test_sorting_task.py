@@ -71,11 +71,11 @@ def get_test_environment(num_envs: int):
     scene = Scene(assets=[background, light, red_cube, green_cube, red_container, green_container])
 
     # Create sorting task: red_cube -> red_container, green_cube -> green_container
+    # Keep the default force threshold: each 20 g cube rests on its container with about 0.2 N of support.
     task = SortMultiObjectTask(
         pick_up_object_list=[red_cube, green_cube],
         destination_location_list=[red_container, green_container],
         background_scene=background,
-        force_threshold=0.1,
     )
 
     embodiment = FrankaIKEmbodiment()

@@ -32,7 +32,7 @@ class SortMultiObjectTask(TaskBase):
         destination_location_list: list[Asset],
         background_scene: Asset,
         episode_length_s: float | None = None,
-        force_threshold: float = 1.0,
+        force_threshold: float = 0.1,
     ):
         super().__init__(episode_length_s=episode_length_s)
         assert len(pick_up_object_list) == len(destination_location_list)
