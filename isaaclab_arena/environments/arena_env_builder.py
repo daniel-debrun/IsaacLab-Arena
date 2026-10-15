@@ -316,8 +316,8 @@ class ArenaEnvBuilder:
         variation_recorder = VariationRecorder()
         variation_recorder.attach(variations)
 
-        # Apply build-time variations before scene_cfg is materialised. They can change object geometry,
-        # so placement runs after them.
+        # Apply build-time variations before self.arena_env.scene.get_scene_cfg() copies each object's object_cfg
+        # into scene_cfg below. They can change object geometry, so relation placement runs after them.
         self._apply_build_time_variations()
 
         # Placement needs its source selected before scene config captures construction poses.
