@@ -7,27 +7,13 @@
 
 import pytest
 
+from isaaclab_arena.tests.test_build_time_variations import TEST_APPLIED_RADIUS, TestBuildTimeVariation
 from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
-from isaaclab_arena.variations.uniform_sampler import UniformSamplerCfg
-from isaaclab_arena.variations.variation_base import BuildTimeVariationBase, VariationBaseCfg
 
 HEADLESS = True
 
 TABLE_TOP_Z = 0.1
 ON_CLEARANCE_M = 0.01
-BUILD_TIME_SPHERE_RADIUS = 0.42
-
-
-class SphereRadiusVariation(BuildTimeVariationBase):
-    """Build-time variation that sets its sphere's radius to BUILD_TIME_SPHERE_RADIUS."""
-
-    def __init__(self, asset, name: str = "sphere_radius"):
-        sampler_cfg = UniformSamplerCfg(low=[BUILD_TIME_SPHERE_RADIUS], high=[BUILD_TIME_SPHERE_RADIUS])
-        super().__init__(cfg=VariationBaseCfg(sampler_cfg=sampler_cfg), name=name)
-        self._asset = asset
-
-    def _realize_at_build_time(self) -> None:
-        self._asset.object_cfg.spawn.radius = float(self.sampler.sample(num_samples=1)[0, 0])
 
 
 def _test_placement_uses_geometry_set_by_build_time_variation(simulation_app):
@@ -57,7 +43,7 @@ def _test_placement_uses_geometry_set_by_build_time_variation(simulation_app):
         spawner_cfg=sim_utils.SphereCfg(radius=0.1, rigid_props=sim_utils.RigidBodyPropertiesCfg()),
         relations=[On(table, clearance_m=ON_CLEARANCE_M)],
     )
-    variation = SphereRadiusVariation(sphere)
+    variation = TestBuildTimeVariation(sphere)
     variation.enable()
     sphere.add_variation(variation)
     arena_env = IsaacLabArenaEnvironment(
@@ -69,7 +55,7 @@ def _test_placement_uses_geometry_set_by_build_time_variation(simulation_app):
     ArenaEnvBuilder(arena_env, builder_cfg).compose_manager_cfg()
 
     sphere_z = sphere.get_initial_pose().poses[0].position_xyz[2]
-    expected_z = TABLE_TOP_Z + ON_CLEARANCE_M + BUILD_TIME_SPHERE_RADIUS
+    expected_z = TABLE_TOP_Z + ON_CLEARANCE_M + TEST_APPLIED_RADIUS
     assert sphere_z == pytest.approx(expected_z, abs=1e-3), (
         f"Sphere placed at z={sphere_z:.4f}, expected {expected_z:.4f}: "
         "placement must use the geometry left by build-time variations."
