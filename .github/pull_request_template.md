@@ -7,7 +7,7 @@ Name classes, functions, and concepts by their actual names instead of generic d
 and explain their responsibilities where useful.
 Use bullets for lists, not as a requirement for every explanation.
 Keep the detail proportional to the change; a small fix needs only a few sentences.
-Leave out reassurances that a reviewer would not ask for.
+Leave out reassurances that a reviewer would not ask for, such as "No other behavior changes."
 Remove sections that do not apply.
 -->
 
