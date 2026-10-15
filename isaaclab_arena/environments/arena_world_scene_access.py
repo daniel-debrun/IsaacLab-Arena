@@ -197,6 +197,11 @@ def _read_mesh_geometry_in_prim_frame(local_frame_prim: Usd.Prim) -> LocalMeshGe
                     not descendant_xform.GetResetXformStack()
                 ), f"Mesh geometry requires descendants to inherit the root pose; '{prim_path}' resets its transform."
 
+        if descendant_prim.IsA(UsdGeom.PointInstancer):
+            assert UsdGeom.Imageable(descendant_prim).ComputePurpose() != UsdGeom.Tokens.default_, (
+                f"Mesh geometry does not support default-purpose point instancers; '{prim_path}' requires "
+                "per-instance transforms."
+            )
         if not descendant_prim.IsA(UsdGeom.Gprim):
             continue
         if UsdGeom.Imageable(descendant_prim).ComputePurpose() != UsdGeom.Tokens.default_:
@@ -252,7 +257,7 @@ def read_spawned_meshes_in_local_frame(
     Returns:
         Geometry and device-local long indices for each clone variant. Vertices retain
         spawned scale and polygon topology. Descendants must remain fixed relative to
-        the local frame; articulation and deformable geometry are unsupported.
+        the local frame; articulation, deformable, and point-instanced geometry are unsupported.
     """
     assert (
         scene_key not in scene.articulations and scene_key not in scene.deformable_objects

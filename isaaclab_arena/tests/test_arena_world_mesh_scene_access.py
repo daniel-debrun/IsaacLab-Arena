@@ -200,6 +200,37 @@ def _check_instance_proxy_geometry(scene_access):
     np.testing.assert_allclose(geometry.vertices, np.asarray(points) + [2.0, 0.0, 0.0])
 
 
+def _check_point_instanced_geometry(scene_access):
+    from pxr import Usd, UsdGeom
+
+    stage = Usd.Stage.CreateInMemory()
+    root = UsdGeom.Xform.Define(stage, "/World/Asset")
+    points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+    face_vertex_counts = [3, 3, 3, 3]
+    face_vertex_indices = [0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3]
+    _define_polygon_mesh(stage, "/World/Asset/DirectMesh", points, face_vertex_counts, face_vertex_indices)
+    instancer = UsdGeom.PointInstancer.Define(stage, "/World/Asset/Instances")
+    prototype_mesh = _define_polygon_mesh(
+        stage, "/World/Asset/Instances/Prototype", points, face_vertex_counts, face_vertex_indices
+    )
+    instancer.GetPrototypesRel().SetTargets([prototype_mesh.GetPath()])
+    instancer.GetProtoIndicesAttr().Set([0, 0])
+    instancer.GetPositionsAttr().Set([(10.0, 0.0, 0.0), (20.0, 0.0, 0.0)])
+    scene = _make_scene(stage)
+    source_groups = [(root.GetPrim(), (0,))]
+
+    # Traversing prototype meshes alone would silently lose both translated instances.
+    with pytest.raises(AssertionError, match="point instancers.*requires per-instance transforms"):
+        _read_mesh_groups(scene_access, scene, source_groups)
+
+    for ignored_purpose in (UsdGeom.Tokens.render, UsdGeom.Tokens.proxy, UsdGeom.Tokens.guide):
+        instancer.GetPurposeAttr().Set(ignored_purpose)
+        ((geometry, _environment_indices),) = _read_mesh_groups(scene_access, scene, source_groups)
+        np.testing.assert_array_equal(geometry.vertices, points)
+        np.testing.assert_array_equal(geometry.face_vertex_counts, face_vertex_counts)
+        np.testing.assert_array_equal(geometry.face_vertex_indices, face_vertex_indices)
+
+
 def _check_unsupported_mesh_geometry(scene_access):
     from pxr import Gf, Usd, UsdGeom, UsdPhysics
 
@@ -269,6 +300,7 @@ def _test_arena_world_mesh_scene_access(_simulation_app):
     _check_inherited_geometry_purpose(scene_access)
     _check_heterogeneous_clone_groups(scene_access)
     _check_instance_proxy_geometry(scene_access)
+    _check_point_instanced_geometry(scene_access)
     _check_unsupported_mesh_geometry(scene_access)
     return True
 

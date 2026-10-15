@@ -17,7 +17,7 @@ import torch
 from dataclasses import dataclass
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class LocalMeshGeometry:
     """Mesh vertices and original polygon topology in one body-local frame."""
 
@@ -46,7 +46,7 @@ class LocalMeshGeometry:
         assert np.all(self.face_vertex_indices < len(self.vertices)), "Face vertex indices exceed the vertex array"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class ConvexHullGeometry:
     """Convex-hull vertices and plane equations in the mesh's local frame."""
 

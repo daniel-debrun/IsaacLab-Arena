@@ -87,9 +87,10 @@ purpose attribute instead, so a mesh under a render- or proxy-purpose parent can
 differently. Check the selected geometry when comparing task success between the two systems.
 
 The geometry API supports rigid objects and scene extras whose descendants stay fixed relative
-to their root. It rejects articulations, deformables, animated descendant geometry, and analytic
-primitives such as USD cubes or spheres. Hull construction also rejects degenerate meshes that
-cannot form a three-dimensional hull.
+to their root. It rejects articulations, deformables, animated descendant geometry, USD point
+instancers, and analytic primitives such as USD cubes or spheres. Ordinary USD instance proxies
+are supported. Hull construction also rejects degenerate meshes that cannot form a
+three-dimensional hull.
 
 These predicates are available for tasks to select. Existing tasks keep their current success
 rules, and ``ArenaWorld.get_centroid_w()`` and ``get_vertices_w()`` keep their existing behavior.
