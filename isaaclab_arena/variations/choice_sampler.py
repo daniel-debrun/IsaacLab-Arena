@@ -25,17 +25,26 @@ class ChoiceSamplerCfg(SamplerBaseCfg):
 
 
 class ChoiceSampler(SamplerBase, Generic[T]):
-    """Uniform sampler returning items drawn from a per-call ``choices`` sequence."""
+    """Sampler returning items from a per-call ``choices`` sequence, drawn at random or in order from a start index."""
 
-    def sample(self, num_samples: int, choices: Sequence[T], env_ids: torch.Tensor | None = None) -> list[T]:
+    def sample(
+        self,
+        num_samples: int,
+        choices: Sequence[T],
+        env_ids: torch.Tensor | None = None,
+        *,
+        start_index: int | None = None,
+    ) -> list[T]:
         """Draw ``num_samples`` items from ``choices``.
 
         Args:
-            num_samples: Number of independent samples to draw, typically the
+            num_samples: Number of items to return, typically the
                 number of environments we're drawing a sample for.
             choices: Pool of items to draw from. Must be non-empty.
             env_ids: The env ids the drawn items correspond to, forwarded to sample listeners so
                 they can attribute values per env. ``None`` when the draw applies to all envs.
+            start_index: Index of the first item to take; the following items follow ``choices`` in order,
+                wrapping around. ``None`` draws at random. Unused when a replay sampler supplies the rows.
 
         Returns:
             A ``list`` of length ``num_samples`` of items drawn from ``choices``.
@@ -46,6 +55,8 @@ class ChoiceSampler(SamplerBase, Generic[T]):
         if replay_samples is not None:
             assert all(value in choices for value in replay_samples), "Choice replay samples must belong to 'choices'."
             result = replay_samples
+        elif start_index is not None:
+            result = [choices[(start_index + offset) % len(choices)] for offset in range(num_samples)]
         else:
             indices = torch.randint(low=0, high=len(choices), size=(num_samples,), generator=self._generator)
             result = [choices[int(index)] for index in indices]
