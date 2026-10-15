@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from isaaclab_arena.assets.background import Background
 from isaaclab_arena.assets.object import Object
 from isaaclab_arena.assets.object_reference import ObjectReference
+from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.relations.background_collision_object import make_fixed_collision_objects
 from isaaclab_arena.relations.collision_mode import CollisionMode, get_object_collision_mode
 from isaaclab_arena.relations.collision_object import CollisionObject
@@ -99,9 +100,10 @@ def discover_passive_assets(
             continue
         if asset.get_relations():
             continue
-        # Without a USD path no bounding box can be computed for collision.
-        if isinstance(asset, Object) and asset.usd_path is None:
-            print(f"Skipping '{asset.name}' as a collision obstacle: missing USD path.")
+        # Without a USD path, only rigid objects are obstacles: object sets and primitive shapes take their bounds
+        # from object_cfg.spawn. This skips lights and the ground plane, whose spawn configurations have no bounds.
+        if isinstance(asset, Object) and asset.usd_path is None and asset.object_type != ObjectType.RIGID:
+            print(f"Skipping '{asset.name}' as a collision obstacle: it is not rigid and has no USD path.")
             continue
         if isinstance(asset, ObjectReference) and asset.parent_asset.usd_path is None:
             print(
