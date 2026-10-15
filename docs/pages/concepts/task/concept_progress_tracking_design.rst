@@ -29,12 +29,70 @@ Arena comes with an existing collection of predicates under ``isaaclab_arena.tas
 * ``object_moving`` — an object exceeds a linear velocity threshold.
 * ``objects_in_proximity`` — two objects are within configured axis-aligned distances.
 * ``object_on_destination`` — destination-footprint, upward-support, and velocity checks for a placement goal.
+* ``object_hull_centroid_in_closed_hull`` — the mean of an object's convex-hull vertices is inside a destination's closed hull.
+* ``object_hull_centroid_in_open_container`` — the same point passes the destination's hull checks after removing its top faces.
 
 .. note::
 
     ``objects_settled`` records each object's first resting pose. Later predicates can use that
     environment-specific pose as a reference, which is more robust than assuming every object starts at
     the same world height. Arena clears the recorded poses for the environments being reset.
+
+
+Mesh-based containment
+~~~~~~~~~~~~~~~~~~~~~~
+
+The two containment predicates follow RoboLab's geometric checks. Both test one representative
+point: the arithmetic mean of the object's convex-hull vertices. This is different from the
+bounding-box center returned by ``ArenaWorld.get_centroid_w()``. An object can pass while part of
+it sticks outside the container. A convex hull also fills concavities and holes, so these checks
+do not describe the exact container cavity.
+
+``object_hull_centroid_in_closed_hull`` tests that point against every face of the destination's
+convex hull. ``object_hull_centroid_in_open_container`` removes faces whose outward normal has
+a container-local Z component of at least ``0.7``. This allows points above the rim, although
+retained sloped faces can still limit their height. The opening follows the container's local
++Z axis when it tips over. Points on retained boundaries pass, with no added tolerance.
+
+Neither predicate requires contact, release from the gripper, low speed, or an upright container.
+Add those conditions separately if the task needs them. For example, a task can select the
+open-container check through its completion criteria:
+
+.. code-block:: python
+
+   from functools import partial
+
+   from isaaclab_arena.progress_tracking.completion_criteria import CompletionCriteria
+   from isaaclab_arena.tasks.predicates.containment import object_hull_centroid_in_open_container
+
+   criteria = CompletionCriteria(
+       name="object_in_container",
+       predicate_sequence=[
+           partial(
+               object_hull_centroid_in_open_container,
+               object_name="apple",
+               container_name="bowl",
+           ),
+       ],
+   )
+
+``ArenaWorld`` reads the spawned default-purpose USD meshes on first use. It preserves their
+scale, local transforms, and polygon topology, and builds one convex hull per spawned variant.
+Each query uses the current object and container poses. Moving objects and resetting their poses
+reuse the cached geometry; meshes, scale, and variant assignments must stay fixed for that
+``ArenaWorld`` instance. Returned mesh and hull data are shared and must not be modified.
+
+Mesh selection follows Arena's inherited USD purpose settings. RoboLab reads each mesh's own
+purpose attribute instead, so a mesh under a render- or proxy-purpose parent can be treated
+differently. Check the selected geometry when comparing task success between the two systems.
+
+The geometry API supports rigid objects and scene extras whose descendants stay fixed relative
+to their root. It rejects articulations, deformables, animated descendant geometry, and analytic
+primitives such as USD cubes or spheres. Hull construction also rejects degenerate meshes that
+cannot form a three-dimensional hull.
+
+These predicates are available for tasks to select. Existing tasks keep their current success
+rules, and ``ArenaWorld.get_centroid_w()`` and ``get_vertices_w()`` keep their existing behavior.
 
 
 Defining a custom predicate
