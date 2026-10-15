@@ -96,21 +96,21 @@ class EpisodeSummary:
         }
 
     @property
-    def group_occurrences(self) -> dict[str, list[int]]:
+    def tracked_event_occurrences(self) -> dict[str, list[int]]:
         """Read recurring observations, retaining configured groups with zero occurrences."""
         progress = _progress(self.record)
         groups = {}
-        names = progress.get("group_names", [])
+        names = progress.get("tracked_event_names", [])
         if isinstance(names, list):
             for name in names:
                 if isinstance(name, str):
                     groups.setdefault(name, [])
-        events = progress.get("group_events", [])
+        events = progress.get("tracked_events", [])
         if isinstance(events, list):
             for event in events:
                 if not isinstance(event, dict):
                     continue
-                name = event.get("group_name")
+                name = event.get("name")
                 step = _as_int(event.get("step"))
                 if isinstance(name, str) and step is not None and step >= 0:
                     groups.setdefault(name, []).append(step)

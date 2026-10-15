@@ -11,11 +11,11 @@ from isaaclab_arena.progress_tracking.progress_tracking_utils import Predicate, 
 
 
 @dataclass
-class PredicateGroup:
+class TrackedEventCfg:
     """Record recurring completions, requiring the observed condition to clear between occurrences."""
 
     name: str
-    """Unique name within the task, used in recorded group events."""
+    """Unique name within the task, used in recorded event occurrences."""
 
     predicates: list[Predicate]
     """Predicates whose completion history is cleared before each new occurrence."""
@@ -32,9 +32,11 @@ class PredicateGroup:
     """
 
     def __post_init__(self):
-        assert isinstance(self.name, str) and self.name.strip(), "Predicate groups require a nonempty name."
-        assert isinstance(self.predicates, list) and self.predicates, "Predicate groups require a nonempty list."
-        assert all(_is_predicate(predicate) for predicate in self.predicates), "Invalid group predicate."
+        assert isinstance(self.name, str) and self.name.strip(), "Tracked events require a nonempty name."
+        assert (
+            isinstance(self.predicates, list) and self.predicates
+        ), "Tracked events require a nonempty predicate list."
+        assert all(_is_predicate(predicate) for predicate in self.predicates), "Invalid event predicate."
         assert not any(
             isinstance(predicate, type) for predicate in self.predicates
         ), "Configure predicate classes with TerminationTermCfg(func=MyPredicate)."
@@ -48,14 +50,14 @@ class PredicateGroup:
 
 
 @dataclass(frozen=True)
-class PredicateGroupEvent:
+class TrackedEventOccurrence:
     """One completed occurrence, retained until the environment starts a new episode."""
 
     env_idx: int
     """Index of the parallel environment."""
 
-    group_name: str
-    """Name of the completed group."""
+    name: str
+    """Name of the event whose predicate group completed."""
 
     step: int
     """Episode control step when the group completed."""

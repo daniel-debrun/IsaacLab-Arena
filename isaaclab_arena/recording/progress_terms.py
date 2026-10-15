@@ -54,14 +54,12 @@ def record_progress_results(env, env_id: int) -> dict[str, Any]:
 
     # EpisodeRecorderManager invokes this before resetting the tracker's live counters.
     tracker = env.progress_tracker
-    if "group_events" in progress:
+    if "tracked_events" in progress:
         if not state.criteria_by_name:
             recorded["progress"] = {}
         recorded["progress"].update(
-            group_names=progress["group_names"],
-            group_events=[
-                {"group_name": event.group_name, "step": event.step} for event in progress["group_events"][env_id]
-            ],
+            tracked_event_names=progress["tracked_event_names"],
+            tracked_events=[{"name": event.name, "step": event.step} for event in progress["tracked_events"][env_id]],
             control_step_dt=float(env.step_dt),
         )
     if tracker is not None:

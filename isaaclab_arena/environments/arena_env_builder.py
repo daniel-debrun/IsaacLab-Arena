@@ -389,13 +389,13 @@ class ArenaEnvBuilder:
         )
         termination_cfg = self._build_termination_manager_cfg(task_termination_cfg)
         task_progress_cfg = None
-        tracking_groups = task.get_tracking_groups()
-        if task_termination_cfg.success or tracking_groups:
+        tracked_events = task.get_tracked_events()
+        if task_termination_cfg.success or tracked_events:
             task_progress_cfg = TaskProgressCfg(
                 success_criteria=task_termination_cfg.success,
                 subtasks_are_sequential=task_termination_cfg.subtasks_are_sequential,
                 desired_subtask_success_state=task_termination_cfg.desired_subtask_success_state,
-                tracking_groups=tracking_groups,
+                tracked_events=tracked_events,
             )
         actions_cfg = embodiment.get_action_cfg()
         xr_cfg = embodiment.get_xr_cfg()

@@ -6,7 +6,7 @@
 from dataclasses import dataclass, field
 
 from isaaclab_arena.progress_tracking.completion_criteria import CompletionCriteria
-from isaaclab_arena.progress_tracking.predicate_group import PredicateGroup
+from isaaclab_arena.progress_tracking.predicate_group import TrackedEventCfg
 
 
 @dataclass
@@ -22,5 +22,5 @@ class TaskProgressCfg:
     desired_subtask_success_state: list[bool | None] | None = None
     """Required final subtask states, or None to use recorded completion alone."""
 
-    tracking_groups: list[PredicateGroup] = field(default_factory=list)
+    tracked_events: list[TrackedEventCfg] = field(default_factory=list)
     """Independent recurring observations, excluded from success and progress scores."""

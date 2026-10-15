@@ -32,12 +32,12 @@ def _step(tracker, env):
 
 
 def _events(tracker, env_id=0):
-    return [(event.group_name, event.step) for event in tracker.get_group_events()[env_id]]
+    return [(event.name, event.step) for event in tracker.get_tracked_event_occurrences()[env_id]]
 
 
 def _test_recurring_groups_and_success(_app):
     from isaaclab_arena.progress_tracking.completion_criteria import CompletionCriteria
-    from isaaclab_arena.progress_tracking.predicate_group import PredicateGroup
+    from isaaclab_arena.progress_tracking.predicate_group import TrackedEventCfg
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
     from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
 
@@ -48,9 +48,9 @@ def _test_recurring_groups_and_success(_app):
         criteria,
         2,
         "cpu",
-        tracking_groups=[
-            PredicateGroup("instant", [_condition]),
-            PredicateGroup("held", [TrueForConsecutiveStepsCfg(_condition, 2)]),
+        tracked_events=[
+            TrackedEventCfg("instant", [_condition]),
+            TrackedEventCfg("held", [TrueForConsecutiveStepsCfg(_condition, 2)]),
         ],
     )
     for step in range(1, 7):
@@ -66,11 +66,11 @@ def _test_recurring_groups_and_success(_app):
         assert tracker.get_state() == baseline.get_state()
         assert tracker.get_events() == baseline.get_events()
     assert _events(tracker) == [("instant", 1), ("held", 2), ("instant", 8), ("held", 9)]
-    snapshot = tracker.get_group_events()
+    snapshot = tracker.get_tracked_event_occurrences()
     tracker.reset([0])
     env.episode_length_buf[0] = 0
     assert len(snapshot[0]) == 4
-    assert tracker.get_group_events()[0] == []
+    assert tracker.get_tracked_event_occurrences()[0] == []
     _step(tracker, env)
     assert _events(tracker, 0) == [("instant", 1)]
     assert _events(tracker, 1)[-1] == ("held", 9)
@@ -80,8 +80,58 @@ def _test_recurring_groups_and_success(_app):
     return True
 
 
+def _test_group_activity_does_not_change_success(_app):
+    import torch
+
+    import pytest
+
+    from isaaclab_arena.progress_tracking.completion_criteria import CompletionCriteria
+    from isaaclab_arena.progress_tracking.predicate_group import TrackedEventCfg
+    from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
+    from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
+
+    env = _env([[True, True, True], [True, True, True]])
+    criteria = [
+        CompletionCriteria(
+            f"subtask_{index}",
+            [TrueForConsecutiveStepsCfg(partial(_condition, index=index), 2)],
+            parent_subtask_idx=index,
+        )
+        for index in range(2)
+    ]
+    baseline = ProgressTracker(
+        criteria, 2, "cpu", subtasks_are_sequential=True, desired_subtask_success_state=[True, True]
+    )
+    tracker = ProgressTracker(
+        criteria,
+        2,
+        "cpu",
+        subtasks_are_sequential=True,
+        desired_subtask_success_state=[True, True],
+        tracked_events=[TrackedEventCfg("observed", [TrueForConsecutiveStepsCfg(partial(_condition, index=2), 2)])],
+    )
+    for step in range(1, 9):
+        env.conditions[:, 0] = step not in (3, 6)
+        env.conditions[:, 2] = step not in (3, 7)
+        env.episode_length_buf += 1
+        tracking_active = torch.tensor([step < 2, step < 6])
+        tracker.step(env, env.episode_length_buf, event_active_envs=tracking_active)
+        baseline.step(env, env.episode_length_buf)
+        assert tracker.get_state() == baseline.get_state()
+        assert tracker.get_events() == baseline.get_events()
+        assert torch.equal(tracker.get_subtask_completion(), baseline.get_subtask_completion())
+        # Success continues to advance and recheck final conditions even when observations pause.
+        assert tracker.is_complete().tolist() == [step in (5, 8)] * 2
+    assert _events(tracker, 0) == []
+    assert _events(tracker, 1) == [("observed", 2), ("observed", 5)]
+    # Pausing observations must not bypass the existing control-step validation.
+    with pytest.raises(AssertionError, match="exactly one"):
+        tracker.step(env, env.episode_length_buf, event_active_envs=torch.zeros(2, dtype=torch.bool))
+    return True
+
+
 def _test_order_and_fresh_history(_app):
-    from isaaclab_arena.progress_tracking.predicate_group import PredicateGroup
+    from isaaclab_arena.progress_tracking.predicate_group import TrackedEventCfg
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
 
     env = _env([[False, True]])
@@ -90,9 +140,9 @@ def _test_order_and_fresh_history(_app):
         [],
         1,
         "cpu",
-        tracking_groups=[
-            PredicateGroup("ordered", predicates, predicates_are_sequential=True),
-            PredicateGroup("unordered", predicates),
+        tracked_events=[
+            TrackedEventCfg("ordered", predicates, predicates_are_sequential=True),
+            TrackedEventCfg("unordered", predicates),
         ],
     )
     _step(tracker, env)
@@ -122,7 +172,7 @@ def _test_order_and_fresh_history(_app):
 
 
 def _test_desired_states_and_none_gating(_app):
-    from isaaclab_arena.progress_tracking.predicate_group import PredicateGroup
+    from isaaclab_arena.progress_tracking.predicate_group import TrackedEventCfg
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
 
     env = _env([[False, False]])
@@ -131,10 +181,10 @@ def _test_desired_states_and_none_gating(_app):
         [],
         1,
         "cpu",
-        tracking_groups=[
-            PredicateGroup("cleared", [predicates[0]], desired_predicate_state=[False]),
-            PredicateGroup("gated", predicates, True, [None, True]),
-            PredicateGroup("ignored", predicates, False, [None, True]),
+        tracked_events=[
+            TrackedEventCfg("cleared", [predicates[0]], desired_predicate_state=[False]),
+            TrackedEventCfg("gated", predicates, True, [None, True]),
+            TrackedEventCfg("ignored", predicates, False, [None, True]),
         ],
     )
     _step(tracker, env)
@@ -156,7 +206,7 @@ def _test_desired_states_and_none_gating(_app):
 
 
 def _test_temporal_group_isolation(_app):
-    from isaaclab_arena.progress_tracking.predicate_group import PredicateGroup
+    from isaaclab_arena.progress_tracking.predicate_group import TrackedEventCfg
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
     from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
 
@@ -167,9 +217,9 @@ def _test_temporal_group_isolation(_app):
         2,
         "cpu",
         env,
-        tracking_groups=[
-            PredicateGroup("gated", [_condition, counter], True),
-            PredicateGroup("independent", [counter]),
+        tracked_events=[
+            TrackedEventCfg("gated", [_condition, counter], True),
+            TrackedEventCfg("independent", [counter]),
         ],
     )
     for _ in range(3):
@@ -206,7 +256,7 @@ def _test_callable_groups(_app):
     from threading import Lock
 
     from isaaclab_arena.progress_tracking.completion_criteria import CompletionCriteria
-    from isaaclab_arena.progress_tracking.predicate_group import PredicateGroup
+    from isaaclab_arena.progress_tracking.predicate_group import TrackedEventCfg
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
     from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
 
@@ -231,10 +281,10 @@ def _test_callable_groups(_app):
             criteria,
             1,
             "cpu",
-            tracking_groups=[
-                PredicateGroup("instant", [predicate]),
-                PredicateGroup("held", [held]),
-                PredicateGroup("ordered", [held, held], predicates_are_sequential=True),
+            tracked_events=[
+                TrackedEventCfg("instant", [predicate]),
+                TrackedEventCfg("held", [held]),
+                TrackedEventCfg("ordered", [held, held], predicates_are_sequential=True),
             ],
         )
         for _ in range(5):
@@ -251,7 +301,7 @@ def _test_single_tracker_and_shared_cache(_app):
 
     from isaaclab_arena.progress_tracking import progress_tracker
     from isaaclab_arena.progress_tracking.completion_criteria import CompletionCriteria
-    from isaaclab_arena.progress_tracking.predicate_group import PredicateGroup
+    from isaaclab_arena.progress_tracking.predicate_group import TrackedEventCfg
     from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
 
     calls = 0
@@ -263,26 +313,81 @@ def _test_single_tracker_and_shared_cache(_app):
 
     env = _env([[True], [True]])
     held = TrueForConsecutiveStepsCfg(condition, 2)
-    with patch.object(progress_tracker, "ProgressTracker", wraps=progress_tracker.ProgressTracker) as constructor:
+    with (
+        patch.object(progress_tracker, "ProgressTracker", wraps=progress_tracker.ProgressTracker) as constructor,
+        patch.object(
+            progress_tracker, "CompletionCriteriaRunner", wraps=progress_tracker.CompletionCriteriaRunner
+        ) as criteria_constructor,
+    ):
         tracker = progress_tracker.ProgressTracker(
             [CompletionCriteria("success", [held])],
             2,
             "cpu",
-            tracking_groups=[PredicateGroup("instant", [condition]), PredicateGroup("held", [held])],
+            tracked_events=[
+                TrackedEventCfg("instant", [condition]),
+                TrackedEventCfg("held", [held]),
+                TrackedEventCfg("ordered", [held, held], predicates_are_sequential=True),
+                TrackedEventCfg("unordered", [held, held]),
+            ],
         )
         assert constructor.call_count == 1, "Groups must not construct nested ProgressTrackers."
+        assert criteria_constructor.call_count == 5, "Use one success runner and one runner per group, not per member."
     for step, value in enumerate([True] * 5 + [False, True, True], start=1):
         env.conditions[0, 0] = value
         _step(tracker, env)
         assert calls == step, "Success, advancing groups, and waiting groups share one predicate cache."
-    assert _events(tracker, 0) == [("instant", 1), ("held", 2), ("instant", 7), ("held", 8)]
-    assert _events(tracker, 1) == [("instant", 1), ("held", 2)]
+    first_occurrences = [("instant", 1), ("held", 2), ("unordered", 2), ("ordered", 4)]
+    assert _events(tracker, 0) == first_occurrences + [("instant", 7), ("held", 8), ("unordered", 8)]
+    assert _events(tracker, 1) == first_occurrences
     assert tracker.is_complete().all(), "Clearing a group must not clear task success."
     return True
 
 
+def _test_desired_states_recheck_completed_temporal_members(_app):
+    from isaaclab_arena.progress_tracking.predicate_group import TrackedEventCfg
+    from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
+    from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
+
+    env = _env([[False, False]])
+    requirements = [
+        TrueForConsecutiveStepsCfg(_condition, 2),
+        TrueForConsecutiveStepsCfg(partial(_condition, index=1), 2),
+    ]
+    tracker = ProgressTracker(
+        [],
+        1,
+        "cpu",
+        tracked_events=[
+            TrackedEventCfg("ordered", requirements, True, [True, False]),
+            TrackedEventCfg("unordered", requirements, False, [True, False]),
+        ],
+    )
+    timeline = [
+        [True, False],
+        [True, False],  # First member completes.
+        [False, True],
+        [False, True],  # Both histories complete; current desired states still fail.
+        [True, False],  # First member must rebuild its entire two-step streak.
+        [True, False],  # First occurrence.
+        [False, False],  # The desired combination clears; reset both histories.
+        [True, True],
+        [True, True],
+        [True, True],
+        [True, True],
+        [True, False],  # Second occurrence requires observing the second member true again.
+    ]
+    for step, values in enumerate(timeline, start=1):
+        env.conditions[0] = env.conditions.new_tensor(values)
+        _step(tracker, env)
+        expected = [("ordered", 6), ("unordered", 6)] if step >= 6 else []
+        if step == 12:
+            expected += [("ordered", 12), ("unordered", 12)]
+        assert _events(tracker) == expected
+    return True
+
+
 def _test_rearm_requires_fresh_temporal_sequence(_app):
-    from isaaclab_arena.progress_tracking.predicate_group import PredicateGroup
+    from isaaclab_arena.progress_tracking.predicate_group import TrackedEventCfg
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
     from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
 
@@ -291,8 +396,8 @@ def _test_rearm_requires_fresh_temporal_sequence(_app):
         [],
         1,
         "cpu",
-        tracking_groups=[
-            PredicateGroup(
+        tracked_events=[
+            TrackedEventCfg(
                 "failure",
                 [
                     TrueForConsecutiveStepsCfg(_condition, 2),
@@ -313,7 +418,7 @@ def _test_rearm_requires_fresh_temporal_sequence(_app):
 
 
 def _test_any_order_rearm_and_desired_states(_app):
-    from isaaclab_arena.progress_tracking.predicate_group import PredicateGroup
+    from isaaclab_arena.progress_tracking.predicate_group import TrackedEventCfg
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
 
     env = _env([[True, False]])
@@ -322,11 +427,11 @@ def _test_any_order_rearm_and_desired_states(_app):
         [],
         1,
         "cpu",
-        tracking_groups=[
-            PredicateGroup("forward", [first, second]),
-            PredicateGroup("reverse", [second, first]),
-            PredicateGroup("cleared", [first], desired_predicate_state=[False]),
-            PredicateGroup("ignored_tail", [first, second], True, [True, None]),
+        tracked_events=[
+            TrackedEventCfg("forward", [first, second]),
+            TrackedEventCfg("reverse", [second, first]),
+            TrackedEventCfg("cleared", [first], desired_predicate_state=[False]),
+            TrackedEventCfg("ignored_tail", [first, second], True, [True, None]),
         ],
     )
     for values in (
@@ -367,7 +472,7 @@ def _test_finished_episode_groups(_app, output_dir):
     from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
     from isaaclab_arena.progress_tracking.completion_criteria import CompletionCriteria
-    from isaaclab_arena.progress_tracking.predicate_group import PredicateGroup
+    from isaaclab_arena.progress_tracking.predicate_group import TrackedEventCfg
     from isaaclab_arena.scene.scene import Scene
     from isaaclab_arena.tasks.no_task import NoTask
     from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
@@ -386,13 +491,13 @@ def _test_finished_episode_groups(_app, output_dir):
         def get_termination_cfg(self):
             return TaskTerminationCfg(timeout_s=None, success=[CompletionCriteria("finished", [finished])])
 
-        def get_tracking_groups(self):
+        def get_tracked_events(self):
             held = TrueForConsecutiveStepsCfg(always, required_steps=2)
             return [
-                PredicateGroup("instant", [always]),
-                PredicateGroup("held", [held]),
-                PredicateGroup("ordered", [held, held], predicates_are_sequential=True),
-                PredicateGroup(
+                TrackedEventCfg("instant", [always]),
+                TrackedEventCfg("held", [held]),
+                TrackedEventCfg("ordered", [held, held], predicates_are_sequential=True),
+                TrackedEventCfg(
                     "cleared",
                     [TrueForConsecutiveStepsCfg(initially_true, required_steps=2)],
                     desired_predicate_state=[False],
@@ -416,10 +521,10 @@ def _test_finished_episode_groups(_app, output_dir):
             env.step(actions)
             if step == 2:
                 assert base.active_episode_mask.tolist() == [False, True]
-                finished_events = base.progress_tracker.get_group_events()[0]
+                finished_events = base.progress_tracker.get_tracked_event_occurrences()[0]
             if step >= 2:
-                assert base.progress_tracker.get_group_events()[0] == finished_events
-                assert base.extras["progress_tracking"]["group_events"][0] == finished_events
+                assert base.progress_tracker.get_tracked_event_occurrences()[0] == finished_events
+                assert base.extras["progress_tracking"]["tracked_events"][0] == finished_events
         assert not base.active_episode_mask.any()
         assert _events(base.progress_tracker, 0) == [("instant", 1), ("held", 2)]
         assert _events(base.progress_tracker, 1) == [
@@ -431,8 +536,8 @@ def _test_finished_episode_groups(_app, output_dir):
         records = [json.loads(line) for line in results_path.read_text().splitlines()]
         assert len(records) == 2
         for record in records:
-            events = record["progress"]["group_events"]
-            assert [(event["group_name"], event["step"]) for event in events] == _events(
+            events = record["progress"]["tracked_events"]
+            assert [(event["name"], event["step"]) for event in events] == _events(
                 base.progress_tracker, record["env_id"]
             )
     finally:
@@ -445,20 +550,20 @@ def _test_recording_and_validation(_app):
 
     import pytest
 
-    from isaaclab_arena.progress_tracking.predicate_group import PredicateGroup
+    from isaaclab_arena.progress_tracking.predicate_group import TrackedEventCfg
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker, ProgressTrackingRecorderCfg
     from isaaclab_arena.recording.progress_terms import record_progress_results
 
     env = _env([[True]])
-    group = PredicateGroup("observed", [_condition])
-    env.progress_tracker = ProgressTracker([], 1, "cpu", tracking_groups=[group])
+    group = TrackedEventCfg("observed", [_condition])
+    env.progress_tracker = ProgressTracker([], 1, "cpu", tracked_events=[group])
     tracker = env.progress_tracker
     with pytest.raises(AssertionError, match="step_index"):
         tracker.step(env)
     with pytest.raises(AssertionError, match="unique"):
-        ProgressTracker([], 1, "cpu", tracking_groups=[group, group])
+        ProgressTracker([], 1, "cpu", tracked_events=[group, group])
     with pytest.raises(AssertionError, match="At least one"):
-        PredicateGroup("invalid", [_condition], desired_predicate_state=[None])
+        TrackedEventCfg("invalid", [_condition], desired_predicate_state=[None])
     _step(tracker, env)
     with pytest.raises(AssertionError, match="exactly one"):
         tracker.step(env, env.episode_length_buf)
@@ -468,8 +573,8 @@ def _test_recording_and_validation(_app):
     tracker.reset([0])
     result = json.loads(json.dumps(record_progress_results(env, 0)))
     assert result["progress"] == {
-        "group_names": ["observed"],
-        "group_events": [{"group_name": "observed", "step": 1}],
+        "tracked_event_names": ["observed"],
+        "tracked_events": [{"name": "observed", "step": 1}],
         "control_step_dt": 0.02,
     }
     return True
@@ -480,14 +585,14 @@ def _test_builder_and_composition(_app):
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
-    from isaaclab_arena.progress_tracking.predicate_group import PredicateGroup
+    from isaaclab_arena.progress_tracking.predicate_group import TrackedEventCfg
     from isaaclab_arena.scene.scene import Scene
     from isaaclab_arena.tasks.composite_task_base import CompositeTaskBase
     from isaaclab_arena.tasks.no_task import NoTask
 
     class ObservingTask(NoTask):
-        def get_tracking_groups(self):
-            return [PredicateGroup("observed", [_condition])]
+        def get_tracked_events(self):
+            return [TrackedEventCfg("observed", [_condition])]
 
     task = ObservingTask()
     description = IsaacLabArenaEnvironment(
@@ -500,15 +605,19 @@ def _test_builder_and_composition(_app):
     cfg, _ = builder.compose_manager_cfg()
     assert cfg.terminations.to_dict() == {}
     assert cfg.task_progress.success_criteria == []
-    assert cfg.task_progress.tracking_groups[0].name == "observed"
+    assert cfg.task_progress.tracked_events[0].name == "observed"
     composite = CompositeTaskBase([task, task], episode_length_s=10, subtasks_are_sequential=True)
-    assert [group.name for group in composite.get_tracking_groups()] == ["subtask_0/observed", "subtask_1/observed"]
-    assert task.get_tracking_groups()[0].name == "observed"
+    assert [group.name for group in composite.get_tracked_events()] == ["subtask_0/observed", "subtask_1/observed"]
+    assert task.get_tracked_events()[0].name == "observed"
     return True
 
 
 def test_recurring_groups_and_success():
     assert run_function_with_persistent_simulation_app(_test_recurring_groups_and_success)
+
+
+def test_group_activity_does_not_change_success():
+    assert run_function_with_persistent_simulation_app(_test_group_activity_does_not_change_success)
 
 
 def test_order_and_fresh_history():
@@ -529,6 +638,10 @@ def test_callable_groups():
 
 def test_single_tracker_and_shared_cache():
     assert run_function_with_persistent_simulation_app(_test_single_tracker_and_shared_cache)
+
+
+def test_desired_states_recheck_completed_temporal_members():
+    assert run_function_with_persistent_simulation_app(_test_desired_states_recheck_completed_temporal_members)
 
 
 def test_rearm_requires_fresh_temporal_sequence():

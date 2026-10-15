@@ -453,9 +453,9 @@ def _render_consecutive_step_summary(episode) -> str:
     )
 
 
-def _render_group_occurrences(episode) -> str:
+def _render_tracked_event_occurrences(episode) -> str:
     """Render recurring observations as timelines and a table of occurrence steps."""
-    groups = episode.group_occurrences
+    groups = episode.tracked_event_occurrences
     if not groups:
         return ""
     last_step = 1
@@ -493,7 +493,7 @@ def _render_group_occurrences(episode) -> str:
         f'{"".join(timelines)}<p class="note">Timeline: step 0 to {last_step}. Each marker records a fresh'
         " group completion. These observations do not affect task success. Select an occurrence to seek"
         " recorded video when timing is available.</p>"
-        "<table><thead><tr><th>Group</th><th>Count</th><th>Occurrences</th></tr></thead>"
+        "<table><thead><tr><th>Event</th><th>Count</th><th>Occurrences</th></tr></thead>"
         f'<tbody>{"".join(rows)}</tbody></table></details>'
     )
 
@@ -514,7 +514,7 @@ def _render_episode_card(episode, cameras: list[str], video_prefix: str, policy:
         slots.append(f'<div class="videoslot"><div class="camera">{html.escape(camera)}</div>{body}</div>')
 
     signals_html = _render_consecutive_step_summary(episode) + _render_signals(criteria_sets or [])
-    signals_html += _render_group_occurrences(episode)
+    signals_html += _render_tracked_event_occurrences(episode)
     if episode.outcome_disagrees_with_progress:
         reached = (
             "all completion criteria met" if episode.all_criteria_complete else "completion criteria are incomplete"

@@ -69,10 +69,10 @@ def test_recurring_group_report_preserves_occurrences_and_escapes_names(tmp_path
     record.update(
         episode_length=100,
         progress={
-            "group_names": ["drop<script>", "never_seen"],
-            "group_events": [
-                {"group_name": "drop<script>", "step": 20},
-                {"group_name": "drop<script>", "step": 80},
+            "tracked_event_names": ["drop<script>", "never_seen"],
+            "tracked_events": [
+                {"name": "drop<script>", "step": 20},
+                {"name": "drop<script>", "step": 80},
             ],
             "control_step_dt": 0.02,
         },
