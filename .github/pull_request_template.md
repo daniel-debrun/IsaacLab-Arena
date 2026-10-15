@@ -1,10 +1,13 @@
 <!--
 Write for a teammate who knows the project but has not followed the discussion.
+Do not use labels from internal plans or discussions.
 
 Use simple English, short sentences, and short paragraphs.
-Name the relevant classes and explain their responsibilities where useful.
+Name classes, functions, and concepts by their actual names instead of generic descriptions,
+and explain their responsibilities where useful.
 Use bullets for lists, not as a requirement for every explanation.
 Keep the detail proportional to the change; a small fix needs only a few sentences.
+Leave out reassurances that a reviewer would not ask for.
 Remove sections that do not apply.
 -->
 
@@ -24,7 +27,8 @@ Replace this comment with the summary.
 
 <!--
 Explain the problem with the current behavior and why it matters.
-Give a concrete example when it helps.
+Give a concrete example when it helps. Base it on behavior that exists in the code;
+if only a constructed case shows the problem, say so.
 
 For a follow-up PR, briefly explain what the earlier change enabled
 and what this PR adds. Include links, but make this explanation stand alone.
