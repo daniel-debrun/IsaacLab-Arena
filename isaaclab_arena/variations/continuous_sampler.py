@@ -32,7 +32,9 @@ class ContinuousSampler(SamplerBase):
     ``(num_samples, *shape_per_sample)``.
     """
 
-    def sample(self, num_samples: int, env_ids: torch.Tensor | None = None) -> torch.Tensor:
+    def sample(
+        self, num_samples: int, env_ids: torch.Tensor | None = None, *, generator: torch.Generator | None = None
+    ) -> torch.Tensor:
         """Draw ``num_samples`` values from this distribution.
 
         Args:
@@ -40,6 +42,8 @@ class ContinuousSampler(SamplerBase):
                 number of environments we're drawing a sample for.
             env_ids: The env ids the drawn rows correspond to, forwarded to sample listeners so
                 they can attribute values per env. ``None`` when the draw applies to all envs.
+            generator: Generator to draw from; ``None`` draws from torch's global random state.
+                Unused when a replay sampler supplies the rows.
 
         Returns:
             A tensor of shape ``(num_samples, *shape_per_sample)``.
@@ -47,15 +51,18 @@ class ContinuousSampler(SamplerBase):
         assert num_samples >= 0, f"num_samples must be non-negative; got {num_samples}."
         replay_samples = self._get_replay_samples(num_samples, env_ids)
         if replay_samples is None:
-            result = self._sample(num_samples)
+            result = self._sample(num_samples, generator)
         else:
             result = torch.as_tensor(replay_samples, dtype=torch.float32).reshape(num_samples, *self.shape_per_sample)
         self._notify(result, env_ids)
         return result
 
     @abstractmethod
-    def _sample(self, num_samples: int) -> torch.Tensor:
-        """Draw ``num_samples`` values as a tensor of shape ``(num_samples, *shape_per_sample)``."""
+    def _sample(self, num_samples: int, generator: torch.Generator | None) -> torch.Tensor:
+        """Draw ``num_samples`` values from ``generator`` as a tensor of shape ``(num_samples, *shape_per_sample)``.
+
+        ``None`` draws from torch's global random state.
+        """
         ...
 
     @property

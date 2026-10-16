@@ -223,12 +223,13 @@ class ArenaEnvBuilder:
 
         These mutate asset configs in place (e.g. a dome light's spawner
         texture), so this must run before ``scene_cfg`` is materialised.
+        Each variation draws from a generator seeded by ``cfg.seed`` and its key "<asset_name>.<variation_name>".
         """
-        for asset_variations in self.get_all_variations().values():
+        for asset_name, asset_variations in self.get_all_variations().items():
             for variation in asset_variations:
                 if not variation.enabled:
                     continue
-                variation.configure_at_build_time()
+                variation.configure_at_build_time(seed=self.cfg.seed, variation_key=f"{asset_name}.{variation.name}")
 
     def _modify_recorder_cfg_dataset_filename(self, recorder_cfg: RecorderManagerBaseCfg) -> RecorderManagerBaseCfg:
         """Modify the recorder dataset filename to include the timestamp and rank."""

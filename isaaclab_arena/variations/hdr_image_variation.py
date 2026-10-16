@@ -75,6 +75,6 @@ class HDRImageVariation(BuildTimeVariationBase):
 
         assert self.sampler is not None, "HDRImageVariation: sampler not set."
         # Pass HDR names as the choice sampler's choices.
-        hdr_name = self.sampler.sample(num_samples=1, choices=hdr_names)[0]
+        hdr_name = self.sampler.sample(num_samples=1, choices=hdr_names, generator=self.build_time_generator)[0]
         hdr_cls: type[HDRImage] = registry.get_hdr_by_name(hdr_name)
         self._light.add_hdr(hdr_cls())

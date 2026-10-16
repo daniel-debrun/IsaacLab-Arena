@@ -51,5 +51,5 @@ class LightColorVariation(BuildTimeVariationBase):
 
     def _realize_at_build_time(self) -> None:
         assert self.sampler is not None, "LightColorVariation: sampler not set."
-        color = tuple(self.sampler.sample(num_samples=1)[0].tolist())
+        color = tuple(self.sampler.sample(num_samples=1, generator=self.build_time_generator)[0].tolist())
         self._light.set_color(color)

@@ -9,6 +9,7 @@ These tests stay in plain Python (no ``SimulationApp``) because they only
 exercise the cfg plumbing and sampler wiring, not any Isaac Sim runtime.
 """
 
+import hashlib
 import torch
 from dataclasses import field
 
@@ -167,6 +168,23 @@ def test_apply_cfg_with_only_sampler_change_rebuilds_sampler_in_place():
     assert tuple(variation.sampler.shape_per_sample) == (2,)
     samples = variation.sampler.sample(num_samples=16)
     assert (samples >= -2.0).all() and (samples <= -1.0).all()
+
+
+def test_build_time_generator_is_seeded_from_digest_of_seed_and_variation_key():
+    """The generator seed is a SHA-256 digest, so a seed draws the same values in every process.
+
+    A seed derived with Python's hash() would pass the single-process build tests but change between processes.
+    """
+    variation = _CustomVariation()
+    variation_key = f"asset.{_CUSTOM_VARIATION_NAME}"
+
+    variation.configure_at_build_time(seed=7, variation_key=variation_key)
+
+    digest = hashlib.sha256(f"7:{variation_key}".encode()).digest()
+    expected_generator = torch.Generator().manual_seed(int.from_bytes(digest[:8], "big"))
+    torch.testing.assert_close(
+        torch.rand(4, generator=variation.build_time_generator), torch.rand(4, generator=expected_generator)
+    )
 
 
 def test_build_event_cfg_uses_configured_asset_name():
