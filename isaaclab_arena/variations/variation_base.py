@@ -154,6 +154,19 @@ class VariationBase(ABC):
             self._sampler.add_listener(listener)
 
 
+def get_enabled_variations_by_key(variations: dict[str, list[VariationBase]]) -> dict[str, VariationBase]:
+    """Return the enabled variations in ``variations`` keyed by "<asset_name>.<variation_name>"."""
+    enabled_variations_by_key: dict[str, VariationBase] = {}
+    for asset_name, asset_variations in variations.items():
+        for variation in asset_variations:
+            if not variation.enabled:
+                continue
+            variation_key = f"{asset_name}.{variation.name}"
+            assert variation_key not in enabled_variations_by_key, f"Duplicate enabled variation key: {variation_key!r}"
+            enabled_variations_by_key[variation_key] = variation
+    return enabled_variations_by_key
+
+
 class RunTimeVariationBase(VariationBase):
     """Variation realised at run time via an ``EventTermCfg``.
 

@@ -19,7 +19,12 @@ from isaaclab.utils.configclass import configclass
 
 from isaaclab_arena.assets.asset import Asset
 from isaaclab_arena.variations.uniform_sampler import UniformSampler, UniformSamplerCfg
-from isaaclab_arena.variations.variation_base import BuildTimeVariationBase, RunTimeVariationBase, VariationBaseCfg
+from isaaclab_arena.variations.variation_base import (
+    BuildTimeVariationBase,
+    RunTimeVariationBase,
+    VariationBaseCfg,
+    get_enabled_variations_by_key,
+)
 
 
 def _noop_event(env, env_ids, asset_cfg):  # noqa: ARG001
@@ -234,3 +239,19 @@ def test_two_variations_of_same_kind_coexist_when_given_distinct_names():
     assert asset.get_variation(variation_a.name) is variation_a
     assert asset.get_variation(variation_b.name) is variation_b
     assert set(asset.variations) == {variation_a.name, variation_b.name}
+
+
+def test_get_enabled_variations_by_key_skips_disabled_variations():
+    enabled_variation = _CustomVariation(_CustomVariationCfg(enabled=True), name="enabled")
+    disabled_variation = _CustomVariation(name="disabled")
+
+    variations_by_key = get_enabled_variations_by_key({"cube": [enabled_variation, disabled_variation]})
+
+    assert variations_by_key == {"cube.enabled": enabled_variation}
+
+
+def test_get_enabled_variations_by_key_asserts_on_duplicate_key():
+    variation = _CustomVariation(_CustomVariationCfg(enabled=True))
+
+    with pytest.raises(AssertionError, match="Duplicate enabled variation key"):
+        get_enabled_variations_by_key({"cube": [variation, variation]})
