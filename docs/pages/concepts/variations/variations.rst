@@ -33,11 +33,9 @@ an environment resets during policy rollouts. Arena calls these *build-time* and
      - Camera extrinsics, camera intrinsics
 
 This distinction matters when planning an evaluation. To collect several values of a
-build-time variation, the environment must be rebuilt several times with different seeds.
-The value a build-time variation draws depends only on ``--seed``, the asset name and the
-variation name, so a rebuild with the same seed repeats it. The Experiment Runner adds the
-rebuild index to the seed of each rebuild. A run-time variation can produce a new value on
-each reset without rebuilding the scene.
+build-time variation, the environment must be rebuilt with different seeds; the Experiment
+Runner gives each rebuild its own seed. A run-time variation can produce a new value on each
+reset without rebuilding the scene.
 
 .. _discovering-available-variations:
 
