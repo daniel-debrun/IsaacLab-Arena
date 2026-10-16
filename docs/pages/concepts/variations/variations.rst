@@ -62,20 +62,29 @@ include the Run's own ``variations`` entries, so the two variations that the exa
    Variations (Hydra-configurable)
    ================================
 
+   ...
+
    Asset: droid_abs_joint_pos
+     ...
+
      camera_extrinsics_wrist_camera (CameraExtrinsicsVariation, run-time)
        Enable: droid_abs_joint_pos.camera_extrinsics_wrist_camera.enabled=true  (default: True)
        Fields:
          droid_abs_joint_pos.camera_extrinsics_wrist_camera.sampler_cfg.high = [0.005,0.005,0.005]
          droid_abs_joint_pos.camera_extrinsics_wrist_camera.sampler_cfg.low = [-0.005,-0.005,-0.005]
 
+     ...
+
    Asset: light
      hdr_image (HDRImageVariation, build-time)
        Enable: light.hdr_image.enabled=true  (default: True)
        Fields:
          light.hdr_image.hdr_names = []
+         light.hdr_image.sampler_cfg = {}
 
-   Asset: bowl_ycb_robolab
+     ...
+
+   Asset: maple_table_robolab
      (no variations)
 
    ...
