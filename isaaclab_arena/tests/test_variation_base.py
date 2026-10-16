@@ -20,7 +20,6 @@ from isaaclab.utils.configclass import configclass
 from isaaclab_arena.assets.asset import Asset
 from isaaclab_arena.variations.uniform_sampler import UniformSampler, UniformSamplerCfg
 from isaaclab_arena.variations.variation_base import (
-    BuildTimeVariationBase,
     RunTimeVariationBase,
     VariationBaseCfg,
     get_enabled_variations_by_key,
@@ -66,20 +65,6 @@ class _CustomVariation(RunTimeVariationBase):
                 params={"asset_cfg": SceneEntityCfg(self.cfg.asset_name)},
             ),
         )
-
-
-_GENERATOR_RECORDING_VARIATION_NAME = "test_generator_recording_variation"
-
-
-class _GeneratorRecordingVariation(BuildTimeVariationBase):
-    """Build-time variation that keeps the generator passed to ``_realize_at_build_time``."""
-
-    def __init__(self):
-        super().__init__(cfg=_CustomVariationCfg(), name=_GENERATOR_RECORDING_VARIATION_NAME)
-        self.received_generator: torch.Generator | None = None
-
-    def _realize_at_build_time(self, generator: torch.Generator) -> None:
-        self.received_generator = generator
 
 
 def test_default_cfg_populates_variation_state():
@@ -189,21 +174,35 @@ def test_apply_cfg_with_only_sampler_change_rebuilds_sampler_in_place():
     assert (samples >= -2.0).all() and (samples <= -1.0).all()
 
 
-def test_build_time_generator_is_seeded_from_digest_of_seed_and_variation_key():
+def test_sampler_generator_is_seeded_from_digest_of_seed_and_variation_key():
     """The generator seed is a SHA-256 digest, so a seed draws the same values in every process.
 
     A seed derived with Python's hash() would pass the single-process build tests but change between processes.
     """
-    variation = _GeneratorRecordingVariation()
-    variation_key = f"asset.{_GENERATOR_RECORDING_VARIATION_NAME}"
+    variation = _CustomVariation()
+    variation_key = f"asset.{_CUSTOM_VARIATION_NAME}"
 
     variation.configure_at_build_time(seed=7, variation_key=variation_key)
 
     digest = hashlib.sha256(f"7:{variation_key}".encode()).digest()
     expected_generator = torch.Generator().manual_seed(int.from_bytes(digest[:8], "big"))
-    assert variation.received_generator is not None
+    # The default sampler is uniform over [0, 1] per dimension, so it returns the generator's draws unchanged.
     torch.testing.assert_close(
-        torch.rand(4, generator=variation.received_generator), torch.rand(4, generator=expected_generator)
+        variation.sampler.sample(num_samples=4), torch.rand((4, 2), generator=expected_generator)
+    )
+
+
+def test_apply_cfg_keeps_generator():
+    variation_key = f"asset.{_CUSTOM_VARIATION_NAME}"
+    reference_variation = _CustomVariation()
+    reference_variation.configure_at_build_time(seed=7, variation_key=variation_key)
+    variation = _CustomVariation()
+    variation.configure_at_build_time(seed=7, variation_key=variation_key)
+
+    variation.apply_cfg(_CustomVariationCfg())
+
+    torch.testing.assert_close(
+        variation.sampler.sample(num_samples=4), reference_variation.sampler.sample(num_samples=4)
     )
 
 

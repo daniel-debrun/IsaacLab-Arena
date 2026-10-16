@@ -14,8 +14,6 @@ from isaaclab_arena.variations.uniform_sampler import UniformSamplerCfg
 from isaaclab_arena.variations.variation_base import BuildTimeVariationBase, VariationBaseCfg
 
 if TYPE_CHECKING:
-    import torch
-
     from isaaclab_arena.assets.object_library import LightBase
 
 
@@ -47,7 +45,7 @@ class LightIntensityVariation(BuildTimeVariationBase):
         super().__init__(cfg=cfg if cfg is not None else LightIntensityVariationCfg(), name=name)
         self._light = light
 
-    def _realize_at_build_time(self, generator: torch.Generator) -> None:
+    def _realize_at_build_time(self) -> None:
         assert self.sampler is not None, "LightIntensityVariation: sampler not set."
-        intensity = float(self.sampler.sample(num_samples=1, generator=generator)[0, 0])
+        intensity = float(self.sampler.sample(num_samples=1)[0, 0])
         self._light.set_intensity(intensity)

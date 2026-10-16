@@ -346,7 +346,7 @@ class _BuildTimeTestVariation(BuildTimeVariationBase):
             name,
         )
 
-    def _realize_at_build_time(self, generator: torch.Generator) -> None:
+    def _realize_at_build_time(self) -> None:
         pass
 
 

@@ -61,6 +61,7 @@ class VariationBase(ABC):
         self._sampler: SamplerBase
         self._sample_listeners: list[Callable[[Any, Any], None]] = []
         self._replay_sampler: Callable[[int, torch.Tensor | None], list[Any] | None] | None = None
+        self._generator: torch.Generator | None = None
         self.apply_cfg(cfg)
 
     @property
@@ -105,21 +106,17 @@ class VariationBase(ABC):
         precondition (e.g. forcing its camera untiled so per-env edits take effect).
         """
 
-    def _realize_at_build_time(self, generator: torch.Generator) -> None:
+    def _realize_at_build_time(self) -> None:
         """Sample and mutate the bound asset config(s) in place during construction. Default: no-op.
 
         A build-time variation realises its whole effect here; a run-time variation leaves it a no-op.
-
-        Args:
-            generator: CPU generator for this build's draws, seeded from the build seed and the variation key.
-                Drawing from it leaves torch's global random state unchanged.
         """
 
     def configure_at_build_time(self, seed: int, variation_key: str) -> None:
-        """Run this variation's build-time preparation and realization for one env build.
+        """Seed this variation's sampler, then run its build-time preparation and realization for one env build.
 
-        Draws from a new generator seeded from ``seed`` and ``variation_key``, so builds with the same seed draw the
-        same values, whatever other variations draw.
+        The sampler draws from a new generator seeded from ``seed`` and ``variation_key``, at build time and on every
+        reset after it, so the same seed gives the same sequence of values, whatever other variations draw.
 
         Args:
             seed: Seed of the build, ArenaEnvBuilderCfg.seed.
@@ -129,16 +126,17 @@ class VariationBase(ABC):
         # the first 8 bytes of the digest.
         digest = hashlib.sha256(f"{seed}:{variation_key}".encode()).digest()
         variation_seed = int.from_bytes(digest[:8], "big")
-        generator = torch.Generator(device="cpu").manual_seed(variation_seed)
+        self._generator = torch.Generator(device="cpu").manual_seed(variation_seed)
+        self._sampler.set_generator(self._generator)
         self._prepare_at_build_time()
-        self._realize_at_build_time(generator)
+        self._realize_at_build_time()
 
     def apply_cfg(self, cfg: VariationBaseCfg) -> None:
         """Apply new ``cfg``.
 
-        Replaces ``cfg`` and rebuilds ``sampler`` from ``cfg.sampler_cfg``, re-binding any
-        variation-owned sample listeners onto the new sampler. Subclasses with extra derived
-        state should override and call ``super().apply_cfg(cfg)`` first.
+        Replaces ``cfg`` and rebuilds ``sampler`` from ``cfg.sampler_cfg``, re-binding the
+        variation's generator, replay sampler and sample listeners onto the new sampler. Subclasses
+        with extra derived state should override and call ``super().apply_cfg(cfg)`` first.
 
         Args:
             cfg: A cfg of the ``VariationBaseCfg`` subclass this variation accepts.
@@ -149,6 +147,7 @@ class VariationBase(ABC):
         ), f"cfg.sampler_cfg must be a SamplerBaseCfg; got {type(cfg.sampler_cfg).__name__}."
         self._sampler = cfg.sampler_cfg.build()
         self._sampler.set_replay_sampler(self._replay_sampler)
+        self._sampler.set_generator(self._generator)
         # Re-bind variation-owned listeners so a cfg/sampler swap doesn't drop subscriptions.
         for listener in self._sample_listeners:
             self._sampler.add_listener(listener)
@@ -189,11 +188,6 @@ class BuildTimeVariationBase(VariationBase):
     """
 
     @abstractmethod
-    def _realize_at_build_time(self, generator: torch.Generator) -> None:
-        """Sample and apply this variation to the target configuration once per env build.
-
-        Args:
-            generator: Generator for this build's draws. Draw with ``generator=generator``, so the value follows the
-                build seed.
-        """
+    def _realize_at_build_time(self) -> None:
+        """Sample and apply this variation to the target configuration once per env build."""
         ...

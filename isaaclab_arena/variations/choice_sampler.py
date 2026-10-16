@@ -27,14 +27,7 @@ class ChoiceSamplerCfg(SamplerBaseCfg):
 class ChoiceSampler(SamplerBase, Generic[T]):
     """Uniform sampler returning items drawn from a per-call ``choices`` sequence."""
 
-    def sample(
-        self,
-        num_samples: int,
-        choices: Sequence[T],
-        env_ids: torch.Tensor | None = None,
-        *,
-        generator: torch.Generator | None = None,
-    ) -> list[T]:
+    def sample(self, num_samples: int, choices: Sequence[T], env_ids: torch.Tensor | None = None) -> list[T]:
         """Draw ``num_samples`` items from ``choices``.
 
         Args:
@@ -43,8 +36,6 @@ class ChoiceSampler(SamplerBase, Generic[T]):
             choices: Pool of items to draw from. Must be non-empty.
             env_ids: The env ids the drawn items correspond to, forwarded to sample listeners so
                 they can attribute values per env. ``None`` when the draw applies to all envs.
-            generator: Generator to draw from; ``None`` draws from torch's global random state.
-                Unused when a replay sampler supplies the rows.
 
         Returns:
             A ``list`` of length ``num_samples`` of items drawn from ``choices``.
@@ -56,7 +47,7 @@ class ChoiceSampler(SamplerBase, Generic[T]):
             assert all(value in choices for value in replay_samples), "Choice replay samples must belong to 'choices'."
             result = replay_samples
         else:
-            indices = torch.randint(low=0, high=len(choices), size=(num_samples,), generator=generator)
+            indices = torch.randint(low=0, high=len(choices), size=(num_samples,), generator=self._generator)
             result = [choices[int(index)] for index in indices]
         self._notify(result, env_ids)
         return result
