@@ -4,7 +4,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Evaluates the OpenPI policy on the generated environment where DROID places a fruit
-# into the bowl. The fruit is an object set, so each parallel environment spawns a different fruit.
+# into the bowl. The fruit is an object set, so each parallel environment picks its fruit at
+# random from the set.
 # The environment spec is under shared, so the command line can select another spec,
 # such as one you generated, with shared.environment.type=<path>.yaml.
 shared:
