@@ -34,10 +34,10 @@ an environment resets during policy rollouts. Arena calls these *build-time* and
 
 This distinction matters when planning an evaluation. To collect several values of a
 build-time variation, the environment must be rebuilt several times with different seeds.
-The value a build-time variation draws depends only on ``--seed`` and the variation, so a
-rebuild with the same seed repeats it. The Experiment Runner adds the rebuild index to the
-seed of each rebuild. A run-time variation can produce a new value on each reset without
-rebuilding the scene.
+The value a build-time variation draws depends only on ``--seed``, the asset name and the
+variation name, so a rebuild with the same seed repeats it. The Experiment Runner adds the
+rebuild index to the seed of each rebuild. A run-time variation can produce a new value on
+each reset without rebuilding the scene.
 
 .. _discovering-available-variations:
 
