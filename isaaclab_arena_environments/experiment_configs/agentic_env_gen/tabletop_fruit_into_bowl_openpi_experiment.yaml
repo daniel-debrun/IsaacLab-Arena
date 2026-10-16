@@ -16,7 +16,8 @@ shared:
 runs:
   tabletop_fruit_into_bowl_openpi:
     environment_builder:
-      # Keep this above one so the policy is evaluated against a different fruit per environment.
+      # Keep this above one so the Run can cover more than one fruit. Each environment
+      # picks its fruit at random from the set.
       num_envs: 12
     policy:
       type: isaaclab_arena_openpi.policy.pi0_remote_policy.Pi0RemotePolicy

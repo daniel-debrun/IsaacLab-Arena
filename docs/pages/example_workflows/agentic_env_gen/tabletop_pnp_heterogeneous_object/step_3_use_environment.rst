@@ -22,7 +22,8 @@ cameras, runs twelve environments, and stops after twelve episodes:
 .. literalinclude:: ../../../../../isaaclab_arena_environments/experiment_configs/agentic_env_gen/tabletop_fruit_into_bowl_openpi_experiment.yaml
    :language: yaml
 
-Keep ``environment_builder.num_envs`` above one so the policy is evaluated against a different fruit per environment.
+Keep ``environment_builder.num_envs`` above one so the policy can see more than one fruit.
+Each environment picks its fruit at random from the set.
 
 In the other terminal, run the following command to launch the Experiment Runner. To evaluate a spec you
 generated yourself, add ``shared.environment.type=isaaclab_arena_environments/agent_generated/<env_name>.yaml``
