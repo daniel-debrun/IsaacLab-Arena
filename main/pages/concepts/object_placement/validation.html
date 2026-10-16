@@ -606,13 +606,13 @@ passed every <em>required</em> inexpensive check.</p></li>
 </ol>
 <p>A <code class="docutils literal notranslate"><span class="pre">PlacementCandidate</span></code> is one working layout of all placement objects in one
 environment. It stores the objects’ positions, orientations and bounds, plus the
-environment ID and sample ID. Solving updates that same candidate’s positions and
-loss; validation replaces its check results. These stages update the working batch
+environment ID and sample ID. Solving updates the candidate’s positions and loss;
+validation replaces its check results. These operations update the working batch
 in place and return <code class="docutils literal notranslate"><span class="pre">None</span></code>.</p>
 <p><code class="docutils literal notranslate"><span class="pre">PlacementCandidateBatch</span></code> groups these layouts. For example, four environments
 with ten attempts each produce a batch of forty candidates. Filtering and ranking
-select and reorder references to complete candidates, keeping their geometry and
-results together.</p>
+keep each candidate’s geometry and results together. Sample IDs are local to a
+solve, not persistent layout identifiers across solves or pool refills.</p>
 <p><code class="docutils literal notranslate"><span class="pre">PlacementCandidateGenerator</span></code> samples orientations, fits the bounds to those
 rotations and places clutter above its support and nearby objects before solving.
 After solving, <code class="docutils literal notranslate"><span class="pre">ObjectPlacer</span></code> applies <code class="docutils literal notranslate"><span class="pre">FaceTo</span></code> headings and refits the bounds.
@@ -810,11 +810,13 @@ remain enabled.</p>
 <span id="id1"></span><h3>Clutter Recording Checks<a class="headerlink" href="#clutter-recording-checks" title="Link to this heading">#</a></h3>
 <p>Scenes using <code class="docutils literal notranslate"><span class="pre">ClutterOn</span></code> automatically include <code class="docutils literal notranslate"><span class="pre">support_containment</span></code>. The
 clutter objects must be dynamic rigid bodies with gravity enabled, and scene
-gravity must point downward along world Z. Supports must carry <code class="docutils literal notranslate"><span class="pre">IsAnchor</span></code>
-and have static or kinematic collision geometry, with no tilt and a yaw that is
-a multiple of 90 degrees. <code class="docutils literal notranslate"><span class="pre">IsAnchor</span></code> fixes the placement solve; physics mobility
-is a separate requirement. Resolve every non-clutter placement relation to a
-fixed anchor before collection, including destination fixtures.</p>
+gravity must point downward along world Z. Supports must have static or
+kinematic collision geometry, with no tilt and a yaw that is a multiple of
+90 degrees. <code class="docutils literal notranslate"><span class="pre">IsAnchor</span></code> fixes the placement solve; physics mobility is a separate
+requirement. Non-clutter objects with placement relations, including destinations,
+must be fixed anchors or solved kinematic rigid bodies. A support without
+<code class="docutils literal notranslate"><span class="pre">IsAnchor</span></code> is positioned jointly with its clutter. Containment checks compare
+each support’s poses before and after physics with that candidate’s solved pose.</p>
 <p>Release candidates must pass <code class="docutils literal notranslate"><span class="pre">no_overlap</span></code> and <code class="docutils literal notranslate"><span class="pre">clutter_on_relation</span></code>.
 <code class="docutils literal notranslate"><span class="pre">ClutterOn</span></code> objects cannot require reachability because settling changes the
 poses checked by the solver. Containment checks the full support footprint,
@@ -856,14 +858,15 @@ limits.</p>
 environment. Check the registry name, asset path and asset access from
 the runtime that runs the recorder.</p></td>
 </tr>
-<tr class="row-odd"><td><p>Support is not an anchor, or is dynamic</p></td>
-<td><p>Set a fixed pose and <code class="docutils literal notranslate"><span class="pre">IsAnchor</span></code> for placement; also use static or
-kinematic collision geometry for settling. Both requirements must hold.</p></td>
+<tr class="row-odd"><td><p>Support can move during settling</p></td>
+<td><p>Use static or kinematic collision geometry. <code class="docutils literal notranslate"><span class="pre">IsAnchor</span></code> fixes a support
+during placement only; a support placed through relations must be a
+kinematic rigid body for recording.</p></td>
 </tr>
-<tr class="row-even"><td><p>Unresolved non-clutter placement</p></td>
-<td><p>Resolve every non-clutter asset with placement relations to a fixed pose
-and anchor, including fixtures unrelated to the clutter support. Resolve
-object sets to concrete assets before collection.</p></td>
+<tr class="row-even"><td><p>Unsupported non-clutter placement</p></td>
+<td><p>Use fixed anchors or solved kinematic rigid bodies for non-clutter objects
+with placement relations, including those unrelated to the clutter support.
+Resolve object sets to concrete assets before collection.</p></td>
 </tr>
 <tr class="row-odd"><td><p>Unsupported support orientation or tilted mesh release</p></td>
 <td><p>Keep supports upright at multiples of 90 degrees in yaw. For clutter

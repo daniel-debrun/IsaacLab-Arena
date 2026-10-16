@@ -649,18 +649,25 @@ stable support: the object may tip or fall. The default is <code class="docutils
 <p><code class="docutils literal notranslate"><span class="pre">On</span></code> uses the top and horizontal footprint of the parent’s axis-aligned
 bounding box. For L-shaped, hollow, or concave supports, anchor an
 <code class="docutils literal notranslate"><span class="pre">ObjectReference</span></code> that identifies the valid support surface.</p>
-<p>During initial sampling, the default initializer follows the object’s <code class="docutils literal notranslate"><span class="pre">On</span></code>
-chain and uses the nearest <code class="docutils literal notranslate"><span class="pre">IsAnchor</span></code> ancestor’s bounds as a proxy. If the
-chain has no anchor or loops, it falls back to the first anchor collected by
-<code class="docutils literal notranslate"><span class="pre">ObjectPlacer</span></code>. This affects only the starting pose; final solving and
-validation use each relation’s actual parent.</p>
+<p>The default <code class="docutils literal notranslate"><span class="pre">ON_TREE</span></code> initializer samples parents before their children,
+using each parent’s sampled pose and bounds. This sets the starting poses;
+the solver then optimizes the complete layout jointly.</p>
 </dd>
 </dl>
 <dl id="clutter-on-relation">
-<dt><code class="docutils literal notranslate"><span class="pre">ClutterOn(parent)</span></code></dt><dd><p>Defines a <strong>release pose</strong> above an <code class="docutils literal notranslate"><span class="pre">IsAnchor</span></code> support, before physics.
-<code class="docutils literal notranslate"><span class="pre">ObjectPlacer</span></code> samples a central release region and raises objects above
-overlapping footprints. The support must be upright, with a fixed yaw that
-is a multiple of 90 degrees.</p>
+<dt><code class="docutils literal notranslate"><span class="pre">ClutterOn(parent)</span></code></dt><dd><p>Defines a <strong>release pose</strong> above a support, before physics. The support can
+be fixed with <code class="docutils literal notranslate"><span class="pre">IsAnchor</span></code> or placed through its own relations, such as
+<code class="docutils literal notranslate"><span class="pre">tray</span> <span class="pre">On(table)</span></code> with <code class="docutils literal notranslate"><span class="pre">tools</span> <span class="pre">ClutterOn(tray)</span></code>.</p>
+<p>The solver optimizes the support and clutter positions together using the
+relation and collision losses. An anchored support remains fixed.
+<code class="docutils literal notranslate"><span class="pre">ObjectPlacer</span></code> initializes clutter inside a central release region and
+above overlapping footprints. The release region follows the support as
+the solver moves it.</p>
+<p>Clutter footprints may overlap in XY during initialization; overlapping
+objects start at separated heights. The height-processing order is shuffled
+per candidate, so asset order does not always put the same object underneath
+the others. Setting <code class="docutils literal notranslate"><span class="pre">placement_seed</span></code> makes this order reproducible with the
+same placement configuration.</p>
 <div class="pst-scrollable-table-container"><table class="table">
 <colgroup>
 <col style="width: 22.0%" />
@@ -702,26 +709,36 @@ controls clutter independently of <code class="docutils literal notranslate"><sp
 </tbody>
 </table>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">ClutterOn</span></code> must be the object’s only spatial relation and cannot use
+<p>Restrictions:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">ClutterOn</span></code> must be the object’s only spatial relation and cannot use
 <code class="docutils literal notranslate"><span class="pre">RandomAroundSolution</span></code>. <code class="docutils literal notranslate"><span class="pre">RotateAroundSolution</span></code> sets its base rotation;
-random yaw preserves that rotation’s tilt. Both <code class="docutils literal notranslate"><span class="pre">bbox</span></code> and <code class="docutils literal notranslate"><span class="pre">mesh</span></code> collision
-modes support yaw-only clutter. Roll or pitch requires <code class="docutils literal notranslate"><span class="pre">collision_mode=&quot;bbox&quot;</span></code>
-on the object, whose bounds enclose the full rotation.</p>
+random yaw preserves that rotation’s tilt.</p></li>
+<li><p>Both <code class="docutils literal notranslate"><span class="pre">bbox</span></code> and <code class="docutils literal notranslate"><span class="pre">mesh</span></code> collision modes support yaw-only clutter.
+Roll or pitch requires <code class="docutils literal notranslate"><span class="pre">collision_mode=&quot;bbox&quot;</span></code> on the object.</p></li>
+<li><p>The support must participate in placement and cannot itself use <code class="docutils literal notranslate"><span class="pre">ClutterOn</span></code>.
+It must remain upright with a fixed yaw that is a multiple of 90 degrees.
+For a non-anchor support, disable <code class="docutils literal notranslate"><span class="pre">random_yaw_init</span></code> and do not use
+<code class="docutils literal notranslate"><span class="pre">FaceTo</span></code> or <code class="docutils literal notranslate"><span class="pre">RandomAroundSolution</span></code> on the support.</p></li>
+<li><p>For recording, non-clutter objects with placement relations must be fixed
+anchors or kinematic rigid bodies.</p></li>
+</ul>
 <p>The <code class="docutils literal notranslate"><span class="pre">clutter_on_relation</span></code> check enforces the release footprint and minimum
-height without requiring contact or an upper height limit. It allows
-1 micrometre of numerical slack on <code class="docutils literal notranslate"><span class="pre">clearance_m</span></code>, but never penetration below
-the support top. <code class="docutils literal notranslate"><span class="pre">on_relation_z_tolerance_m</span></code> does not apply to clutter.
+height without requiring contact or an upper height limit.
 With explicit <code class="docutils literal notranslate"><span class="pre">enabled_checks</span></code> or <code class="docutils literal notranslate"><span class="pre">required_checks</span></code>, include
 <code class="docutils literal notranslate"><span class="pre">clutter_on_relation</span></code> for clutter and <code class="docutils literal notranslate"><span class="pre">on_relation</span></code> for ordinary <code class="docutils literal notranslate"><span class="pre">On</span></code>
-objects. Both checks are enabled by default.</p>
+objects. Both checks are enabled by default. The standard
+<a class="reference internal" href="validation.html"><span class="doc">validation</span></a> and <a class="reference internal" href="pooled_placement.html"><span class="doc">pooling</span></a> rules apply.
+Disable <code class="docutils literal notranslate"><span class="pre">ObjectPlacerParams.allow_best_loss_fallbacks</span></code> to reject invalid
+pooled layouts; direct <code class="docutils literal notranslate"><span class="pre">ObjectPlacer.place()</span></code> callers must check each
+result’s <code class="docutils literal notranslate"><span class="pre">success</span></code>.</p>
 <p>A <strong>settled pose</strong> is the final pose after the configured physics interval.
 An <strong>accepted layout</strong> passes the required pre-physics and enabled, applicable
-<a class="reference internal" href="validation.html#recording-post-physics-checks"><span class="std std-ref">post-physics checks</span></a> for the complete
-candidate. Settled objects may use the full support footprint, beyond the
-smaller release region. Release validation alone does not certify the final pile.
-For pooled placement, disable <code class="docutils literal notranslate"><span class="pre">ObjectPlacerParams.allow_best_loss_fallbacks</span></code>
-to reject invalid layouts. Direct <code class="docutils literal notranslate"><span class="pre">ObjectPlacer.place()</span></code> callers must check
-each result’s <code class="docutils literal notranslate"><span class="pre">success</span></code> before using it.</p>
+<a class="reference internal" href="validation.html#recording-post-physics-checks"><span class="std std-ref">post-physics checks</span></a>. Settled objects may
+use the full support footprint, beyond the smaller release region. Release
+checks do not certify the final pile or prevent collisions during falling.
+Try the <a class="reference internal" href="../offline_placement/clutter.html#movable-bowl-clutter"><span class="std std-ref">movable-bowl example</span></a> in the shared
+<a class="reference internal" href="../offline_placement/clutter.html"><span class="doc">Clutter Layouts</span></a> recording and replay workflow.</p>
 </dd>
 </dl>
 <dl id="next-to-relation">
@@ -750,7 +767,8 @@ position.</p>
 between optional minimum and maximum values.
 <code class="docutils literal notranslate"><span class="pre">PositionLimitsCylindrical</span></code> constrains the XY distance from a chosen
 center using a minimum radius, maximum radius, or both; it does not
-constrain Z.</p>
+constrain Z. Both relations contribute solver losses; no built-in validator
+certifies these bounds.</p>
 </dd>
 <dt><code class="docutils literal notranslate"><span class="pre">FaceTo(target)</span></code></dt><dd><p>Rotates an object around world Z so that its local +X heading points toward
 another object.</p>

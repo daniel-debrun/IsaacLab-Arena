@@ -587,8 +587,8 @@
                   
   <section id="clutter-layouts">
 <span id="record-and-replay-clutter-layouts"></span><h1>Clutter Layouts<a class="headerlink" href="#clutter-layouts" title="Link to this heading">#</a></h1>
-<p>Use <code class="docutils literal notranslate"><span class="pre">ClutterOn</span></code> to release objects above a fixed support, let physics settle
-them, and save accepted layouts for later resets. The same
+<p>Use <code class="docutils literal notranslate"><span class="pre">ClutterOn</span></code> to release objects above a support, let physics settle them,
+and save accepted layouts for later resets. The same
 <a class="reference internal" href="recording.html"><span class="doc">recorder</span></a> handles ordinary placement relations and clutter.</p>
 <section id="how-clutteron-recording-differs-from-other-relations">
 <h2>How ClutterOn Recording Differs from Other Relations<a class="headerlink" href="#how-clutteron-recording-differs-from-other-relations" title="Link to this heading">#</a></h2>
@@ -596,9 +596,9 @@ them, and save accepted layouts for later resets. The same
 recording checks require objects to settle close to those solved poses.
 <code class="docutils literal notranslate"><span class="pre">ClutterOn</span></code> instead describes a release region: its objects are expected to
 fall and rotate before reaching their resting poses.</p>
-<p>Clutter recording adds a scene preflight for fixed supports, dynamic clutter
-and gravity. Release layouts must pass <code class="docutils literal notranslate"><span class="pre">no_overlap</span></code> and
-<code class="docutils literal notranslate"><span class="pre">clutter_on_relation</span></code>. After physics, <code class="docutils literal notranslate"><span class="pre">pose_shift</span></code> excludes clutter roots,
+<p>Clutter recording checks that supports stay fixed during physics and that
+clutter is dynamic with gravity enabled. Release layouts must pass
+<code class="docutils literal notranslate"><span class="pre">no_overlap</span></code> and <code class="docutils literal notranslate"><span class="pre">clutter_on_relation</span></code>. After physics, <code class="docutils literal notranslate"><span class="pre">pose_shift</span></code> excludes clutter roots,
 while <code class="docutils literal notranslate"><span class="pre">support_containment</span></code> checks their final footprint and minimum height.
 Root velocity checks still apply to clutter and other recorded roots.</p>
 <figure class="align-default" id="id1">
@@ -699,8 +699,7 @@ if too few layouts are accepted.</p>
 <span class="w">    </span>--output_base_dir<span class="w"> </span>outputs/clutter/tools_replay
 </pre></div>
 </div>
-<p>The viewer starts with the recorded arrangement. These examples use a short
-finite timeout so the experiment records one completed episode and exits.
+<p>The viewer starts with the recorded arrangement and runs until stopped.
 Keep the same backend, asset geometry and joint-reset configuration when
 replaying the recording.</p>
 <p>For policy evaluation, configure the same scene in an Experiment and pass this
@@ -728,24 +727,24 @@ vary across machines and backends even with the same seed. <code class="docutils
 controls solver pool refills, not the output count. See
 <a class="reference internal" href="recording.html#placement-recording-options"><span class="std std-ref">Record Placement Layouts</span></a> for defaults and the settling duration.</p>
 </section>
-<section id="record-cube-clutter-in-a-bowl">
-<span id="cube-clutter-in-a-container"></span><h2>Record Cube Clutter in a Bowl<a class="headerlink" href="#record-cube-clutter-in-a-bowl" title="Link to this heading">#</a></h2>
-<p>The second maintained scene releases three cubes into a fixed YCB bowl:</p>
+<section id="record-cube-clutter-in-a-movable-bowl">
+<span id="movable-bowl-clutter"></span><span id="cube-clutter-in-a-container"></span><h2>Record Cube Clutter in a Movable Bowl<a class="headerlink" href="#record-cube-clutter-in-a-movable-bowl" title="Link to this heading">#</a></h2>
+<p>The second maintained scene releases three cubes into a YCB bowl. The bowl uses
+<code class="docutils literal notranslate"><span class="pre">On(table)</span></code> and the cubes use <a class="reference internal" href="../object_placement/relations.html#clutter-on-relation"><span class="std std-ref">ClutterOn(bowl)</span></a>;
+Arena solves their positions together. <code class="docutils literal notranslate"><span class="pre">PositionLimitsBox</span></code> targets [-0.2, 0.2]
+metres for the bowl’s X and Y positions; the validators do not certify these
+bounds. The bowl is kinematic, so its position can vary between layouts but
+must stay fixed during settling. Its <code class="docutils literal notranslate"><span class="pre">On</span></code> relation uses <code class="docutils literal notranslate"><span class="pre">clearance_m:</span> <span class="pre">0.0</span></code>
+to sit flush with the table.</p>
+<p>Request four accepted layouts:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>isaaclab_arena/scripts/record_placement_layouts.py<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span><span class="nv">env_spec</span><span class="o">=</span>isaaclab_arena_environments/clutter/franka_three_cubes_in_bowl_no_task.yaml<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span><span class="nv">output</span><span class="o">=</span>outputs/clutter/three_cubes_in_bowl.jsonl<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span><span class="nv">num_envs</span><span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="nv">min_layouts</span><span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="nv">layouts_per_env</span><span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="nv">max_batches</span><span class="o">=</span><span class="m">15</span><span class="w"> </span><span class="nv">seed</span><span class="o">=</span><span class="m">42</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span><span class="nv">num_envs</span><span class="o">=</span><span class="m">2</span><span class="w"> </span><span class="nv">min_layouts</span><span class="o">=</span><span class="m">4</span><span class="w"> </span><span class="nv">layouts_per_env</span><span class="o">=</span><span class="m">2</span><span class="w"> </span><span class="nv">max_batches</span><span class="o">=</span><span class="m">16</span><span class="w"> </span><span class="nv">seed</span><span class="o">=</span><span class="m">42</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>settle.num_steps<span class="o">=</span><span class="m">480</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>+settle.validators.support_containment.minimum_resting_heights_m.bowl<span class="o">=</span>-0.025<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span><span class="nv">presets</span><span class="o">=</span>physx<span class="w"> </span><span class="nv">render</span><span class="o">=</span><span class="nb">true</span><span class="w"> </span>--device<span class="w"> </span>cpu<span class="w"> </span>--viz<span class="w"> </span>kit
+<span class="w">    </span><span class="nv">presets</span><span class="o">=</span>physx<span class="w"> </span><span class="nv">render</span><span class="o">=</span><span class="nb">false</span><span class="w"> </span>--device<span class="w"> </span>cpu<span class="w"> </span>--viz<span class="w"> </span>none
 </pre></div>
-</div>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>During bowl setup, PhysX may report <code class="docutils literal notranslate"><span class="pre">kinematic</span> <span class="pre">bodies</span> <span class="pre">with</span> <span class="pre">CCD</span> <span class="pre">enabled</span> <span class="pre">are</span>
-<span class="pre">not</span> <span class="pre">supported!</span> <span class="pre">CCD</span> <span class="pre">will</span> <span class="pre">be</span> <span class="pre">ignored.</span></code> The fixed bowl asset enables continuous
-collision detection (CCD), which PhysX ignores for that kinematic body. This
-message does not disable CCD on the falling cubes.</p>
 </div>
 <p>Here <code class="docutils literal notranslate"><span class="pre">bowl</span></code> is the support’s runtime scene key. <code class="docutils literal notranslate"><span class="pre">-0.025</span></code> is a minimum
 resting height in the scaled bowl-local frame, before adding its world position.
@@ -755,6 +754,13 @@ this value. See <a class="reference internal" href="../object_placement/validati
 <p>The containment check uses the support’s bounds and this height. It does not
 prove exact containment within curved walls or exclude every possible
 penetration. Inspect the contacts as well as the saved validation reports.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>During bowl setup, PhysX may report <code class="docutils literal notranslate"><span class="pre">kinematic</span> <span class="pre">bodies</span> <span class="pre">with</span> <span class="pre">CCD</span> <span class="pre">enabled</span> <span class="pre">are</span>
+<span class="pre">not</span> <span class="pre">supported!</span> <span class="pre">CCD</span> <span class="pre">will</span> <span class="pre">be</span> <span class="pre">ignored.</span></code> The bowl asset enables continuous
+collision detection (CCD), which PhysX ignores for that kinematic body. This
+message does not disable CCD on the falling cubes.</p>
+</div>
 <figure class="align-default" id="id4">
 <a class="reference internal image-reference" href="../../../_images/bowl_release.png"><img alt="Three cubes released above the rim of the YCB bowl." src="../../../_images/bowl_release.png" style="width: 640px;" />
 </a>
@@ -769,15 +775,50 @@ penetration. Inspect the contacts as well as the saved validation reports.</p>
 <p><span class="caption-text">The corresponding accepted layout after settling.</span><a class="headerlink" href="#id5" title="Link to this image">#</a></p>
 </figcaption>
 </figure>
-<p>Success produces one row in <code class="docutils literal notranslate"><span class="pre">outputs/clutter/three_cubes_in_bowl.jsonl</span></code>.
-Inspect it with the earlier Python snippet, changing <code class="docutils literal notranslate"><span class="pre">path</span></code> to this bowl
-recording, then open the viewer:</p>
+<p>The command stops at four accepted layouts or sixteen batches. Cubes can still
+exceed the final velocity limits after settling, so several batches may be
+rejected. Partial output and zero acceptance follow <a class="reference internal" href="#recording-and-replay-notes"><span class="std std-ref">Check the Output</span></a>.</p>
+<div class="pst-scrollable-table-container"><table class="table" id="id6">
+<caption><span class="caption-text">Expected behavior</span><a class="headerlink" href="#id6" title="Link to this table">#</a></caption>
+<colgroup>
+<col style="width: 20.0%" />
+<col style="width: 80.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Step</p></th>
+<th class="head"><p>What to check</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Recording</p></td>
+<td><p>A completed target writes four JSONL rows and reports
+<code class="docutils literal notranslate"><span class="pre">Saved</span> <span class="pre">4/&lt;attempted&gt;</span> <span class="pre">accepted</span> <span class="pre">layouts</span></code>. Bowl positions vary across
+rows, each saved together with its three cubes. Exact poses
+and the number of attempts can vary.</p></td>
+</tr>
+<tr class="row-odd"><td><p>Settling</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">pose_shift</span></code> and <code class="docutils literal notranslate"><span class="pre">support_containment</span></code> pass for every saved row.
+The latter also checks that the bowl matches its solved pose before and
+after physics; clutter cubes are allowed to fall and rotate.</p></td>
+</tr>
+<tr class="row-even"><td><p>Replay</p></td>
+<td><p>Reset restores the bowl and cubes from the same row, without solving new
+bowl positions. Compare poses immediately after reset; physics continues
+afterward.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Inspect the recording with the earlier Python snippet, changing <code class="docutils literal notranslate"><span class="pre">path</span></code> to
+<code class="docutils literal notranslate"><span class="pre">outputs/clutter/three_cubes_in_bowl.jsonl</span></code> and the expected count to four.
+Then replay the first layout using the bowl Experiment Definition:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>isaaclab_arena/evaluation/experiment_runner.py<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--experiment_config<span class="w"> </span>isaaclab_arena_environments/experiment_configs/placement_record_replay/clutter_replay_bowls_experiment.yaml<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--device<span class="w"> </span>cpu<span class="w"> </span>--viz<span class="w"> </span>kit<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--output_base_dir<span class="w"> </span>outputs/clutter/bowls_replay
 </pre></div>
 </div>
+<p>The viewer runs until stopped.</p>
 </section>
 <section id="adapt-your-own-environment">
 <span id="clutter-adapt-environment"></span><h2>Adapt Your Own Environment<a class="headerlink" href="#adapt-your-own-environment" title="Link to this heading">#</a></h2>
@@ -789,11 +830,13 @@ physics callbacks, and runtime configuration are retained. Loading raw YAML is
 not a substitute for a factory that also applies these settings.</p>
 <p>The supplied scenes meet these requirements. When adapting another scene:</p>
 <ul class="simple">
-<li><p>Use fixed <code class="docutils literal notranslate"><span class="pre">IsAnchor</span></code> supports with static or kinematic collision geometry.
-Supports must be upright, with only quarter-turn rotations about world Z.</p></li>
+<li><p>Use fixed <code class="docutils literal notranslate"><span class="pre">IsAnchor</span></code> supports, or position kinematic rigid supports through
+their own relations. Supports must have static or kinematic collision geometry
+and upright quarter-turn rotations about world Z.</p></li>
 <li><p>Use dynamic rigid objects with gravity enabled for clutter. Each has one
 <code class="docutils literal notranslate"><span class="pre">ClutterOn</span></code> spatial relation to its support.</p></li>
-<li><p>Resolve non-clutter placement relations to fixed anchors before collection.
+<li><p>Non-clutter objects with placement relations must be fixed anchors or solved
+kinematic rigid bodies. Do not place these bodies <code class="docutils literal notranslate"><span class="pre">On</span></code> falling clutter.
 Object sets and reachability requirements on clutter objects are unsupported.</p></li>
 <li><p>Keep recorded roots compatible with pose resets. Joint states and other
 randomized properties are not saved.</p></li>
@@ -954,7 +997,7 @@ still contains usable layouts that passed validation.</p>
 </ul>
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#record-a-batch">Record a Batch</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#record-cube-clutter-in-a-bowl">Record Cube Clutter in a Bowl</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#record-cube-clutter-in-a-movable-bowl">Record Cube Clutter in a Movable Bowl</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#adapt-your-own-environment">Adapt Your Own Environment</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#troubleshoot-recording">Troubleshoot Recording</a></li>
 </ul>

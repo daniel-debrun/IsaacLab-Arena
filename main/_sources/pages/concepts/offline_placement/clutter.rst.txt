@@ -3,8 +3,8 @@
 Clutter Layouts
 ===============
 
-Use ``ClutterOn`` to release objects above a fixed support, let physics settle
-them, and save accepted layouts for later resets. The same
+Use ``ClutterOn`` to release objects above a support, let physics settle them,
+and save accepted layouts for later resets. The same
 :doc:`recorder <recording>` handles ordinary placement relations and clutter.
 
 How ClutterOn Recording Differs from Other Relations
@@ -15,9 +15,9 @@ recording checks require objects to settle close to those solved poses.
 ``ClutterOn`` instead describes a release region: its objects are expected to
 fall and rotate before reaching their resting poses.
 
-Clutter recording adds a scene preflight for fixed supports, dynamic clutter
-and gravity. Release layouts must pass ``no_overlap`` and
-``clutter_on_relation``. After physics, ``pose_shift`` excludes clutter roots,
+Clutter recording checks that supports stay fixed during physics and that
+clutter is dynamic with gravity enabled. Release layouts must pass
+``no_overlap`` and ``clutter_on_relation``. After physics, ``pose_shift`` excludes clutter roots,
 while ``support_containment`` checks their final footprint and minimum height.
 Root velocity checks still apply to clutter and other recorded roots.
 
@@ -137,8 +137,7 @@ Load the same scene and the file just recorded:
        --device cpu --viz kit \
        --output_base_dir outputs/clutter/tools_replay
 
-The viewer starts with the recorded arrangement. These examples use a short
-finite timeout so the experiment records one completed episode and exits.
+The viewer starts with the recorded arrangement and runs until stopped.
 Keep the same backend, asset geometry and joint-reset configuration when
 replaying the recording.
 
@@ -171,28 +170,30 @@ controls solver pool refills, not the output count. See
 :ref:`placement-recording-options` for defaults and the settling duration.
 
 .. _cube-clutter-in-a-container:
+.. _movable-bowl-clutter:
 
-Record Cube Clutter in a Bowl
-------------------------------
+Record Cube Clutter in a Movable Bowl
+--------------------------------------
 
-The second maintained scene releases three cubes into a fixed YCB bowl:
+The second maintained scene releases three cubes into a YCB bowl. The bowl uses
+``On(table)`` and the cubes use :ref:`ClutterOn(bowl) <clutter-on-relation>`;
+Arena solves their positions together. ``PositionLimitsBox`` targets [-0.2, 0.2]
+metres for the bowl's X and Y positions; the validators do not certify these
+bounds. The bowl is kinematic, so its position can vary between layouts but
+must stay fixed during settling. Its ``On`` relation uses ``clearance_m: 0.0``
+to sit flush with the table.
+
+Request four accepted layouts:
 
 .. code-block:: bash
 
    python isaaclab_arena/scripts/record_placement_layouts.py \
        env_spec=isaaclab_arena_environments/clutter/franka_three_cubes_in_bowl_no_task.yaml \
        output=outputs/clutter/three_cubes_in_bowl.jsonl \
-       num_envs=1 min_layouts=1 layouts_per_env=1 max_batches=15 seed=42 \
+       num_envs=2 min_layouts=4 layouts_per_env=2 max_batches=16 seed=42 \
        settle.num_steps=480 \
        +settle.validators.support_containment.minimum_resting_heights_m.bowl=-0.025 \
-       presets=physx render=true --device cpu --viz kit
-
-.. note::
-
-   During bowl setup, PhysX may report ``kinematic bodies with CCD enabled are
-   not supported! CCD will be ignored.`` The fixed bowl asset enables continuous
-   collision detection (CCD), which PhysX ignores for that kinematic body. This
-   message does not disable CCD on the falling cubes.
+       presets=physx render=false --device cpu --viz none
 
 Here ``bowl`` is the support's runtime scene key. ``-0.025`` is a minimum
 resting height in the scaled bowl-local frame, before adding its world position.
@@ -203,6 +204,13 @@ this value. See :ref:`clutter-support-floor-height`.
 The containment check uses the support's bounds and this height. It does not
 prove exact containment within curved walls or exclude every possible
 penetration. Inspect the contacts as well as the saved validation reports.
+
+.. note::
+
+   During bowl setup, PhysX may report ``kinematic bodies with CCD enabled are
+   not supported! CCD will be ignored.`` The bowl asset enables continuous
+   collision detection (CCD), which PhysX ignores for that kinematic body. This
+   message does not disable CCD on the falling cubes.
 
 .. figure:: ../../../images/clutter/bowl_release.png
    :width: 640px
@@ -216,9 +224,33 @@ penetration. Inspect the contacts as well as the saved validation reports.
 
    The corresponding accepted layout after settling.
 
-Success produces one row in ``outputs/clutter/three_cubes_in_bowl.jsonl``.
-Inspect it with the earlier Python snippet, changing ``path`` to this bowl
-recording, then open the viewer:
+The command stops at four accepted layouts or sixteen batches. Cubes can still
+exceed the final velocity limits after settling, so several batches may be
+rejected. Partial output and zero acceptance follow :ref:`recording-and-replay-notes`.
+
+.. list-table:: Expected behavior
+   :header-rows: 1
+   :widths: 20 80
+
+   * - Step
+     - What to check
+   * - Recording
+     - A completed target writes four JSONL rows and reports
+       ``Saved 4/<attempted> accepted layouts``. Bowl positions vary across
+       rows, each saved together with its three cubes. Exact poses
+       and the number of attempts can vary.
+   * - Settling
+     - ``pose_shift`` and ``support_containment`` pass for every saved row.
+       The latter also checks that the bowl matches its solved pose before and
+       after physics; clutter cubes are allowed to fall and rotate.
+   * - Replay
+     - Reset restores the bowl and cubes from the same row, without solving new
+       bowl positions. Compare poses immediately after reset; physics continues
+       afterward.
+
+Inspect the recording with the earlier Python snippet, changing ``path`` to
+``outputs/clutter/three_cubes_in_bowl.jsonl`` and the expected count to four.
+Then replay the first layout using the bowl Experiment Definition:
 
 .. code-block:: bash
 
@@ -226,6 +258,8 @@ recording, then open the viewer:
        --experiment_config isaaclab_arena_environments/experiment_configs/placement_record_replay/clutter_replay_bowls_experiment.yaml \
        --device cpu --viz kit \
        --output_base_dir outputs/clutter/bowls_replay
+
+The viewer runs until stopped.
 
 .. _clutter-adapt-environment:
 
@@ -241,11 +275,13 @@ not a substitute for a factory that also applies these settings.
 
 The supplied scenes meet these requirements. When adapting another scene:
 
-* Use fixed ``IsAnchor`` supports with static or kinematic collision geometry.
-  Supports must be upright, with only quarter-turn rotations about world Z.
+* Use fixed ``IsAnchor`` supports, or position kinematic rigid supports through
+  their own relations. Supports must have static or kinematic collision geometry
+  and upright quarter-turn rotations about world Z.
 * Use dynamic rigid objects with gravity enabled for clutter. Each has one
   ``ClutterOn`` spatial relation to its support.
-* Resolve non-clutter placement relations to fixed anchors before collection.
+* Non-clutter objects with placement relations must be fixed anchors or solved
+  kinematic rigid bodies. Do not place these bodies ``On`` falling clutter.
   Object sets and reachability requirements on clutter objects are unsupported.
 * Keep recorded roots compatible with pose resets. Joint states and other
   randomized properties are not saved.
