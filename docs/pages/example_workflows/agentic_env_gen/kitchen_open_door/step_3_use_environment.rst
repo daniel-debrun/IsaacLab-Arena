@@ -20,9 +20,8 @@ cameras, runs one environment, and stops after two episodes:
 .. literalinclude:: ../../../../../isaaclab_arena_environments/experiment_configs/agentic_env_gen/kitchen_open_fridge_openpi_experiment.yaml
    :language: yaml
 
+In the other terminal, run the following command to launch the Experiment Runner.
 Complete the shared :ref:`agentic-env-gen-prerequisites` before running this command.
-
-In the other terminal, run the following command to launch the Experiment Runner:
 
 .. code-block:: bash
 
