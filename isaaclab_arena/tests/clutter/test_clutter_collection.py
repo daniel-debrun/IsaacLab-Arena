@@ -338,7 +338,9 @@ def _test_clutter_recording_replays_movable_supports(simulation_app, tmp_path, b
             displaced = body.data.root_pose_w.torch.clone()
             displaced[:, 2] += 0.25
             body.write_root_pose_to_sim(displaced)
-            body.write_root_velocity_to_sim(torch.ones((2, 6), device=base.device))
+            if key == cube.get_scene_key():
+                # Only the clutter cube is dynamic; kinematic fixtures cannot accept velocities.
+                body.write_root_velocity_to_sim(torch.ones((2, 6), device=base.device))
         before = {key: base.arena_world.get_pose_e(key).clone() for key in poses_by_root}
         base.reset(env_ids=torch.tensor([1], device=base.device))
         for key, poses in poses_by_root.items():
@@ -383,8 +385,8 @@ def _test_movable_bowl_recording_and_replay(simulation_app, tmp_path):
     from isaaclab_arena.scripts.record_placement_layouts import record_settled_placement_layouts
     from isaaclab_arena.tests.utils.constants import TestConstants
 
-    source = Path(TestConstants.arena_environments_dir) / "clutter/franka_movable_bowl_clutter_no_task.yaml"
-    output = tmp_path / "movable_bowl.jsonl"
+    source = Path(TestConstants.arena_environments_dir) / "clutter/franka_three_cubes_in_bowl_no_task.yaml"
+    output = tmp_path / "three_cubes_in_bowl.jsonl"
     cfg = PlacementRecordingCfg(
         env_spec=str(source),
         output=str(output),

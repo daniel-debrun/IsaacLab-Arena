@@ -170,28 +170,30 @@ controls solver pool refills, not the output count. See
 :ref:`placement-recording-options` for defaults and the settling duration.
 
 .. _cube-clutter-in-a-container:
+.. _movable-bowl-clutter:
 
-Record Cube Clutter in a Bowl
-------------------------------
+Record Cube Clutter in a Movable Bowl
+--------------------------------------
 
-The second maintained scene releases three cubes into a fixed YCB bowl:
+The second maintained scene releases three cubes into a YCB bowl. The bowl uses
+``On(table)`` and the cubes use :ref:`ClutterOn(bowl) <clutter-on-relation>`;
+Arena solves their positions together. ``PositionLimitsBox`` targets [-0.2, 0.2]
+metres for the bowl's X and Y positions; the validators do not certify these
+bounds. The bowl is kinematic, so its position can vary between layouts but
+must stay fixed during settling. Its ``On`` relation uses ``clearance_m: 0.0``
+to sit flush with the table.
+
+Request four accepted layouts:
 
 .. code-block:: bash
 
    python isaaclab_arena/scripts/record_placement_layouts.py \
        env_spec=isaaclab_arena_environments/clutter/franka_three_cubes_in_bowl_no_task.yaml \
        output=outputs/clutter/three_cubes_in_bowl.jsonl \
-       num_envs=1 min_layouts=1 layouts_per_env=1 max_batches=15 seed=42 \
+       num_envs=2 min_layouts=4 layouts_per_env=2 max_batches=16 seed=42 \
        settle.num_steps=480 \
        +settle.validators.support_containment.minimum_resting_heights_m.bowl=-0.025 \
-       presets=physx render=true --device cpu --viz kit
-
-.. note::
-
-   During bowl setup, PhysX may report ``kinematic bodies with CCD enabled are
-   not supported! CCD will be ignored.`` The fixed bowl asset enables continuous
-   collision detection (CCD), which PhysX ignores for that kinematic body. This
-   message does not disable CCD on the falling cubes.
+       presets=physx render=false --device cpu --viz none
 
 Here ``bowl`` is the support's runtime scene key. ``-0.025`` is a minimum
 resting height in the scaled bowl-local frame, before adding its world position.
@@ -202,6 +204,13 @@ this value. See :ref:`clutter-support-floor-height`.
 The containment check uses the support's bounds and this height. It does not
 prove exact containment within curved walls or exclude every possible
 penetration. Inspect the contacts as well as the saved validation reports.
+
+.. note::
+
+   During bowl setup, PhysX may report ``kinematic bodies with CCD enabled are
+   not supported! CCD will be ignored.`` The bowl asset enables continuous
+   collision detection (CCD), which PhysX ignores for that kinematic body. This
+   message does not disable CCD on the falling cubes.
 
 .. figure:: ../../../images/clutter/bowl_release.png
    :width: 640px
@@ -215,53 +224,9 @@ penetration. Inspect the contacts as well as the saved validation reports.
 
    The corresponding accepted layout after settling.
 
-Success produces one row in ``outputs/clutter/three_cubes_in_bowl.jsonl``.
-Inspect it with the earlier Python snippet, changing ``path`` to this bowl
-recording, then open the viewer:
-
-.. code-block:: bash
-
-   python isaaclab_arena/evaluation/experiment_runner.py \
-       --experiment_config isaaclab_arena_environments/experiment_configs/placement_record_replay/clutter_replay_bowls_experiment.yaml \
-       --device cpu --viz kit \
-       --output_base_dir outputs/clutter/bowls_replay
-
-.. _movable-bowl-clutter:
-
-Record Clutter on a Movable Bowl
---------------------------------
-
-The bowl uses ``On(table)`` and the cubes use :ref:`ClutterOn(bowl)
-<clutter-on-relation>`. Arena solves the bowl and cube positions together. The
-YAML sets ``PositionLimitsBox`` targets of [-0.2, 0.2] metres for the bowl's X
-and Y positions; the validators do not certify these bounds. The bowl is
-kinematic: its position can vary between layouts, but physics must not move it
-during settling. Its ``On`` relation uses ``clearance_m: 0.0`` to sit flush
-with the table.
-
-.. note::
-
-   Resets can log ``Body must be non-kinematic!``: the shared pose-reset path
-   writes zero root velocities, which PhysX rejects for the kinematic bowl.
-   Its pose reset still applies; use the recorded checks to assess acceptance.
-
-Request four accepted layouts:
-
-.. code-block:: bash
-
-   python isaaclab_arena/scripts/record_placement_layouts.py \
-       env_spec=isaaclab_arena_environments/clutter/franka_movable_bowl_clutter_no_task.yaml \
-       output=outputs/clutter/movable_bowl.jsonl \
-       num_envs=2 min_layouts=4 layouts_per_env=2 max_batches=16 seed=42 \
-       settle.num_steps=480 \
-       +settle.validators.support_containment.minimum_resting_heights_m.bowl=-0.025 \
-       presets=physx render=false --device cpu --viz none
-
-The minimum resting height has the same bowl-local meaning as in the fixed-bowl
-example above. The command stops at four accepted layouts or sixteen batches.
-Cubes can still exceed the final velocity limits after settling, so several
-batches may be rejected. Partial output and zero acceptance follow
-:ref:`recording-and-replay-notes`.
+The command stops at four accepted layouts or sixteen batches. Cubes can still
+exceed the final velocity limits after settling, so several batches may be
+rejected. Partial output and zero acceptance follow :ref:`recording-and-replay-notes`.
 
 .. list-table:: Expected behavior
    :header-rows: 1
@@ -283,25 +248,18 @@ batches may be rejected. Partial output and zero acceptance follow
        bowl positions. Compare poses immediately after reset; physics continues
        afterward.
 
-Replay the first recorded layout using the bowl Experiment Definition:
+Inspect the recording with the earlier Python snippet, changing ``path`` to
+``outputs/clutter/three_cubes_in_bowl.jsonl`` and the expected count to four.
+Then replay the first layout using the bowl Experiment Definition:
 
 .. code-block:: bash
 
    python isaaclab_arena/evaluation/experiment_runner.py \
        --experiment_config isaaclab_arena_environments/experiment_configs/placement_record_replay/clutter_replay_bowls_experiment.yaml \
-       runs.bowl_clutter_replay.environment.env_spec_path=isaaclab_arena_environments/clutter/franka_movable_bowl_clutter_no_task.yaml \
-       runs.bowl_clutter_replay.environment_builder.recorded_variation_samples_path=outputs/clutter/movable_bowl.jsonl \
        --device cpu --viz kit \
-       --output_base_dir outputs/clutter/movable_bowl_replay
+       --output_base_dir outputs/clutter/bowls_replay
 
 The viewer runs until stopped.
-The automated test below checks that bowl positions vary between layouts,
-remain fixed during settling, and replay together with their recorded objects:
-
-.. code-block:: bash
-
-   python -m pytest -q isaaclab_arena/tests/clutter/test_clutter_collection.py \
-       -k movable_bowl_recording_and_replay
 
 .. _clutter-adapt-environment:
 

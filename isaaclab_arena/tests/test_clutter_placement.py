@@ -268,6 +268,6 @@ def test_clutter_rejects_unsupported_support_configuration(configuration):
         diagnostic = "random_yaw|rotation"
     else:
         tray.relations[-1] = RotateAroundSolution(yaw_rad=math.pi / 4)
-        diagnostic = "90|quarter"
+        diagnostic = "ClutterOn support 'tray'.*(90|quarter)"
     with pytest.raises(AssertionError, match=diagnostic):
         ObjectPlacer(params).place(objects)

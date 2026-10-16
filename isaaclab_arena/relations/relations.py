@@ -14,7 +14,7 @@ from isaaclab.utils.math import euler_xyz_from_quat
 
 from isaaclab_arena.assets.register import agent_ready, register_object_relation
 from isaaclab_arena.assets.registries import ObjectRelationLibraryRegistry
-from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
+from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox, quaternion_to_90_deg_z_quarters
 from isaaclab_arena.utils.pose import PoseRange  # runtime: constructed in to_pose_range_centered_at()
 
 if TYPE_CHECKING:
@@ -304,6 +304,20 @@ class ClutterOn(On):
         assert not any(
             isinstance(r, RandomAroundSolution) for r in subject.get_relations()
         ), "ClutterOn cannot randomize a release after collision validation"
+
+        support = self.parent
+        if not support.is_anchor:
+            assert get_relation(support, FaceTo) is None, f"ClutterOn support '{support.name}' cannot use FaceTo"
+            assert (
+                get_relation(support, RandomAroundSolution) is None
+            ), f"ClutterOn support '{support.name}' cannot randomize after placement validation"
+            rotation = get_relation(support, RotateAroundSolution)
+            if rotation is not None:
+                # Release regions require axis-aligned support bounds.
+                try:
+                    quaternion_to_90_deg_z_quarters(rotation.get_rotation_xyzw())
+                except AssertionError as error:
+                    raise AssertionError(f"ClutterOn support '{support.name}': {error}") from error
 
 
 @agent_ready

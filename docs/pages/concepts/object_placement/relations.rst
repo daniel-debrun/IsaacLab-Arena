@@ -133,68 +133,36 @@ Most environments can be described with a small set of relations:
         - Sample world-Z yaw in addition to ``RotateAroundSolution``. This setting
           controls clutter independently of ``ObjectPlacerParams.random_yaw_init``.
 
-   The relation cost penalizes footprint overflow and insufficient release
-   height. Let :math:`C` be the child's bounding box at its candidate pose and
-   :math:`R` the support's central ``spread`` region, inset in XY by
-   ``edge_margin_m``. Both use world-aligned bounds; :math:`R_{\max,z}` is the
-   support top. With :math:`[v]_+ = \max(v, 0)`:
+   Restrictions:
 
-   .. math::
-
-      L_{xy} = \sum_{a \in \{x,y\}}
-          \left([R_{\min,a} - C_{\min,a}]_+
-          + [C_{\max,a} - R_{\max,a}]_+\right)
-
-      L_z = [R_{\max,z} + h - C_{\min,z}]_+
-
-      L_{\mathrm{ClutterOn}} = w\,s\,(L_{xy} + L_z)
-
-   Here :math:`h` is ``clearance_m``, :math:`w` is ``relation_loss_weight``,
-   and :math:`s` is the ``ClutterOnLossStrategy`` slope. Collision losses are
-   evaluated separately.
-
-   ``ClutterOn`` must be the object's only spatial relation and cannot use
-   ``RandomAroundSolution``. ``RotateAroundSolution`` sets its base rotation;
-   random yaw preserves that rotation's tilt. Both ``bbox`` and ``mesh`` collision
-   modes support yaw-only clutter. Roll or pitch requires ``collision_mode="bbox"``
-   on the object, whose bounds enclose the full rotation.
+   * ``ClutterOn`` must be the object's only spatial relation and cannot use
+     ``RandomAroundSolution``. ``RotateAroundSolution`` sets its base rotation;
+     random yaw preserves that rotation's tilt.
+   * Both ``bbox`` and ``mesh`` collision modes support yaw-only clutter.
+     Roll or pitch requires ``collision_mode="bbox"`` on the object.
+   * The support must participate in placement and cannot itself use ``ClutterOn``.
+     It must remain upright with a fixed yaw that is a multiple of 90 degrees.
+     For a non-anchor support, disable ``random_yaw_init`` and do not use
+     ``FaceTo`` or ``RandomAroundSolution`` on the support.
+   * For recording, non-clutter objects with placement relations must be fixed
+     anchors or kinematic rigid bodies.
 
    The ``clutter_on_relation`` check enforces the release footprint and minimum
-   height without requiring contact or an upper height limit. It allows
-   1 micrometre of numerical slack on ``clearance_m``, but never penetration below
-   the support top. ``on_relation_z_tolerance_m`` does not apply to clutter.
+   height without requiring contact or an upper height limit.
    With explicit ``enabled_checks`` or ``required_checks``, include
    ``clutter_on_relation`` for clutter and ``on_relation`` for ordinary ``On``
-   objects. Both checks are enabled by default.
-
-   The support must participate in placement and cannot itself use ``ClutterOn``.
-   Supports must remain upright with a fixed yaw that is a multiple of 90 degrees.
-   For a non-anchor support, disable ``random_yaw_init`` and do not use ``FaceTo``
-   or ``RandomAroundSolution`` on the support. Other objects retain their ordinary
-   relation constraints.
-
-   This yaw restriction comes from the world-aligned support bounds. At other
-   angles, an enclosing AABB includes space outside the rotated support.
-   Supporting arbitrary yaw requires consistent support-frame footprint checks
-   in initialization, optimization and validation.
-
-   The standard :doc:`validation <validation>` and :doc:`pooling <pooled_placement>`
-   rules apply; a low solver loss alone does not guarantee a valid release.
+   objects. Both checks are enabled by default. The standard
+   :doc:`validation <validation>` and :doc:`pooling <pooled_placement>` rules apply.
+   Disable ``ObjectPlacerParams.allow_best_loss_fallbacks`` to reject invalid
+   pooled layouts; direct ``ObjectPlacer.place()`` callers must check each
+   result's ``success``.
 
    A **settled pose** is the final pose after the configured physics interval.
    An **accepted layout** passes the required pre-physics and enabled, applicable
    :ref:`post-physics checks <recording-post-physics-checks>`. Settled objects may
    use the full support footprint, beyond the smaller release region. Release
-   validation alone does not certify the final pile.
-   Collision checks at the release pose do not check the swept volume during
-   falling; clutter may hit other objects before reaching its support.
-   For pooled placement, disable ``ObjectPlacerParams.allow_best_loss_fallbacks``
-   to reject invalid layouts. Direct ``ObjectPlacer.place()`` callers must check
-   each result's ``success`` before using it.
-
-   For recording, non-clutter objects with placement relations must be fixed
-   anchors or kinematic rigid bodies. Try the
-   :ref:`movable-bowl example <movable-bowl-clutter>` in the shared
+   checks do not certify the final pile or prevent collisions during falling.
+   Try the :ref:`movable-bowl example <movable-bowl-clutter>` in the shared
    :doc:`../offline_placement/clutter` recording and replay workflow.
 
 .. _next-to-relation:
