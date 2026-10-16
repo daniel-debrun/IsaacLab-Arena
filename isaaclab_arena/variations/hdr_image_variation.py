@@ -20,6 +20,8 @@ from isaaclab_arena.variations.choice_sampler import ChoiceSamplerCfg
 from isaaclab_arena.variations.variation_base import BuildTimeVariationBase, VariationBaseCfg
 
 if TYPE_CHECKING:
+    import torch
+
     from isaaclab_arena.assets.object_library import DomeLight
 
 
@@ -57,7 +59,7 @@ class HDRImageVariation(BuildTimeVariationBase):
         super().__init__(cfg=cfg if cfg is not None else HDRImageVariationCfg(), name=name)
         self._light = light
 
-    def _realize_at_build_time(self) -> None:
+    def _realize_at_build_time(self, generator: torch.Generator) -> None:
         from isaaclab_arena.assets.hdr_image import HDRImage  # noqa: PLC0415
         from isaaclab_arena.assets.registries import HDRImageRegistry  # noqa: PLC0415
 
@@ -75,6 +77,6 @@ class HDRImageVariation(BuildTimeVariationBase):
 
         assert self.sampler is not None, "HDRImageVariation: sampler not set."
         # Pass HDR names as the choice sampler's choices.
-        hdr_name = self.sampler.sample(num_samples=1, choices=hdr_names, generator=self.build_time_generator)[0]
+        hdr_name = self.sampler.sample(num_samples=1, choices=hdr_names, generator=generator)[0]
         hdr_cls: type[HDRImage] = registry.get_hdr_by_name(hdr_name)
         self._light.add_hdr(hdr_cls())

@@ -56,15 +56,8 @@ class VariationBase(ABC):
     name: str
     """Identifier under which this variation is registered on its asset."""
 
-    build_time_generator: torch.Generator | None
-    """Generator for this variation's draws during a build, seeded from the build seed and the variation key.
-
-    None before the first build. Drawing from it leaves torch's global random state unchanged.
-    """
-
     def __init__(self, cfg: VariationBaseCfg, name: str):
         self.name = name
-        self.build_time_generator = None
         self._sampler: SamplerBase
         self._sample_listeners: list[Callable[[Any, Any], None]] = []
         self._replay_sampler: Callable[[int, torch.Tensor | None], list[Any] | None] | None = None
@@ -112,17 +105,21 @@ class VariationBase(ABC):
         precondition (e.g. forcing its camera untiled so per-env edits take effect).
         """
 
-    def _realize_at_build_time(self) -> None:
+    def _realize_at_build_time(self, generator: torch.Generator) -> None:
         """Sample and mutate the bound asset config(s) in place during construction. Default: no-op.
 
         A build-time variation realises its whole effect here; a run-time variation leaves it a no-op.
+
+        Args:
+            generator: CPU generator for this build's draws, seeded from the build seed and the variation key.
+                Drawing from it leaves torch's global random state unchanged.
         """
 
     def configure_at_build_time(self, seed: int, variation_key: str) -> None:
         """Run this variation's build-time preparation and realization for one env build.
 
-        Starts ``build_time_generator`` afresh from ``seed`` and ``variation_key``, so builds with the same seed
-        draw the same values, whatever other variations draw.
+        Draws from a new generator seeded from ``seed`` and ``variation_key``, so builds with the same seed draw the
+        same values, whatever other variations draw.
 
         Args:
             seed: Seed of the build, ArenaEnvBuilderCfg.seed.
@@ -132,9 +129,9 @@ class VariationBase(ABC):
         # the first 8 bytes of the digest.
         digest = hashlib.sha256(f"{seed}:{variation_key}".encode()).digest()
         variation_seed = int.from_bytes(digest[:8], "big")
-        self.build_time_generator = torch.Generator(device="cpu").manual_seed(variation_seed)
+        generator = torch.Generator(device="cpu").manual_seed(variation_seed)
         self._prepare_at_build_time()
-        self._realize_at_build_time()
+        self._realize_at_build_time(generator)
 
     def apply_cfg(self, cfg: VariationBaseCfg) -> None:
         """Apply new ``cfg``.
@@ -176,10 +173,14 @@ class BuildTimeVariationBase(VariationBase):
     Use for properties that can't change in-flight: HDR maps, USD swaps,
     spawner params baked into a config. Subclasses hold references to the
     asset(s) they mutate and realise the effect in ``_realize_at_build_time``.
-    Draw with ``generator=self.build_time_generator``, so the value follows the build seed.
     """
 
     @abstractmethod
-    def _realize_at_build_time(self) -> None:
-        """Sample and apply this variation to the target configuration once per env build."""
+    def _realize_at_build_time(self, generator: torch.Generator) -> None:
+        """Sample and apply this variation to the target configuration once per env build.
+
+        Args:
+            generator: Generator for this build's draws. Draw with ``generator=generator``, so the value follows the
+                build seed.
+        """
         ...

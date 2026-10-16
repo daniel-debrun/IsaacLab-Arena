@@ -3,6 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+import torch
 from dataclasses import field
 
 import pytest
@@ -39,9 +40,9 @@ class TestBuildTimeVariation(BuildTimeVariationBase):
         super().__init__(cfg=cfg if cfg is not None else TestBuildTimeVariationCfg(), name=name)
         self._asset = asset
 
-    def _realize_at_build_time(self) -> None:
+    def _realize_at_build_time(self, generator: torch.Generator) -> None:
         assert self.sampler is not None
-        self._asset.object_cfg.spawn.radius = float(self.sampler.sample(num_samples=1)[0, 0])
+        self._asset.object_cfg.spawn.radius = float(self.sampler.sample(num_samples=1, generator=generator)[0, 0])
 
 
 def get_test_environment(*, enabled: bool):
