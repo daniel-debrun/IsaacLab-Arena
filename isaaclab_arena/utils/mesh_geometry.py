@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, eq=False)
 class LocalMeshGeometry:
-    """Mesh vertices and original polygon topology in one body-local frame."""
+    """Mesh vertices and original polygon topology in one asset pose frame."""
 
     vertices: np.ndarray
     """Finite float64 vertex coordinates with shape (P, 3)."""

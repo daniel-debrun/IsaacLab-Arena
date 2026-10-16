@@ -18,6 +18,7 @@ from pxr import Usd, UsdGeom, UsdPhysics
 
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 from isaaclab_arena.utils.mesh_geometry import LocalMeshGeometry
+from isaaclab_arena.utils.usd.mesh import concatenate_mesh_arrays, read_mesh_arrays
 
 
 def get_representative_geometry_prim_groups(
@@ -172,10 +173,7 @@ def _read_mesh_geometry_in_prim_frame(local_frame_prim: Usd.Prim) -> LocalMeshGe
     transform_cache = UsdGeom.XformCache(time_code)
     T_W_F = transform_cache.GetLocalToWorldTransform(local_frame_prim).RemoveScaleShear()
     T_F_W = T_W_F.GetInverse()
-    vertices_by_mesh = []
-    face_vertex_counts_by_mesh = []
-    face_vertex_indices_by_mesh = []
-    vertex_offset = 0
+    meshes = []
 
     for descendant_prim in Usd.PrimRange(local_frame_prim, Usd.TraverseInstanceProxies()):
         prim_path = descendant_prim.GetPath()
@@ -215,33 +213,18 @@ def _read_mesh_geometry_in_prim_frame(local_frame_prim: Usd.Prim) -> LocalMeshGe
         assert not any(
             attribute.ValueMightBeTimeVarying() for attribute in mesh_attributes
         ), f"Mesh geometry requires fixed vertices and topology; '{prim_path}' is animated."
-        points, face_vertex_counts, face_vertex_indices = (attribute.Get(time_code) for attribute in mesh_attributes)
-        assert (
-            points is not None and face_vertex_counts is not None and face_vertex_indices is not None
-        ), f"Mesh '{prim_path}' must define points, faceVertexCounts, and faceVertexIndices."
-        vertices_G = np.asarray(points, dtype=np.float64)
-        assert (
-            vertices_G.ndim == 2 and vertices_G.shape[1] == 3 and len(vertices_G) > 0
-        ), f"Mesh '{prim_path}' must contain vertices with shape (num_vertices, 3)."
         # USD matrices multiply row vectors. Remove only the root pose, retaining all spawned scale.
         T_F_G = np.asarray(transform_cache.GetLocalToWorldTransform(descendant_prim) * T_F_W, dtype=np.float64)
-        vertices_F = vertices_G @ T_F_G[:3, :3] + T_F_G[3, :3]
-        geometry = LocalMeshGeometry(
-            vertices=vertices_F,
-            face_vertex_counts=np.asarray(face_vertex_counts, dtype=np.int64),
-            face_vertex_indices=np.asarray(face_vertex_indices, dtype=np.int64),
-        )
-        vertices_by_mesh.append(geometry.vertices)
-        face_vertex_counts_by_mesh.append(geometry.face_vertex_counts)
-        face_vertex_indices_by_mesh.append(geometry.face_vertex_indices + vertex_offset)
-        vertex_offset += len(vertices_G)
+        mesh_arrays = read_mesh_arrays(mesh, T_F_G)
+        assert (
+            mesh_arrays is not None
+        ), f"Mesh '{prim_path}' must define points, faceVertexCounts, and faceVertexIndices."
+        # Validate each mesh before index offsets could hide an invalid reference to another mesh's vertices.
+        LocalMeshGeometry(*mesh_arrays)
+        meshes.append(mesh_arrays)
 
-    assert vertices_by_mesh, f"Prim '{local_frame_prim.GetPath()}' has no default-purpose mesh geometry."
-    return LocalMeshGeometry(
-        vertices=np.concatenate(vertices_by_mesh),
-        face_vertex_counts=np.concatenate(face_vertex_counts_by_mesh),
-        face_vertex_indices=np.concatenate(face_vertex_indices_by_mesh),
-    )
+    assert meshes, f"Prim '{local_frame_prim.GetPath()}' has no default-purpose mesh geometry."
+    return LocalMeshGeometry(*concatenate_mesh_arrays(meshes))
 
 
 def read_spawned_meshes_in_local_frame(
