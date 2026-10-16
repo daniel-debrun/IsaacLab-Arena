@@ -8,7 +8,7 @@
 from dataclasses import dataclass
 
 from isaaclab_arena.progress_tracking.completion_criteria import CompletionCriteria
-from isaaclab_arena.progress_tracking.progress_tracking_utils import Predicate
+from isaaclab_arena.progress_tracking.progress_tracking_utils import DEFAULT_SEQUENCE_NAME, Predicate
 
 
 @dataclass
@@ -18,11 +18,11 @@ class TrackedEventCfg:
     name: str
     """Unique name within the task, used in recorded event occurrences."""
 
-    predicate_sequence: list[Predicate] | None = None
-    """One ordered sequence; provide exactly one of predicate_sequence or predicate_sequences."""
+    predicates: list[Predicate] | dict[str, list[Predicate]]
+    """An ordered list, or named independent ordered sequences, all required.
 
-    predicate_sequences: dict[str, list[Predicate]] | None = None
-    """Independent ordered sequences, all required. Use one predicate per sequence for any-order tracking."""
+    Use one predicate per dictionary entry for any-order tracking.
+    """
 
     desired_predicate_state: list[bool | None] | None = None
     """Optional current states in addition to history; None entries ignore that member.
@@ -35,11 +35,7 @@ class TrackedEventCfg:
 
     def __post_init__(self):
         assert isinstance(self.name, str) and self.name.strip(), "Tracked events require a nonempty name."
-        criteria = CompletionCriteria(
-            name=self.name,
-            predicate_sequence=self.predicate_sequence,
-            predicate_sequences=self.predicate_sequences,
-        )
+        criteria = self._to_completion_criteria()
         num_predicates = 0
         for sequence in criteria.canonical_predicate_sequences.values():
             num_predicates += len(sequence)
@@ -52,6 +48,14 @@ class TrackedEventCfg:
                 state is None or isinstance(state, bool) for state in self.desired_predicate_state
             ), "Desired predicate states must be True, False, or None."
             assert any(state is not None for state in self.desired_predicate_state), "At least one member is required."
+
+    def _to_completion_criteria(self) -> CompletionCriteria:
+        """Build completion criteria using the configured sequence ordering."""
+        assert isinstance(self.predicates, (list, dict)), "predicates must be a list or a dictionary of named lists."
+        sequences = self.predicates
+        if isinstance(sequences, list):
+            sequences = {DEFAULT_SEQUENCE_NAME: sequences}
+        return CompletionCriteria(name=self.name, predicate_sequences=sequences)
 
 
 @dataclass(frozen=True)

@@ -375,29 +375,28 @@ including in sequential composite tasks. Tasks configuring tracked events must a
        return [
            TrackedEventCfg(
                name="failed_grasp",
-               predicate_sequence=[
+               predicates=[
                    hand_open_near_object,
                    TrueForConsecutiveStepsCfg(closed_without_grasp, required_steps=10),
                ],
            ),
            TrackedEventCfg(
                name="contact_lost",
-               predicate_sequence=[in_contact],
+               predicates=[in_contact],
                desired_predicate_state=[False],
            ),
        ]
 
 Each callable above is a configured predicate returning a Boolean tensor of shape
-``(env.num_envs,)``. Use exactly one of ``predicate_sequence`` or ``predicate_sequences``,
-following the same convention as ``CompletionCriteria``. Predicates in each sequence progress
-in order; named sequences progress independently and all must complete. For any-order tracking,
-give each predicate its own sequence:
+``(env.num_envs,)``. The required ``predicates`` field accepts an ordered list or a dictionary
+of named ordered lists. Dictionary entries progress independently and all must complete.
+For any-order tracking, give each predicate its own sequence:
 
 .. code-block:: python
 
    TrackedEventCfg(
        name="both_observed",
-       predicate_sequences={"first": [A], "second": [B]},
+       predicates={"first": [A], "second": [B]},
    )
 
 A and B can complete in either order; their true periods need not overlap. This requires both,

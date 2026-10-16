@@ -59,8 +59,8 @@ def _test_recurring_events_and_success(_app):
         2,
         "cpu",
         tracked_events=[
-            TrackedEventCfg("instant", predicate_sequence=[_condition]),
-            TrackedEventCfg("held", predicate_sequence=[TrueForConsecutiveStepsCfg(_condition, 2)]),
+            TrackedEventCfg("instant", predicates=[_condition]),
+            TrackedEventCfg("held", predicates=[TrueForConsecutiveStepsCfg(_condition, 2)]),
         ],
     )
     for step in range(1, 7):
@@ -119,9 +119,7 @@ def _test_event_activity_does_not_change_success(_app):
         subtasks_are_sequential=True,
         desired_subtask_success_state=[True, True],
         tracked_events=[
-            TrackedEventCfg(
-                "observed", predicate_sequence=[TrueForConsecutiveStepsCfg(partial(_condition, index=2), 2)]
-            )
+            TrackedEventCfg("observed", predicates=[TrueForConsecutiveStepsCfg(partial(_condition, index=2), 2)])
         ],
     )
     for step in range(1, 9):
@@ -155,10 +153,10 @@ def _test_order_and_fresh_history(_app):
         1,
         "cpu",
         tracked_events=[
-            TrackedEventCfg("ordered", predicate_sequence=predicates),
+            TrackedEventCfg("ordered", predicates=predicates),
             TrackedEventCfg(
                 "unordered",
-                predicate_sequences={f"member_{index}": [predicate] for index, predicate in enumerate(predicates)},
+                predicates={f"member_{index}": [predicate] for index, predicate in enumerate(predicates)},
             ),
         ],
     )
@@ -199,11 +197,11 @@ def _test_desired_states_and_none_gating(_app):
         1,
         "cpu",
         tracked_events=[
-            TrackedEventCfg("cleared", predicate_sequence=[predicates[0]], desired_predicate_state=[False]),
-            TrackedEventCfg("gated", predicate_sequence=predicates, desired_predicate_state=[None, True]),
+            TrackedEventCfg("cleared", predicates=[predicates[0]], desired_predicate_state=[False]),
+            TrackedEventCfg("gated", predicates=predicates, desired_predicate_state=[None, True]),
             TrackedEventCfg(
                 "ignored",
-                predicate_sequences={f"member_{index}": [predicate] for index, predicate in enumerate(predicates)},
+                predicates={f"member_{index}": [predicate] for index, predicate in enumerate(predicates)},
                 desired_predicate_state=[None, True],
             ),
         ],
@@ -239,8 +237,8 @@ def _test_temporal_event_isolation(_app):
         "cpu",
         env,
         tracked_events=[
-            TrackedEventCfg("gated", predicate_sequence=[_condition, counter]),
-            TrackedEventCfg("independent", predicate_sequence=[counter]),
+            TrackedEventCfg("gated", predicates=[_condition, counter]),
+            TrackedEventCfg("independent", predicates=[counter]),
         ],
     )
     for _ in range(3):
@@ -303,9 +301,9 @@ def _test_callable_events(_app):
             1,
             "cpu",
             tracked_events=[
-                TrackedEventCfg("instant", predicate_sequence=[predicate]),
-                TrackedEventCfg("held", predicate_sequence=[held]),
-                TrackedEventCfg("ordered", predicate_sequence=[held, held]),
+                TrackedEventCfg("instant", predicates=[predicate]),
+                TrackedEventCfg("held", predicates=[held]),
+                TrackedEventCfg("ordered", predicates=[held, held]),
             ],
         )
         for _ in range(5):
@@ -345,10 +343,10 @@ def _test_single_tracker_and_shared_cache(_app):
             2,
             "cpu",
             tracked_events=[
-                TrackedEventCfg("instant", predicate_sequence=[condition]),
-                TrackedEventCfg("held", predicate_sequence=[held]),
-                TrackedEventCfg("ordered", predicate_sequence=[held, held]),
-                TrackedEventCfg("unordered", predicate_sequences={"member_0": [held], "member_1": [held]}),
+                TrackedEventCfg("instant", predicates=[condition]),
+                TrackedEventCfg("held", predicates=[held]),
+                TrackedEventCfg("ordered", predicates=[held, held]),
+                TrackedEventCfg("unordered", predicates={"member_0": [held], "member_1": [held]}),
             ],
         )
         assert constructor.call_count == 1, "Events must not construct nested ProgressTrackers."
@@ -379,10 +377,10 @@ def _test_desired_states_recheck_completed_temporal_members(_app):
         1,
         "cpu",
         tracked_events=[
-            TrackedEventCfg("ordered", predicate_sequence=requirements, desired_predicate_state=[True, False]),
+            TrackedEventCfg("ordered", predicates=requirements, desired_predicate_state=[True, False]),
             TrackedEventCfg(
                 "unordered",
-                predicate_sequences={f"member_{index}": [predicate] for index, predicate in enumerate(requirements)},
+                predicates={f"member_{index}": [predicate] for index, predicate in enumerate(requirements)},
                 desired_predicate_state=[True, False],
             ),
         ],
@@ -424,7 +422,7 @@ def _test_rearm_requires_fresh_temporal_sequence(_app):
         tracked_events=[
             TrackedEventCfg(
                 "failure",
-                predicate_sequence=[
+                predicates=[
                     TrueForConsecutiveStepsCfg(_condition, 2),
                     TrueForConsecutiveStepsCfg(partial(_condition, index=1), 3),
                 ],
@@ -454,7 +452,7 @@ def _test_temporal_desired_states_while_waiting(_app):
         tracked_events=[
             TrackedEventCfg(
                 "contact_lost_in_region",
-                predicate_sequence=[
+                predicates=[
                     TrueForConsecutiveStepsCfg(_condition, 2),
                     partial(_condition, index=1),
                 ],
@@ -494,7 +492,7 @@ def _test_named_sequences_and_desired_state_order(_app):
         tracked_events=[
             TrackedEventCfg(
                 "observed",
-                predicate_sequences={"z_sequence": [first, second], "a_sequence": [independent]},
+                predicates={"z_sequence": [first, second], "a_sequence": [independent]},
                 desired_predicate_state=[False, True, True],
             )
         ],
@@ -530,10 +528,10 @@ def _test_any_order_rearm_and_desired_states(_app):
         1,
         "cpu",
         tracked_events=[
-            TrackedEventCfg("forward", predicate_sequences={"member_0": [first], "member_1": [second]}),
-            TrackedEventCfg("reverse", predicate_sequences={"member_0": [second], "member_1": [first]}),
-            TrackedEventCfg("cleared", predicate_sequence=[first], desired_predicate_state=[False]),
-            TrackedEventCfg("ignored_tail", predicate_sequence=[first, second], desired_predicate_state=[True, None]),
+            TrackedEventCfg("forward", predicates={"member_0": [first], "member_1": [second]}),
+            TrackedEventCfg("reverse", predicates={"member_0": [second], "member_1": [first]}),
+            TrackedEventCfg("cleared", predicates=[first], desired_predicate_state=[False]),
+            TrackedEventCfg("ignored_tail", predicates=[first, second], desired_predicate_state=[True, None]),
         ],
     )
     for values in (
@@ -596,12 +594,12 @@ def _test_finished_episode_events(_app, output_dir):
         def get_tracked_events(self):
             held = TrueForConsecutiveStepsCfg(always, required_steps=2)
             return [
-                TrackedEventCfg("instant", predicate_sequence=[always]),
-                TrackedEventCfg("held", predicate_sequence=[held]),
-                TrackedEventCfg("ordered", predicate_sequence=[held, held]),
+                TrackedEventCfg("instant", predicates=[always]),
+                TrackedEventCfg("held", predicates=[held]),
+                TrackedEventCfg("ordered", predicates=[held, held]),
                 TrackedEventCfg(
                     "cleared",
-                    predicate_sequence=[TrueForConsecutiveStepsCfg(initially_true, required_steps=2)],
+                    predicates=[TrueForConsecutiveStepsCfg(initially_true, required_steps=2)],
                     desired_predicate_state=[False],
                 ),
             ]
@@ -657,7 +655,7 @@ def _test_recording_and_validation(_app):
     from isaaclab_arena.recording.progress_terms import record_progress_results
 
     env = _env([[True]])
-    event_cfg = TrackedEventCfg("observed", predicate_sequence=[_condition])
+    event_cfg = TrackedEventCfg("observed", predicates=[_condition])
     env.progress_tracker = ProgressTracker(_success_criteria(), 1, "cpu", tracked_events=[event_cfg])
     tracker = env.progress_tracker
     with pytest.raises(AssertionError, match="step_index"):
@@ -666,18 +664,15 @@ def _test_recording_and_validation(_app):
         ProgressTracker(_success_criteria(), 1, "cpu", tracked_events=[event_cfg, event_cfg])
     with pytest.raises(AssertionError, match="Task success requires"):
         ProgressTracker([], 1, "cpu", tracked_events=[event_cfg])
-    with pytest.raises(AssertionError, match="exactly one"):
+    with pytest.raises(TypeError, match="predicates"):
         TrackedEventCfg("invalid")
-    with pytest.raises(AssertionError, match="exactly one"):
-        TrackedEventCfg("invalid", predicate_sequence=[_condition], predicate_sequences={"a": [_condition]})
     with pytest.raises(AssertionError, match="one desired state"):
-        TrackedEventCfg("invalid", predicate_sequences={"a": [_condition, _condition]}, desired_predicate_state=[True])
-    for invalid in ([], {"empty": []}, {}):
-        keyword = "predicate_sequences" if isinstance(invalid, dict) else "predicate_sequence"
+        TrackedEventCfg("invalid", predicates={"a": [_condition, _condition]}, desired_predicate_state=[True])
+    for invalid in ([], {"empty": []}, {}, None, _condition, (_condition,), {"invalid": _condition}):
         with pytest.raises(AssertionError):
-            TrackedEventCfg("invalid", **{keyword: invalid})
+            TrackedEventCfg("invalid", predicates=invalid)
     with pytest.raises(AssertionError, match="At least one"):
-        TrackedEventCfg("invalid", predicate_sequence=[_condition], desired_predicate_state=[None])
+        TrackedEventCfg("invalid", predicates=[_condition], desired_predicate_state=[None])
     _step(tracker, env)
     with pytest.raises(AssertionError, match="exactly one"):
         tracker.step(env, env.episode_length_buf)
@@ -711,7 +706,7 @@ def _test_builder_and_composition(_app):
 
     class ObservingTask(NoTask):
         def get_tracked_events(self):
-            return [TrackedEventCfg("observed", predicate_sequence=[_condition])]
+            return [TrackedEventCfg("observed", predicates=[_condition])]
 
     description = IsaacLabArenaEnvironment(
         name="observing_task",

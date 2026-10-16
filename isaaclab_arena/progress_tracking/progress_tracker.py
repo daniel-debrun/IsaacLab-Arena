@@ -805,11 +805,7 @@ class _TrackedEventRunner:
 
     def __init__(self, event_cfg: TrackedEventCfg, num_envs: int, device, env):
         self.event_cfg = event_cfg
-        criteria = CompletionCriteria(
-            name=event_cfg.name,
-            predicate_sequence=event_cfg.predicate_sequence,
-            predicate_sequences=event_cfg.predicate_sequences,
-        )
+        criteria = event_cfg._to_completion_criteria()
         # Match desired-state entries to the same insertion order used by CompletionCriteria.
         self._member_locations = []
         for sequence_name, sequence in criteria.canonical_predicate_sequences.items():
