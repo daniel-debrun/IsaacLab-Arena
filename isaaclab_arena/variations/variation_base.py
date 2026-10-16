@@ -128,8 +128,8 @@ class VariationBase(ABC):
             seed: Seed of the build, ArenaEnvBuilderCfg.seed.
             variation_key: Key of this variation in the build, "<asset_name>.<variation_name>".
         """
-        # One seed per variation from the build seed and the variation key. sha256 instead of hash(), whose result for
-        # a str changes between processes; torch generator seeds are 64-bit, so keep the first 8 bytes.
+        # One seed per variation from the build seed and the variation key. Torch generator seeds are 64-bit, so keep
+        # the first 8 bytes of the digest.
         digest = hashlib.sha256(f"{seed}:{variation_key}".encode()).digest()
         variation_seed = int.from_bytes(digest[:8], "big")
         self.build_time_generator = torch.Generator(device="cpu").manual_seed(variation_seed)
