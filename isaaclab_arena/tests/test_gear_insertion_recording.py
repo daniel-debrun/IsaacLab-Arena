@@ -118,7 +118,6 @@ def test_gear_insertion_recording_exports_two_successful_episodes(tmp_path, enab
             "--dataset_file",
             str(dataset_path),
         ],
-        timeout_sec=180,
         capture_output=True,
     )
     output = result.stdout + result.stderr
