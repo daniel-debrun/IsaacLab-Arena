@@ -694,6 +694,12 @@ registered set.  The <code class="docutils literal notranslate"><span class="pre
 extrinsics jitter range to ±10 mm per axis.</p>
 <p>To see the available variations and control parameters for a specific environment,
 see <a class="reference internal" href="#discovering-available-variations"><span class="std std-ref">Discovering available variations</span></a>.</p>
+<p>With Isaac Lab’s <code class="docutils literal notranslate"><span class="pre">record_demos.py</span></code> and Arena’s <code class="docutils literal notranslate"><span class="pre">environment_registration_callback</span></code>,
+append the same variation overrides to the recording command, for example
+<code class="docutils literal notranslate"><span class="pre">rubiks_cube_hot3d_robolab.mass.enabled=true</span></code> for <code class="docutils literal notranslate"><span class="pre">pick_and_place_maple_table</span></code>.
+Arena consumes its variation overrides and returns the remaining arguments to the Isaac Lab script.
+See <a class="reference internal" href="../../example_workflows/static_manipulation/step_2_teleoperation.html"><span class="doc">Teleoperation Data Collection</span></a>
+for recording setup and the full command using the callback.</p>
 </section>
 <section id="configuring-variations-in-an-experiment-config">
 <h2>Configuring variations in an experiment config<a class="headerlink" href="#configuring-variations-in-an-experiment-config" title="Link to this heading">#</a></h2>
