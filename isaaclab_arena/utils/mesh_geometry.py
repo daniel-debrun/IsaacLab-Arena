@@ -4,13 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 
-"""Local mesh geometry and RoboLab-compatible convex-hull containment.
-
-Hull construction and half-space evaluation are adapted from RoboLab's
-``robolab/core/task/hull_check.py`` at revision
-``021a468c038f9c269b644d3e7e182e2952530ff7``:
-https://github.com/NVlabs/RoboLab/blob/021a468c038f9c269b644d3e7e182e2952530ff7/robolab/core/task/hull_check.py
-"""
+"""Local mesh geometry and convex-hull containment checks."""
 
 import numpy as np
 import torch
@@ -86,7 +80,7 @@ def _validate_vertices(vertices: np.ndarray) -> None:
 
 
 def build_convex_hull(vertices: np.ndarray, device: torch.device | str = "cpu") -> ConvexHullGeometry:
-    """Build a convex hull and its RoboLab open-top plane set from mesh vertices.
+    """Build a convex hull with closed and open-top plane sets.
 
     Faces with local normal z >= 0.7 are removed for the open-top region.
     Retained sloped walls can still constrain points above the original top.

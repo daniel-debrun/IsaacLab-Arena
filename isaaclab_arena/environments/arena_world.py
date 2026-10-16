@@ -337,18 +337,19 @@ class ArenaWorld:
         return self._aabbs_in_local_frame_cache[scene_key]
 
     def get_meshes_in_local_frame(self, scene_key: str) -> tuple[tuple[LocalMeshGeometry, torch.Tensor], ...]:
-        """Return cached spawned meshes and the environment indices using each mesh.
+        """Return cached mesh vertices and faces in local frame F.
 
-        Geometry is expressed in the frame returned by ``get_pose_w``, with spawned
-        scale included. Meshes and index tensors are shared cache data; callers must
-        not modify them. Pose changes and resets reuse the cache. Geometry, scale,
-        and variant assignments must remain fixed for this ArenaWorld's lifetime.
+        ``get_pose_w`` maps F into world coordinates. Vertices include spawned
+        scale. Pose changes and resets reuse the cache. Geometry, scale, and
+        variant assignments must remain fixed for this ArenaWorld's lifetime.
 
         Args:
             scene_key: Rigid-object or fixed-geometry scene-extra name.
 
         Returns:
-            One ``(local_mesh, environment_indices)`` pair per spawned variant.
+            One ``(local_mesh, environment_indices)`` pair per spawned variant,
+            identifying environments that share its geometry. Do not modify the
+            cached arrays or index tensors.
         """
         if scene_key not in self._meshes_in_local_frame_cache:
             self._meshes_in_local_frame_cache[scene_key] = scene_access.read_spawned_meshes_in_local_frame(
@@ -357,17 +358,16 @@ class ArenaWorld:
         return self._meshes_in_local_frame_cache[scene_key]
 
     def get_convex_hulls_in_local_frame(self, scene_key: str) -> tuple[tuple[ConvexHullGeometry, torch.Tensor], ...]:
-        """Return cached local convex hulls and their environment indices.
+        """Return cached convex hulls in local frame F.
 
-        Hulls share the frame, scale, and lifetime of ``get_meshes_in_local_frame``.
-        Callers must not modify the returned geometry or index tensors.
+        Frame, scale, and cache requirements match ``get_meshes_in_local_frame``.
 
         Args:
             scene_key: Rigid-object or fixed-geometry scene-extra name.
 
         Returns:
             One ``(local_hull, environment_indices)`` pair per spawned variant,
-            with hull tensors on the scene device.
+            with tensors on the scene device. Do not modify the cached tensors.
         """
         if scene_key not in self._convex_hulls_in_local_frame_cache:
             hull_groups = []
@@ -383,8 +383,8 @@ class ArenaWorld:
     def get_hull_vertex_centroid_w(self, scene_key: str) -> torch.Tensor:
         """Return the mean of each object's convex-hull vertices in world frame W.
 
-        This is RoboLab's representative point for containment, distinct from the
-        bounding-box center returned by ``get_centroid_w`` and from center of mass.
+        This differs from the bounding-box center returned by ``get_centroid_w``
+        and from the center of mass.
 
         Args:
             scene_key: Rigid-object or fixed-geometry scene-extra name.

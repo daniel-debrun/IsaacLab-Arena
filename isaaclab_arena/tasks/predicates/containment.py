@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Containment predicates using cached meshes and RoboLab's hull-vertex center rule."""
+"""Convex-hull containment predicates."""
 
 from __future__ import annotations
 
@@ -25,11 +25,10 @@ def object_hull_centroid_in_closed_hull(
 ) -> torch.Tensor:
     """Check whether an object's hull-vertex center is inside a container's closed hull.
 
-    Like RoboLab's ``enclosed``, this tests one point, not full-object containment.
-    It adds no contact, release, orientation, motion, or task-history requirements.
+    Tests only the mean of the object's hull vertices; parts of the object may protrude.
 
     Args:
-        env: Environment supplying current poses and cached geometry through ArenaWorld.
+        env: Environment supplying poses and geometry through ArenaWorld.
         object_name: Rigid-object or fixed-geometry scene-extra name for the subject.
         container_name: Rigid-object or fixed-geometry scene-extra name for the destination.
 
@@ -44,15 +43,14 @@ def object_hull_centroid_in_open_container(
     object_name: str,
     container_name: str,
 ) -> torch.Tensor:
-    """Check an object's hull-vertex center against RoboLab's open-top container hull.
+    """Check whether an object's hull-vertex center is inside a container's open-top hull.
 
-    Faces whose outward normal has local Z component >= 0.7 are omitted. The region
-    can include space above the rim; it is a convex approximation, not the actual
-    cavity. The opening follows container-local +Z, including when the container
-    tips over. Contact, release, uprightness, and motion are separate conditions.
+    Omits faces with container-local normal Z >= 0.7. Retained slopes can limit
+    points above the rim. Tests only the mean of the object's hull vertices;
+    contact, release, uprightness, and motion are separate conditions.
 
     Args:
-        env: Environment supplying current poses and cached geometry through ArenaWorld.
+        env: Environment supplying poses and geometry through ArenaWorld.
         object_name: Rigid-object or fixed-geometry scene-extra name for the subject.
         container_name: Rigid-object or fixed-geometry scene-extra name for the destination.
 
