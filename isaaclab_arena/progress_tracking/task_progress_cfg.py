@@ -6,7 +6,7 @@
 from dataclasses import dataclass, field
 
 from isaaclab_arena.progress_tracking.completion_criteria import CompletionCriteria
-from isaaclab_arena.progress_tracking.predicate_group import TrackedEventCfg
+from isaaclab_arena.progress_tracking.tracked_event_cfg import TrackedEventCfg
 
 
 @dataclass

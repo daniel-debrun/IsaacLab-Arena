@@ -390,7 +390,8 @@ class ArenaEnvBuilder:
         termination_cfg = self._build_termination_manager_cfg(task_termination_cfg)
         task_progress_cfg = None
         tracked_events = task.get_tracked_events()
-        if task_termination_cfg.success or tracked_events:
+        assert not tracked_events or task_termination_cfg.success, "Tracked events require task success criteria."
+        if task_termination_cfg.success:
             task_progress_cfg = TaskProgressCfg(
                 success_criteria=task_termination_cfg.success,
                 subtasks_are_sequential=task_termination_cfg.subtasks_are_sequential,

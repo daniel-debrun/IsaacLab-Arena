@@ -360,63 +360,77 @@ until the next step.
 Recurring observations independent of success
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Override ``TaskBase.get_tracked_events()`` to observe named predicate groups throughout an
+Override ``TaskBase.get_tracked_events()`` to observe named events throughout an
 episode. These observations do not change success, failure termination, or task progress scores.
-Each group records an occurrence when it completes and waits for its completion condition to clear
-before resetting its history and counters. Groups remain active during every subtask,
-including in sequential composite tasks. They also work in tasks without success criteria.
+Each event records an occurrence when it completes and waits for its completion condition to clear
+before resetting its history and counters. Events remain active during every subtask,
+including in sequential composite tasks. Tasks configuring tracked events must also define success criteria.
 
 .. code-block:: python
 
-   from isaaclab_arena.progress_tracking.predicate_group import TrackedEventCfg
+   from isaaclab_arena.progress_tracking.tracked_event_cfg import TrackedEventCfg
    from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
 
    def get_tracked_events(self) -> list[TrackedEventCfg]:
        return [
            TrackedEventCfg(
                name="failed_grasp",
-               predicates=[
+               predicate_sequence=[
                    hand_open_near_object,
                    TrueForConsecutiveStepsCfg(closed_without_grasp, required_steps=10),
                ],
-               predicates_are_sequential=True,
            ),
            TrackedEventCfg(
                name="contact_lost",
-               predicates=[in_contact],
+               predicate_sequence=[in_contact],
                desired_predicate_state=[False],
            ),
        ]
 
 Each callable above is a configured predicate returning a Boolean tensor of shape
-``(env.num_envs,)``. The default, ``predicates_are_sequential=False``, remembers completion of
-all members in any order. Separate predicate groups always advance independently.
+``(env.num_envs,)``. Use exactly one of ``predicate_sequence`` or ``predicate_sequences``,
+following the same convention as ``CompletionCriteria``. Predicates in each sequence progress
+in order; named sequences progress independently and all must complete. For any-order tracking,
+give each predicate its own sequence:
 
-``desired_predicate_state`` follows the existing subtask final-state semantics:
+.. code-block:: python
+
+   TrackedEventCfg(
+       name="both_observed",
+       predicate_sequences={"first": [A], "second": [B]},
+   )
+
+A and B can complete in either order; their true periods need not overlap. This requires both,
+not either one. Named sequences may also contain several ordered predicates. Separate events
+always advance independently.
+
+``desired_predicate_state`` follows the existing subtask final-state semantics. Entries follow
+dictionary insertion order, then predicate order within each sequence:
 
 * Omit the list to require only recorded completion of every member.
 * ``True`` requires recorded completion and a currently true condition.
 * ``False`` requires recorded completion and a currently false condition.
 * ``None`` excludes that member from the completion check. An ignored member still gates later
-  members in an ordered group. At least one member must participate.
+  members in its sequence. At least one member must participate.
 
 History and resets
 ^^^^^^^^^^^^^^^^^^
 
 Use the existing ``TrueForConsecutiveStepsCfg`` to require an instantaneous predicate to stay true
-for consecutive control steps. Each group member gets independent counters, even when the same configuration
-is reused across groups or task success criteria. In ordered groups, a member's counter starts only after its turn
-begins. After completion, the group resets its progress and counters once the completion condition
+for consecutive control steps. Each member gets independent counters, even when the same configuration
+is reused across events or task success criteria. A member's counter starts only after its turn in its sequence
+begins. After completion, the event resets its progress and counters once the completion condition
 clears for one observed step. Fresh tracking starts on the following step.
 
 Without desired states, at least one member that finished on the occurrence step must become false;
 earlier members may already be false. With desired states, the specified state combination must
-stop holding. While waiting, temporal requirements check their underlying instantaneous predicates
-without updating their counters. A new occurrence must satisfy the temporal requirements again.
+stop holding. Both completion and waiting checks use the full predicate result, including its temporal
+requirement. Relevant temporal counters continue updating while waiting; they are reset when the
+condition clears. A new occurrence must satisfy the temporal requirements again from scratch.
 
-Group resets clear tracker-owned history. They do not reset underlying predicate callables or state
+Event resets clear tracker-owned history. They do not reset underlying predicate callables or state
 stored in the environment. Supply instantaneous checks and express temporal holds through
-``TrueForConsecutiveStepsCfg``. Custom private history has no group reset lifecycle.
+``TrueForConsecutiveStepsCfg``. Custom private history has no event reset lifecycle.
 
 Reading and recording occurrences
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -429,14 +443,13 @@ Reading and recording occurrences
 
 The list contains all occurrences in the episode, not just the latest step. Direct consumers may
 also call ``env.unwrapped.progress_tracker.get_tracked_event_occurrences()`` without evaluating predicates.
-Group names from composite subtasks are prefixed with ``subtask_<index>/``. As with task progress, the extras snapshot
+Event names from composite subtasks are prefixed with ``subtask_<index>/``. As with task progress, the extras snapshot
 retains the finished episode until the following step.
 
 The existing episode recorder adds ``progress.tracked_event_names``, ``progress.tracked_events``, and
-``progress.control_step_dt`` to JSONL results. Configured names include groups with no occurrences.
-The HTML report shows per-group timelines and counts, with links that seek recorded video using
-the episode's control-step duration. Video should use simulation time for playback. Tasks without
-success criteria record observations without synthetic task-progress scores.
+``progress.control_step_dt`` to JSONL results. Configured names include events with no occurrences.
+The HTML report shows per-event timelines and counts, with links that seek recorded video using
+the episode's control-step duration. Video should use simulation time for playback.
 
 .. _consecutive-step-episode-summary:
 
@@ -502,8 +515,8 @@ ends at step 7, the summary shows 6/10, with four more uninterrupted qualifying 
 
 Arena's episode recorder also serializes the final progress state and predicate events into the
 episode's JSONL record when an output path is configured. Tasks without completion criteria have
-no success termination. Tasks with neither completion criteria nor tracked events have no
-progress-tracking configuration and produce no progress fields.
+no success termination or progress-tracking configuration, cannot configure tracked events,
+and produce no progress fields.
 
 For example, one entry of the JSONL record may look like this (placement predicate name shortened):
 

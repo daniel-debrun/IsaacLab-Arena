@@ -21,7 +21,7 @@ from isaaclab_arena.tasks.task_transition import TaskTransition
 
 if TYPE_CHECKING:
     from isaaclab_arena.embodiments.embodiment_base import EmbodimentBase
-    from isaaclab_arena.progress_tracking.predicate_group import TrackedEventCfg
+    from isaaclab_arena.progress_tracking.tracked_event_cfg import TrackedEventCfg
 
 
 class TaskBase(ABC):
