@@ -98,8 +98,10 @@ not fix the other.
        :doc:`RigidObjectSet <../scene/concept_rigid_object_set>` member
        assignment. With ``None``, placement stays non-reproducible across runs.
 
-There is no separate variation seed: build-time and run-time variations follow
-``--seed``. See :doc:`../variations/variations` and
+There is no separate variation seed: each variation draws from its own
+generator, seeded from ``--seed`` and the variation's
+``<asset_name>.<variation_name>`` key. Run-time draws still depend on the order
+in which environments reset. See :doc:`../variations/variations` and
 :doc:`../object_placement/pooled_placement`.
 
 How to set it

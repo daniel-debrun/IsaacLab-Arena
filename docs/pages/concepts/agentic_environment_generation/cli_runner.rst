@@ -150,7 +150,7 @@ relevant to ``build`` and ``full`` are:
      - Sets spacing between parallel environments. Default: ``30.0``.
      - Arena environment
    * - ``--seed N``
-     - Seeds the simulation and build-time variations. Default: ``42``.
+     - Seeds the simulation and variations. Default: ``42``.
      - Build and evaluation
    * - ``--no_solve_relations``
      - Disables spatial-relation solving.
