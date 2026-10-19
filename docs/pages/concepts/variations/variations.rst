@@ -222,36 +222,23 @@ The environment's Python code declares the candidates as ``(name, spawn configur
 
    from isaaclab_arena.assets.object import Object
    from isaaclab_arena.assets.registries import AssetRegistry
-   from isaaclab_arena.variations.asset_selection_variation import (
-       AssetSelectionVariation,
-       AssetSelectionVariationCfg,
-   )
+   from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariation
 
    asset_registry = AssetRegistry()
    cracker_box_asset = asset_registry.get_named_spawn_cfg("cracker_box")
    sugar_box_asset = asset_registry.get_named_spawn_cfg("sugar_box")
    mustard_bottle_asset = asset_registry.get_named_spawn_cfg("mustard_bottle")
 
-   pick_up_object = Object(name="pickup")
+   pick_up_object = Object(name="pickup", asset=cracker_box_asset)
    pick_up_object.add_variation(
        AssetSelectionVariation(
            pick_up_object,
            asset_candidates=[cracker_box_asset, sugar_box_asset, mustard_bottle_asset],
-           cfg=AssetSelectionVariationCfg(enabled=True),
        )
    )
 
-``Object(name="pickup")`` has no asset of its own, so the build fails unless its selection is
-enabled. ``Object(name="pickup", asset=cracker_box_asset)`` spawns the cracker box while the
-selection is disabled.
-
-``asset_names`` lists the candidate names to choose from, in order. Empty means all candidates in
-declaration order, and one name pins that candidate. By default, a build takes name number
-``seed mod n`` of the ``n`` names, counting from zero, where ``seed`` is ``--seed``. The
-Experiment Runner adds the rebuild index to the seed, so ``n`` rebuilds take each name once. With
-``random_choice: true``, each build draws a name at random, and a name can repeat across rebuilds.
-
-This run takes each candidate once:
+Like every variation, the selection starts disabled, so this object spawns the cracker box until
+the experiment enables the selection. This run enables it and takes each candidate once:
 
 .. code-block:: yaml
 
@@ -261,6 +248,16 @@ This run takes each candidate once:
        variations:
          pickup.asset_selection.enabled: true
          pickup.asset_selection.asset_names: [cracker_box, sugar_box, mustard_bottle]
+
+The command-line overrides for the same two entries are ``pickup.asset_selection.enabled=true``
+and ``pickup.asset_selection.asset_names=[cracker_box,sugar_box,mustard_bottle]``.
+``Object(name="pickup")`` without an asset needs the selection enabled.
+
+``asset_names`` lists the candidate names to choose from, in order. Empty means all candidates in
+declaration order, and one name pins that candidate. By default, a build takes name number
+``seed mod n`` of the ``n`` names, counting from zero, where ``seed`` is ``--seed``. The
+Experiment Runner adds the rebuild index to the seed, so ``n`` rebuilds take each name once. With
+``random_choice: true``, each build draws a name at random, and a name can repeat across rebuilds.
 
 With the default seed 42, the three rebuilds spawn ``cracker_box``, ``sugar_box`` and
 ``mustard_bottle``. Every episode row records the name, for example
