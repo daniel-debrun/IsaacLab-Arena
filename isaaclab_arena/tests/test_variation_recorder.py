@@ -202,7 +202,7 @@ def test_recorder_rebinding_starts_fresh_runtime_records():
     variation.enable()
     recorder = VariationRecorder()
     recorder.attach({"asset": [variation]})
-    variation.configure_at_build_time()
+    variation.configure_at_build_time(seed=0, variation_key="asset.recorder_test")
     build_time_sample = recorder["asset.recorder_test"].sample_for_episode(0, 0).clone()
     recorder.attach_placement_sampler(variation.sampler, serializer=lambda sample: sample.tolist())
 
