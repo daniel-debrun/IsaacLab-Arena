@@ -13,8 +13,10 @@ Creates commits and PRs that follow Arena's contributor guidelines.
 
 1. Check whether the change breaks a public Python API, CLI, YAML or serialized-data format, or documented workflow used by downstream Arena users. If it does:
    - on `main`, update `docs/pages/references/migration_to_next_release.rst` with a concise
-     before/after example; on a release branch, update the versioned
-     guide instead.
+     before/after example; on a release branch, update the versioned guide instead.
+   - if an existing migration entry covers the same area or topic, append to or revise that entry
+     instead of creating a duplicate section.
+   - add or update the corresponding entry in the migration guide's **Quick access** table.
    - describe the break and required migration in the PR.
    Do not put a new change into an unrelated older migration guide.
 2. Run the `pre-commit-check` skill (or `pre-commit run --all-files` on the host — pre-commit is not installed in the container) until the working tree is clean. Do not commit through hook failures.

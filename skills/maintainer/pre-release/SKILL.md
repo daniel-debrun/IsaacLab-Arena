@@ -45,13 +45,14 @@ make -C docs html
 pre-commit run --all-files
 ```
 
-Open a PR to `main`. After it merges, record the merge commit and create
-`release/$VERSION` from that exact commit. Stop here; tagging and GitHub Release publication belong
-to the `publish-release` workflow.
+Open a PR to `main`. After it merges, record the merge commit.
 
 Before handing off, confirm:
 
 - Release notes and any migration guide are complete and linked.
 - Package and documentation versions are correct.
 - Documentation builds without warnings.
-- The release branch is created from the reviewed pre-release merge commit.
+- The reviewed pre-release merge commit is recorded.
+
+After these checks pass, manually create `release/$VERSION` from the recorded merge commit. Stop
+here; tagging and GitHub Release publication belong to the `publish-release` workflow.

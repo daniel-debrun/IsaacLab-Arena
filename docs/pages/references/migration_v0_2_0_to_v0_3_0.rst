@@ -5,6 +5,105 @@ Arena v0.3.0 replaces several loosely typed evaluation and extension interfaces 
 Environment, Policy, Run, and Experiment configurations. This guide covers the changes most
 likely to affect repositories that import Arena or keep it as a submodule.
 
+Quick access
+------------
+
+Use this table to jump to the parts that apply to your project.
+
+.. list-table::
+   :header-rows: 1
+
+   * - If your v0.2 project...
+     - Go to
+   * - Installs Arena or pins its Isaac Lab submodule
+     - :ref:`Installation and prerequisites <migration-v0-2-installation>`
+   * - Calls Arena's teleoperation, recording, replay, or Mimic scripts
+     - :ref:`Isaac Lab imitation-learning interoperation <migration-v0-2-il-interop>`
+   * - Runs JSON evaluation jobs
+     - :ref:`Evaluation entry point and configuration <migration-v0-2-evaluation>`
+   * - Constructs ``ArenaEnvBuilder`` directly
+     - :ref:`Direct environment-builder construction <migration-v0-2-builder>`
+   * - Defines or registers a custom environment
+     - :ref:`Custom environments <migration-v0-2-custom-environments>`
+   * - Uses an orchestrator or overrides ``modify_env_cfg()``
+     - :ref:`Environment customization hooks <migration-v0-2-customization>`
+   * - Defines custom metrics
+     - :ref:`Custom metrics <migration-v0-2-metrics>`
+   * - Defines a policy or uses Arena's old remote-policy framework
+     - :ref:`Policy and remote-policy APIs <migration-v0-2-policies>`
+
+.. _migration-v0-2-installation:
+
+Installation and prerequisites
+------------------------------
+
+Arena v0.3.0 requires Python 3.12 and moves package metadata from ``setup.py`` to
+``pyproject.toml``. After checking out v0.3.0, update the Isaac Lab submodule as well; the v0.3.0
+imitation-learning interoperation described below depends on the pinned Isaac Lab revision:
+
+.. code-block:: bash
+
+   git submodule update --init --recursive
+
+Existing Docker workflows remain supported. Native installation with ``uv`` is an optional new
+route, not a required migration:
+
+.. code-block:: bash
+
+   uv sync --extra dev
+   source .venv/bin/activate
+
+The committed ``uv.lock`` and ``.python-version`` select the supported dependencies and Python
+version. Use the source-based setup above; Arena does not publish a standalone package containing
+the complete workflow scripts. Native ``uv`` installations also omit the optional
+``isaaclab_arena_curobo`` package, so use Docker when cuRobo reachability validation is required.
+See :doc:`Installation <../quickstart/installation>` for the complete Docker and native setup.
+
+.. _migration-v0-2-il-interop:
+
+Isaac Lab imitation-learning interoperation
+-------------------------------------------
+
+Arena's v0.2 imitation-learning entry points were removed. In v0.3.0, invoke the corresponding
+Isaac Lab scripts and register Arena environments through
+``isaaclab_arena.environments.isaaclab_interop.environment_registration_callback``:
+
+.. list-table::
+   :header-rows: 1
+
+   * - v0.2 Arena script
+     - v0.3.0 Isaac Lab script
+   * - ``isaaclab_arena/scripts/imitation_learning/teleop.py``
+     - ``submodules/IsaacLab/scripts/environments/teleoperation/teleop_se3_agent.py``
+   * - ``isaaclab_arena/scripts/imitation_learning/record_demos.py``
+     - ``submodules/IsaacLab/scripts/tools/record_demos.py``
+   * - ``isaaclab_arena/scripts/imitation_learning/replay_demos.py``
+     - ``submodules/IsaacLab/scripts/tools/replay_demos.py``
+   * - ``isaaclab_arena/scripts/imitation_learning/annotate_demos.py``
+     - ``submodules/IsaacLab/scripts/imitation_learning/isaaclab_mimic/annotate_demos.py``
+   * - ``isaaclab_arena/scripts/imitation_learning/generate_dataset.py``
+     - ``submodules/IsaacLab/scripts/imitation_learning/isaaclab_mimic/generate_dataset.py``
+
+Replace the positional Arena environment name with ``--task`` and add ``--external_callback`` to
+each Isaac Lab command. For example:
+
+.. code-block:: bash
+
+   python submodules/IsaacLab/scripts/tools/record_demos.py \
+     --dataset_file /datasets/my_demos.hdf5 \
+     --num_demos 10 \
+     --external_callback isaaclab_arena.environments.isaaclab_interop.environment_registration_callback \
+     --task my_environment
+
+Keep script-specific options such as ``--mimic``, ``--xr``, and ``--arena_teleop_device`` where
+needed. For an environment defined outside Arena, also pass
+``--external_environment_class_path package.module:EnvironmentClass``; the registration callback
+loads and registers it before Isaac Lab resolves ``--task``. See the
+:doc:`imitation-learning workflows <../example_workflows/imitation_learning/index>` and
+:doc:`external environments <../arena_in_your_repo/external_environments>` for complete commands.
+
+.. _migration-v0-2-evaluation:
+
 Evaluation entry point and configuration
 ----------------------------------------
 
@@ -77,6 +176,47 @@ See :doc:`Arena Experiments <../concepts/concept_arena_experiments>`,
 ``isaaclab_arena_environments/experiment_configs/getting_started_experiment.yaml`` example.
 The corresponding legacy example is
 ``isaaclab_arena_environments/eval_jobs_configs/getting_started_jobs_config.json``.
+Local Experiment results are now grouped below a timestamped ``outputs`` directory.
+
+.. _migration-v0-2-builder:
+
+Direct environment-builder construction
+---------------------------------------
+
+Code that constructs ``ArenaEnvBuilder`` directly must replace its ``argparse.Namespace`` with an
+``ArenaEnvBuilderCfg``:
+
+.. code-block:: python
+
+   # v0.2
+   args = argparse.Namespace(num_envs=4, env_spacing=3.0, seed=42, solve_relations=True, ...)
+   builder = ArenaEnvBuilder(arena_env, args)
+   env_cfg = builder.compose_manager_cfg()
+
+.. code-block:: python
+
+   # v0.3.0
+   from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
+
+   builder_cfg = ArenaEnvBuilderCfg(
+       num_envs=4,
+       env_spacing=3.0,
+       seed=42,
+       solve_relations=True,
+   )
+   builder = ArenaEnvBuilder(arena_env, builder_cfg)
+   env_cfg, env_kwargs = builder.compose_manager_cfg()
+
+``compose_manager_cfg()`` now returns both the Isaac Lab environment configuration and keyword
+arguments that must be forwarded when creating the environment. The builder does this
+automatically when calling ``builder.make_registered()``. If custom code materializes the
+configuration first, pass both values back:
+
+.. code-block:: python
+
+   env = builder.make_registered(env_cfg, env_kwargs)
+
+.. _migration-v0-2-custom-environments:
 
 Custom environments
 -------------------
@@ -130,6 +270,70 @@ migrated environments should use the typed factory. See :doc:`Environment Defini
 ``isaaclab_arena_environments/pick_and_place_maple_table_environment.py`` for complete typed
 examples.
 
+.. _migration-v0-2-customization:
+
+Environment customization hooks
+-------------------------------
+
+The v0.2 ``OrchestratorBase`` interface and the ``modify_env_cfg()`` hooks on ``Scene``,
+``EmbodimentBase``, and ``TaskBase`` were removed. Move cross-component construction into the
+environment factory's ``build()`` method. Move final changes to the composed Isaac Lab
+configuration into the environment-level ``env_cfg_callback``:
+
+.. code-block:: python
+
+   def configure_env(env_cfg):
+       env_cfg.decimation = 4
+       return env_cfg
+
+
+   def make_environment(scene, embodiment, task):
+       return IsaacLabArenaEnvironment(
+           name="my_environment",
+           scene=scene,
+           embodiment=embodiment,
+           task=task,
+           env_cfg_callback=configure_env,
+       )
+
+An inherited ``modify_env_cfg()`` method is no longer called, so migrate the customization rather
+than leaving the old override in place.
+
+.. _migration-v0-2-metrics:
+
+Custom metrics
+--------------
+
+Custom ``MetricBase`` implementations now describe offline computation with
+``get_metric_term_cfg()``. Replace the metric instance's ``compute_metric_from_recording()`` method
+with a module-level function and return it in a ``MetricTermCfg``:
+
+.. code-block:: python
+
+   from isaaclab_arena.metrics.metric_term_cfg import MetricTermCfg
+
+
+   def compute_my_metric(recorded_metric_data, scale):
+       return scale * compute_value(recorded_metric_data)
+
+
+   class MyMetric(MetricBase):
+       name = "my_metric"
+       recorder_term_name = "my_metric_data"
+
+       def get_metric_term_cfg(self):
+           return MetricTermCfg(
+               compute_metric_func=compute_my_metric,
+               params={"scale": 2.0},
+               recorder_term_name=self.recorder_term_name,
+           )
+
+``compute_metric_func`` receives the recorded data as its first argument and the entries in
+``params`` as keyword arguments. Keep implementing ``get_recorder_term_cfg()`` to define the data
+recorded for the metric.
+
+.. _migration-v0-2-policies:
+
 Policy and remote-policy APIs
 -----------------------------
 
@@ -171,14 +375,6 @@ GR00T server separately. Compare
 See :doc:`Policy <../concepts/policy/index>`,
 :doc:`OpenPI <../quickstart/running_a_real_policy/openpi>`, and
 :doc:`GR00T <../quickstart/running_a_real_policy/gr00t>`.
-
-Additional evaluation changes
------------------------------
-
-Variation keys now belong below each Run's ``variations`` mapping. Graph YAML paths are selected
-through ``environment.type``. Local Experiment outputs are grouped below a timestamped
-``outputs`` directory, and OSMO submission uses typed YAML through
-``osmo/submit_arena_experiment.py``.
 
 Continue to v0.3.1
 ------------------
