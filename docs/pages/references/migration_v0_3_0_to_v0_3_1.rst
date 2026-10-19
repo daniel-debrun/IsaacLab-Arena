@@ -17,14 +17,16 @@ Use this table to jump to the parts that apply to your project.
      - Go to
    * - Selects or configures PhysX or Newton
      - :ref:`Physics backend selection <migration-v0-3-1-physics>`
-   * - Defines an environment graph in YAML
-     - :ref:`Environment graph YAML <migration-v0-3-1-yaml>`
+   * - Defines an environment graph or configures relation placement in Python
+     - :ref:`Environment graphs and placement defaults <migration-v0-3-1-yaml>`
    * - Defines task success, failure, timeout, or reads progress recordings
      - :ref:`Task completion and progress <migration-v0-3-1-task-completion>`
    * - Uses ``SequentialTaskBase`` or temporal predicate wrappers
      - :ref:`Composite and temporal predicates <migration-v0-3-1-predicates>`
    * - Reads object state in a custom predicate, reward, or metric
      - :ref:`Runtime scene queries <migration-v0-3-1-world>`
+   * - Imports ``ObjectType`` or helpers from ``isaaclab_arena.utils.usd``
+     - :ref:`Import paths <migration-v0-3-1-imports>`
    * - Depends on the exact number of evaluation episodes
      - :ref:`Exact episode limits <migration-v0-3-1-episodes>`
 
@@ -78,8 +80,8 @@ such as ``${...}``, or construct arbitrary classes.
 
 .. _migration-v0-3-1-yaml:
 
-Environment graph YAML
-----------------------
+Environment graphs and placement defaults
+-----------------------------------------
 
 Move placement validator options from ``placement_validators`` into ``placer_params``. The old
 key is rejected:
@@ -100,12 +102,30 @@ key is rejected:
 ``solver_params`` directly.
 
 The default placement initializer changed from the previous anchor-based behavior to ``on_tree``.
-To preserve v0.3.0 placement initialization, set it explicitly:
+This also affects Python environments that do not supply ``placer_params``. To preserve v0.3.0
+placement initialization in YAML, set it explicitly:
 
 .. code-block:: yaml
 
    placer_params:
      initializer_type: anchor
+
+For a Python environment, pass equivalent parameters to ``IsaacLabArenaEnvironment``:
+
+.. code-block:: python
+
+   from isaaclab_arena.relations.initializers.placement_initializer_base import InitializerType
+   from isaaclab_arena.relations.object_placer_params import ObjectPlacerParams
+   from isaaclab_arena.relations.relation_solver_params import RelationSolverParams
+
+   placer_params = ObjectPlacerParams(
+       solver_params=RelationSolverParams(verbose=False, save_position_history=False),
+       initializer_type=InitializerType.ANCHOR,
+   )
+   environment = IsaacLabArenaEnvironment(
+       # ...
+       placer_params=placer_params,
+   )
 
 Assets whose constructors accept an initial pose may also use the structured form:
 
@@ -131,10 +151,12 @@ a task-local Isaac Lab ``TerminationsCfg``. Make it return:
 * ``success`` as a list of ``CompletionCriteria``, and
 * ``failures`` as a mapping of failure names to Isaac Lab ``TerminationTermCfg`` objects.
 
-Convert any v0.3.0 ``success=TerminationTermCfg(...)`` into a predicate under
-``CompletionCriteria``; ``TerminationTermCfg`` remains valid for failures only. The builder also
-stops merging termination configurations from the scene and embodiment. Move any such custom
-terms into the task's ``TaskTerminationCfg``.
+Move any v0.3.0 ``success=TerminationTermCfg(...)`` into ``CompletionCriteria``; the same
+``TerminationTermCfg`` can go directly in ``predicate_sequence``. Stateful class-based predicates
+inside a completion criterion are not reset through Isaac Lab's termination manager, so move
+per-episode state into Arena's progress lifecycle or use a stateless predicate. The builder also
+stops merging termination configurations from the scene and embodiment. Move any such custom terms
+into the task's ``TaskTerminationCfg``.
 
 Move the criteria previously returned by ``get_progress_objectives()`` into ``success``:
 
@@ -170,9 +192,10 @@ the public configuration.
 
 The progress recording schema changes with this model. Consumers of evaluation JSONL files must
 rename ``objectives``/``objective``/``group`` to
-``criteria_by_name``/``criteria_name``/``sequence_name`` and account for
-``completed_sequences`` and ``total_sequences``. Old recordings are not converted automatically;
-regenerate them or update them before using v0.3.1 reporting tools.
+``criteria_by_name``/``criteria_name``/``sequence_name``,
+``completed_groups``/``total_groups`` to ``completed_sequences``/``total_sequences``, and the
+implicit ``default_group`` name to ``default_sequence``. Old recordings are not converted
+automatically; regenerate them or update them before using v0.3.1 reporting tools.
 
 .. _migration-v0-3-1-predicates:
 
@@ -201,13 +224,18 @@ consecutive-step behavior is needed:
 
 .. code-block:: python
 
+   from functools import partial
+
+   from isaaclab_arena.tasks.predicates.object_settling import objects_below_velocity_thresholds
    from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
+
+   objects_are_resting = partial(objects_below_velocity_thresholds, object_names=["cube"])
 
    CompletionCriteria(
        name="settled",
        predicate_sequence=[
            TrueForConsecutiveStepsCfg(
-               predicate=objects_settled,
+               predicate=objects_are_resting,
                required_steps=10,
            )
        ],
@@ -243,6 +271,42 @@ available when custom code specifically needs an Isaac Lab sensor or native asse
 
 Built-in state predicates now return values for all environments. Remove the ``env_id`` argument
 from calls to ``objects_settled``, ``object_is_above_height``, and ``object_moving``.
+
+The ``object_on_destination`` predicate now requires ``destination_cfg``, ``force_threshold``, and
+``velocity_threshold``. It also requires the object's bounds center to be over the destination and
+the rigid contact force to fall within the upward support cone, so results may change after the
+call is updated:
+
+.. code-block:: python
+
+   TerminationTermCfg(
+       func=object_on_destination,
+       params={
+           "object_cfg": SceneEntityCfg("object"),
+           "destination_cfg": SceneEntityCfg("destination"),
+           "contact_sensor_cfg": SceneEntityCfg("object_contact_sensor"),
+           "force_threshold": 0.1,
+           "velocity_threshold": 0.003,
+       },
+   )
+
+``objects_on_destinations`` was removed. Build one ``TerminationTermCfg`` per object and combine
+them with ``check_success(..., mode=SuccessMode.ALL)`` inside one completion predicate; do not put
+them in a ``predicate_sequence``, which would make the checks ordered.
+
+``PickAndPlaceTask.support_cone_half_angle_deg`` became
+``support_cone_half_angle_rad``. Convert the value as well as the name, for example from ``45.0``
+to ``math.pi / 4``. Apply the same rename and unit conversion to ``params`` in environment graph
+YAML.
+
+.. _migration-v0-3-1-imports:
+
+Import paths
+------------
+
+The ``isaaclab_arena.utils.usd`` package does not re-export its helper functions. Import them from
+``isaaclab_arena.utils.usd.helpers`` or ``isaaclab_arena.utils.usd.rigid_bodies``. Import
+``ObjectType`` from ``isaaclab_arena.assets.object_type``.
 
 .. _migration-v0-3-1-episodes:
 

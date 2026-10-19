@@ -13,7 +13,10 @@ Creates commits and PRs that follow Arena's contributor guidelines.
 
 1. Check whether the change breaks a public Python API, CLI, YAML or serialized-data format, or documented workflow used by downstream Arena users. If it does:
    - on `main`, update `docs/pages/references/migration_to_next_release.rst` with a concise
-     before/after example; on a release branch, update the versioned guide instead.
+     before/after example. If the file does not exist, create it with a title and an empty
+     **Quick access** table, and add it first in the hidden toctree in
+     `docs/pages/references/release_notes.rst`.
+   - on a release branch, update the versioned guide instead.
    - if an existing migration entry covers the same area or topic, append to or revise that entry
      instead of creating a duplicate section.
    - add or update the corresponding entry in the migration guide's **Quick access** table.
@@ -62,10 +65,11 @@ Do not use top-level type prefixes that omit the username (e.g. `feature/foo`, `
    git push -u origin <branch-name>
    ```
 
-2. Open the PR against `main` (the active branch):
+2. Open the PR against `main` (the active development branch). When a maintainer workflow
+   explicitly prepares a release branch, use that workflow's `release/<version>` target instead:
 
    ```bash
-   gh pr create --base main \
+   gh pr create --base <main-or-release-branch> \
      --title "<short imperative subject>" \
      --body "<see body format below>"
    ```
@@ -99,5 +103,6 @@ gh pr view --json title,baseRefName
 ```
 
 Confirm:
-- `baseRefName` is `main`.
+- `baseRefName` is `main`, unless an explicit maintainer workflow requires the matching
+  `release/<version>` branch.
 - Title has no trailing period and is in imperative mood.

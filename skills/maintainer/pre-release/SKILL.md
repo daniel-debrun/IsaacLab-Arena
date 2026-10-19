@@ -32,8 +32,11 @@ commit.
    Update its title, release-note link, and Sphinx navigation.
 3. If the release requires user action but no generic guide exists, create the versioned migration
    guide. Include the old form, replacement, and compatibility window.
-4. Update package, installation, compatibility, and landing-page version references where needed.
-5. Keep `docs/pages/references/release_notes.rst` as the canonical release history; do not add a
+4. Create a fresh `docs/pages/references/migration_to_next_release.rst` for changes after this
+   release. Include its title and an empty **Quick access** table, and add it first in the hidden
+   toctree in `release_notes.rst`.
+5. Update package, installation, compatibility, and landing-page version references where needed.
+6. Keep `docs/pages/references/release_notes.rst` as the canonical release history; do not add a
    separate changelog.
 
 ## 3. Validate and merge to main
@@ -41,7 +44,8 @@ commit.
 Run host-side documentation and repository checks:
 
 ```bash
-make -C docs html
+# Activate the documentation environment described in docs/README.md first.
+make -C docs SPHINXOPTS=-W html
 pre-commit run --all-files
 ```
 

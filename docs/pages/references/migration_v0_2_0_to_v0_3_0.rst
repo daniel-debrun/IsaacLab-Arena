@@ -45,8 +45,11 @@ imitation-learning interoperation described below depends on the pinned Isaac La
 
    git submodule update --init --recursive
 
-Existing Docker workflows remain supported. Native installation with ``uv`` is an optional new
-route, not a required migration:
+Existing Docker workflows remain supported except for the v0.2 GR00T image selected with
+``./docker/run_docker.sh -g``. That option was removed; use the standard Arena container and run
+the GR00T server separately as described under :ref:`Policy and remote-policy APIs
+<migration-v0-2-policies>`. Native installation with ``uv`` is an optional new route, not a
+required migration:
 
 .. code-block:: bash
 
@@ -95,8 +98,11 @@ each Isaac Lab command. For example:
      --external_callback isaaclab_arena.environments.isaaclab_interop.environment_registration_callback \
      --task my_environment
 
-Keep script-specific options such as ``--mimic``, ``--xr``, and ``--arena_teleop_device`` where
-needed. For an environment defined outside Arena, also pass
+Keep script-specific options such as ``--mimic`` where needed. Replace the v0.2
+``--teleop_device <device>`` environment option with ``--arena_teleop_device <device>``. Do not
+pass Isaac Lab's own ``--teleop_device`` option for an Arena OpenXR device; it selects Isaac Lab's
+legacy device path. XR is no longer enabled from the device name, so also pass ``--xr`` for XR
+devices. For an environment defined outside Arena, pass
 ``--external_environment_class_path package.module:EnvironmentClass``; the registration callback
 loads and registers it before Isaac Lab resolves ``--task``. See the
 :doc:`imitation-learning workflows <../example_workflows/imitation_learning/index>` and
@@ -258,15 +264,30 @@ In v0.3, declare a typed ``ArenaEnvironmentCfg`` and build through
    @register_environment
    class MyEnvironment(ArenaEnvironmentFactory[MyEnvironmentCfg]):
        name = "my_environment"
+       _legacy_argparse_cfg_type = MyEnvironmentCfg
 
        def build(self, cfg: MyEnvironmentCfg):
            embodiment = make_embodiment(cfg.embodiment)
            return make_environment(embodiment)
 
 The typed configuration is shared by Experiment YAML, generated CLI flags, and direct Python
-construction. ``ExampleEnvironmentBase`` remains as a deprecated compatibility shim, but new and
-migrated environments should use the typed factory. See :doc:`Environment Definitions
-<../concepts/environment/environment_definition>` and
+construction. The temporary ``_legacy_argparse_cfg_type`` attribute is required while the
+argparse-based runners remain supported.
+
+Replace imports from ``isaaclab_arena.assets.asset_registry`` with
+``isaaclab_arena.assets.registries``. The latter defines ``AssetRegistry``, ``DeviceRegistry``,
+``RetargeterRegistry``, ``PolicyRegistry``, and ``HDRImageRegistry``.
+
+The decorator above is for environments imported and registered as part of Arena. For a class
+loaded with ``--external_environment_class_path``, follow the external-environment interface and
+do not decorate the class: the loader performs registration. In v0.3.0, Experiment YAML cannot
+load an arbitrary external Python environment by class path; use a registered environment name or
+an environment graph YAML instead.
+
+``ExampleEnvironmentBase`` remains as a deprecated compatibility shim for the external loader,
+but new in-tree environments should use the typed factory. See :doc:`Environment Definitions
+<../concepts/environment/environment_definition>`,
+:doc:`External Environments <../arena_in_your_repo/external_environments>`, and
 ``isaaclab_arena_environments/pick_and_place_maple_table_environment.py`` for complete typed
 examples.
 
@@ -368,8 +389,11 @@ Cosmos, or DreamZero integration as the closest template rather than importing t
 For GR00T specifically, replace the in-process
 ``isaaclab_arena_gr00t.policy.gr00t_closedloop_policy.Gr00tClosedloopPolicy`` with
 ``Gr00tRemoteClosedloopPolicy``, configure ``remote_host`` and ``remote_port``, and start the
-GR00T server separately. Compare
-``isaaclab_arena_environments/eval_jobs_configs/droid_pnp_srl_gr00t_jobs_config.json`` with
+GR00T server separately. Pass the checkpoint to the server with ``--model-path``; the v0.3.0
+policy configuration no longer has ``model_path``, and an old YAML key is ignored after a warning.
+Compare the ``release/0.2.0`` version of
+``isaaclab_arena_environments/eval_jobs_configs/droid_pnp_srl_gr00t_jobs_config.json`` with the
+v0.3.0
 ``isaaclab_arena_environments/experiment_configs/droid_pnp_srl_gr00t_experiment.yaml``.
 
 See :doc:`Policy <../concepts/policy/index>`,
