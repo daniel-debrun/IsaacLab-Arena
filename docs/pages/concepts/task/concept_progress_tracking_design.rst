@@ -362,9 +362,10 @@ Recurring observations independent of success
 
 Override ``TaskBase.get_tracked_events()`` to observe named events throughout an
 episode. These observations do not change success, failure termination, or task progress scores.
-Each event records an occurrence when it completes and waits for its completion condition to clear
-before resetting its history and counters. Events remain active during every subtask,
-including in sequential composite tasks. Tasks configuring tracked events must also define success criteria.
+Each event is an ordered predicate sequence. It records an occurrence when the final predicate
+completes, then waits for that final condition to clear before resetting its history and counters.
+Events remain active during every subtask, including in sequential composite tasks.
+Tasks configuring tracked events must also define success criteria.
 
 .. code-block:: python
 
@@ -375,57 +376,43 @@ including in sequential composite tasks. Tasks configuring tracked events must a
        return [
            TrackedEventCfg(
                name="failed_grasp",
-               predicates=[
+               predicate_sequence=[
                    hand_open_near_object,
                    TrueForConsecutiveStepsCfg(closed_without_grasp, required_steps=10),
                ],
            ),
            TrackedEventCfg(
-               name="contact_lost",
-               predicates=[in_contact],
-               desired_predicate_state=[False],
+               name="dropped_object",
+               predicate_sequence=[
+                   TrueForConsecutiveStepsCfg(lifted_and_grasped, required_steps=10),
+                   TrueForConsecutiveStepsCfg(not_grasped_and_resting_outside_bowl, required_steps=10),
+               ],
            ),
        ]
 
 Each callable above is a configured predicate returning a Boolean tensor of shape
-``(env.num_envs,)``. The required ``predicates`` field accepts an ordered list or a dictionary
-of named ordered lists. Dictionary entries progress independently and all must complete.
-For any-order tracking, give each predicate its own sequence:
+``(env.num_envs,)``. The required ``predicate_sequence`` field is a nonempty ordered list;
+use a one-element list for a single-condition event. Separate events advance independently.
 
-.. code-block:: python
-
-   TrackedEventCfg(
-       name="both_observed",
-       predicates={"first": [A], "second": [B]},
-   )
-
-A and B can complete in either order; their true periods need not overlap. This requires both,
-not either one. Named sequences may also contain several ordered predicates. Separate events
-always advance independently.
-
-``desired_predicate_state`` follows the existing subtask final-state semantics. Entries follow
-dictionary insertion order, then predicate order within each sequence:
-
-* Omit the list to require only recorded completion of every member.
-* ``True`` requires recorded completion and a currently true condition.
-* ``False`` requires recorded completion and a currently false condition.
-* ``None`` excludes that member from the completion check. An ignored member still gates later
-  members in its sequence. At least one member must participate.
+Predicates must complete in order, with at most one sequence advance per control step.
+Earlier predicates do not need to remain true when the final predicate completes. To require
+conditions simultaneously, combine them in one predicate, as in
+``not_grasped_and_resting_outside_bowl``. Initial rest does not count as a drop because the
+lift requirement must complete first. Events do not expose any-order sequences or desired-state lists.
 
 History and resets
 ^^^^^^^^^^^^^^^^^^
 
 Use the existing ``TrueForConsecutiveStepsCfg`` to require an instantaneous predicate to stay true
-for consecutive control steps. Each member gets independent counters, even when the same configuration
-is reused across events or task success criteria. A member's counter starts only after its turn in its sequence
-begins. After completion, the event resets its progress and counters once the completion condition
-clears for one observed step. Fresh tracking starts on the following step.
+for consecutive control steps. Each requirement gets independent counters, even when the same configuration
+is reused across events or task success criteria. Its counter starts only after its turn in the sequence
+begins. A recorded event waits while its final predicate remains true, so sustained conditions produce
+one occurrence. Once that predicate is false for one observed step, only this event's progress and counters
+reset. Fresh tracking starts on the following step and must satisfy the entire sequence again.
 
-Without desired states, at least one member that finished on the occurrence step must become false;
-earlier members may already be false. With desired states, the specified state combination must
-stop holding. Both completion and waiting checks use the full predicate result, including its temporal
-requirement. Relevant temporal counters continue updating while waiting; they are reset when the
-condition clears. A new occurrence must satisfy the temporal requirements again from scratch.
+The final predicate continues updating while waiting, including its temporal counter. A false underlying
+condition breaks a consecutive-step requirement immediately. Other events, task-success progress, and
+previously recorded occurrences are unaffected by this event's reset.
 
 Event resets clear tracker-owned history. They do not reset underlying predicate callables or state
 stored in the environment. Supply instantaneous checks and express temporal holds through

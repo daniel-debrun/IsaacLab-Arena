@@ -192,9 +192,9 @@ class CompletionCriteriaRunner:
         """
 
         criteria_complete = self.is_complete()
-        final_condition_check_mask = (
-            criteria_complete if check_final_conditions else torch.zeros_like(criteria_complete)
-        )
+        # Completed predicates may keep updating only in enabled environments.
+        final_condition_active_envs = active_envs if check_final_conditions else torch.zeros_like(active_envs)
+        final_condition_check_mask = criteria_complete & final_condition_active_envs
         active_envs = active_envs & ~criteria_complete
         if not bool((active_envs | final_condition_check_mask).any().item()):
             return []
@@ -203,8 +203,8 @@ class CompletionCriteriaRunner:
         for sequence_name, predicate_chain in self.predicate_chains.items():
             sequence_final_condition_check_mask = final_condition_check_mask
             if check_final_conditions:
-                sequence_final_condition_check_mask = (
-                    sequence_final_condition_check_mask | self.sequence_complete[sequence_name]
+                sequence_final_condition_check_mask = sequence_final_condition_check_mask | (
+                    self.sequence_complete[sequence_name] & final_condition_active_envs
                 )
             events += self._step_sequence(
                 env,
@@ -283,41 +283,6 @@ class CompletionCriteriaRunner:
             )
             final_results.append(reached_final_predicate & final_result)
         return torch.stack(final_results, dim=0).sum(dim=0) >= self._num_required_sequences()
-
-    def predicate_completed(self, sequence_name: str, predicate_index: int) -> torch.Tensor:
-        """Return recorded completion of a predicate, independently of its current condition.
-
-        Args:
-            sequence_name: Sequence containing the predicate.
-            predicate_index: Position of the predicate within its sequence.
-        """
-        return self.current_predicate_index[sequence_name] > predicate_index
-
-    def predicate_condition_met(
-        self,
-        env,
-        sequence_name: str,
-        predicate_index: int,
-        predicate_results_this_step: dict[int, tuple[torch.Tensor, torch.Tensor]],
-        active_envs: torch.Tensor,
-    ) -> torch.Tensor:
-        """Check a predicate using this step's shared cache without advancing its sequence.
-
-        Args:
-            env: Environment supplying predicate inputs.
-            sequence_name: Sequence containing the predicate.
-            predicate_index: Position of the predicate within its sequence.
-            predicate_results_this_step: Cache shared by this control step's runners.
-            active_envs: Environments whose temporal counters may update.
-
-        Returns:
-            Full predicate result per environment, including temporal requirements;
-            callers select the active rows.
-        """
-        if not bool(active_envs.any().item()):
-            return torch.zeros_like(active_envs)
-        predicate = self.predicate_chains[sequence_name][predicate_index][0]
-        return self._evaluate_predicate_with_cache(predicate, env, predicate_results_this_step, active_envs)
 
     def _step_sequence(
         self,
@@ -553,7 +518,13 @@ class ProgressTracker:
         tracked_event_names = [event_cfg.name for event_cfg in tracked_events or []]
         assert len(set(tracked_event_names)) == len(tracked_event_names), "Tracked event names must be unique."
         self._tracked_event_runners = [
-            _TrackedEventRunner(event_cfg, num_envs, device, env) for event_cfg in tracked_events or []
+            CompletionCriteriaRunner(
+                CompletionCriteria(name=event_cfg.name, predicate_sequence=event_cfg.predicate_sequence),
+                num_envs,
+                device,
+                env=env,
+            )
+            for event_cfg in tracked_events or []
         ]
         self._tracked_event_occurrences: list[list[TrackedEventOccurrence]] = [[] for _ in range(num_envs)]
 
@@ -643,12 +614,34 @@ class ProgressTracker:
             if self.subtasks_are_sequential:
                 active_envs = active_envs & subtask_was_complete
         self._task_success = self._compute_task_success(env, predicate_results_this_step)
-        for event_runner in self._tracked_event_runners:
-            for event in event_runner.step(env, step_index, event_active_envs, predicate_results_this_step):
-                self._tracked_event_occurrences[event.env_idx].append(event)
+        self._step_tracked_events(env, step_index, event_active_envs, predicate_results_this_step)
         if step_index is not None:
             # The environment increments episode_length_buf in place; keep our own snapshot.
             self._last_processed_step.copy_(step_index)
+
+    def _step_tracked_events(
+        self,
+        env,
+        step_index: torch.Tensor | None,
+        active_envs: torch.Tensor,
+        predicate_results_this_step: dict[int, tuple[torch.Tensor, torch.Tensor]],
+    ) -> None:
+        """Record completed event sequences and reset them after their final condition clears."""
+        for runner in self._tracked_event_runners:
+            was_complete = runner.is_complete()
+            runner.step(env, step_index, active_envs, predicate_results_this_step, check_final_conditions=True)
+            is_complete = runner.is_complete()
+            newly_complete = is_complete & ~was_complete & active_envs
+            for env_idx in newly_complete.nonzero(as_tuple=False).flatten().tolist():
+                self._tracked_event_occurrences[env_idx].append(
+                    TrackedEventOccurrence(env_idx, runner.completion_criteria.name, int(step_index[env_idx].item()))
+                )
+            # Keep evaluating completed sequences so a persistent condition records only
+            # once. Reset this runner alone; the full sequence starts on the next step.
+            final_condition = runner.final_conditions_met(env, predicate_results_this_step)
+            cleared_env_ids = (is_complete & ~final_condition & active_envs).nonzero(as_tuple=False).flatten()
+            if cleared_env_ids.numel() > 0:
+                runner.reset(cleared_env_ids)
 
     def _compute_task_success(
         self, env, predicate_results_this_step: dict[int, tuple[torch.Tensor, torch.Tensor]]
@@ -793,126 +786,11 @@ class ProgressTracker:
     @property
     def tracked_event_names(self) -> list[str]:
         """Return configured event names, including events with no recorded occurrences."""
-        return [runner.event_cfg.name for runner in self._tracked_event_runners]
+        return [runner.completion_criteria.name for runner in self._tracked_event_runners]
 
     def get_tracked_event_occurrences(self) -> list[list[TrackedEventOccurrence]]:
         """Return recorded event occurrences per environment without advancing predicates."""
         return [list(events) for events in self._tracked_event_occurrences]
-
-
-class _TrackedEventRunner:
-    """Observe one criteria runner, adding desired states and rearming between occurrences."""
-
-    def __init__(self, event_cfg: TrackedEventCfg, num_envs: int, device, env):
-        self.event_cfg = event_cfg
-        criteria = event_cfg._to_completion_criteria()
-        # Match desired-state entries to the same insertion order used by CompletionCriteria.
-        self._member_locations = []
-        for sequence_name, sequence in criteria.canonical_predicate_sequences.items():
-            for index in range(len(sequence)):
-                self._member_locations.append((sequence_name, index))
-        self.runner = CompletionCriteriaRunner(criteria, num_envs, device, env=env)
-        self._member_indices = {location: index for index, location in enumerate(self._member_locations)}
-        self._waiting_for_clear = torch.zeros(num_envs, dtype=torch.bool, device=device)
-        """Per-environment pause after recording an occurrence."""
-        self._finishing_members = torch.zeros((len(self._member_locations), num_envs), dtype=torch.bool, device=device)
-        """History-only members that completed last in time, independently of list order."""
-
-    def step(
-        self,
-        env,
-        step_index: torch.Tensor,
-        active_envs: torch.Tensor,
-        predicate_results_this_step: dict[int, tuple[torch.Tensor, torch.Tensor]],
-    ) -> list[TrackedEventOccurrence]:
-        # Wait for the completion condition to clear before resetting the event's history and counters
-        advancing_envs = active_envs & ~self._waiting_for_clear
-        waiting_envs = active_envs & self._waiting_for_clear
-        if bool(waiting_envs.any().item()):
-            cleared = waiting_envs & ~self._completion_condition_present(env, waiting_envs, predicate_results_this_step)
-            self.reset(cleared.nonzero(as_tuple=False).flatten())
-        if not bool(advancing_envs.any().item()):
-            return []
-        member_events = self.runner.step(env, step_index, advancing_envs, predicate_results_this_step)
-        if self.event_cfg.desired_predicate_state is None:
-            completed = advancing_envs & self.runner.is_complete()
-        else:
-            completed = advancing_envs.clone()
-            for (sequence_name, predicate_index), desired in zip(
-                self._member_locations, self.event_cfg.desired_predicate_state
-            ):
-                # None excludes this member from completion checks; sequence gating still applies.
-                if desired is None:
-                    continue
-                # Check if the predicate has been completed and the current condition matches the desired state
-                history = self.runner.predicate_completed(sequence_name, predicate_index)
-                current = self.runner.predicate_condition_met(
-                    env, sequence_name, predicate_index, predicate_results_this_step, advancing_envs & history
-                )
-                completed &= history & (current == desired)
-        completed_envs = completed.nonzero(as_tuple=False).flatten()
-        completed_ids = completed_envs.tolist()
-        events = [
-            TrackedEventOccurrence(env_idx, self.event_cfg.name, int(step_index[env_idx].item()))
-            for env_idx in completed_ids
-        ]
-        # Set the flag to wait for the completion condition to clear before resetting the event's history and counters
-        self._waiting_for_clear[completed_envs] = True
-        # With history-only completion, remember which member(s) finished this occurrence.
-        if self.event_cfg.desired_predicate_state is None:
-            completed_ids = set(completed_ids)
-            for event in member_events:
-                if event.env_idx in completed_ids:
-                    index = self._member_indices[(event.sequence_name, event.predicate_index)]
-                    self._finishing_members[index, event.env_idx] = True
-        return events
-
-    def _completion_condition_present(
-        self,
-        env,
-        waiting_envs: torch.Tensor,
-        predicate_results_this_step: dict[int, tuple[torch.Tensor, torch.Tensor]],
-    ) -> torch.Tensor:
-        """Check whether each completed event should keep waiting before it can reset.
-
-        Returns:
-            Boolean tensor with one entry per environment. For waiting environments,
-            True means the completion condition is still present; False means it has
-            cleared and the caller can reset this event's history and counters.
-        """
-        # Only waiting rows are meaningful to the caller. Keep them present until a
-        # watched predicate no longer matches the condition that recorded the event.
-        present = torch.ones_like(waiting_envs)
-        for index, (sequence_name, predicate_index) in enumerate(self._member_locations):
-            if self.event_cfg.desired_predicate_state is None:
-                # With history-only completion, watch the members that finished on the
-                # occurrence step: last in time, not necessarily last in the configured list.
-                # Earlier members may already be false, so they must not trigger a reset.
-                watching = waiting_envs & self._finishing_members[index]
-                desired_state = True
-            else:
-                # With desired states, keep waiting while every full predicate result
-                # still matches. None entries do not participate in this clearing check.
-                desired_state = self.event_cfg.desired_predicate_state[index]
-                if desired_state is None:
-                    continue
-                watching = waiting_envs
-            if not bool(watching.any().item()):
-                continue
-            # Keep temporal counters updating while waiting, without advancing sequence
-            # history. True/False has the same meaning here as in the completion check.
-            # Once a condition clears, reset() discards these counters for the next cycle.
-            result = self.runner.predicate_condition_met(
-                env, sequence_name, predicate_index, predicate_results_this_step, watching
-            )
-            present &= ~watching | (result == desired_state)
-        return present
-
-    def reset(self, env_ids: list[int] | torch.Tensor) -> None:
-        """Clear only this event's cycle state for the selected environments."""
-        self.runner.reset(env_ids)
-        self._waiting_for_clear[env_ids] = False
-        self._finishing_members[:, env_ids] = False
 
 
 class ProgressTrackingRecorder(RecorderTerm):

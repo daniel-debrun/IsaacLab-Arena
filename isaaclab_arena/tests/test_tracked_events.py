@@ -59,8 +59,8 @@ def _test_recurring_events_and_success(_app):
         2,
         "cpu",
         tracked_events=[
-            TrackedEventCfg("instant", predicates=[_condition]),
-            TrackedEventCfg("held", predicates=[TrueForConsecutiveStepsCfg(_condition, 2)]),
+            TrackedEventCfg("instant", predicate_sequence=[_condition]),
+            TrackedEventCfg("held", predicate_sequence=[TrueForConsecutiveStepsCfg(_condition, 2)]),
         ],
     )
     for step in range(1, 7):
@@ -119,7 +119,9 @@ def _test_event_activity_does_not_change_success(_app):
         subtasks_are_sequential=True,
         desired_subtask_success_state=[True, True],
         tracked_events=[
-            TrackedEventCfg("observed", predicates=[TrueForConsecutiveStepsCfg(partial(_condition, index=2), 2)])
+            TrackedEventCfg(
+                "observed", predicate_sequence=[TrueForConsecutiveStepsCfg(partial(_condition, index=2), 2)]
+            )
         ],
     )
     for step in range(1, 9):
@@ -149,78 +151,87 @@ def _test_order_and_fresh_history(_app):
     env = _env([[False, True]])
     predicates = [partial(_condition, index=0), partial(_condition, index=1)]
     tracker = ProgressTracker(
-        _success_criteria(),
-        1,
-        "cpu",
-        tracked_events=[
-            TrackedEventCfg("ordered", predicates=predicates),
-            TrackedEventCfg(
-                "unordered",
-                predicates={f"member_{index}": [predicate] for index, predicate in enumerate(predicates)},
-            ),
-        ],
+        _success_criteria(), 1, "cpu", tracked_events=[TrackedEventCfg("ordered", predicate_sequence=predicates)]
     )
     _step(tracker, env)
+    assert _events(tracker) == [], "The final predicate alone must not record an event."
     env.conditions[:] = env.conditions.logical_not()
     _step(tracker, env)
-    assert _events(tracker) == [("unordered", 2)]
+    assert _events(tracker) == []
     env.conditions[:] = False
     env.conditions[:, 1] = True
     _step(tracker, env)
-    assert _events(tracker)[-1] == ("ordered", 3)
-    _step(tracker, env)
-    assert len(_events(tracker)) == 2, "A new cycle must observe the first member again."
+    assert _events(tracker) == [("ordered", 3)], "Earlier predicates need not remain true."
     env.conditions[:] = True
     _step(tracker, env)
-    assert _events(tracker)[-1] == ("unordered", 5)
     _step(tracker, env)
-    assert ("ordered", 6) not in _events(tracker), "The final condition has not cleared."
+    assert _events(tracker) == [("ordered", 3)], "A persistent final condition records once."
     env.conditions[:] = False
-    _step(tracker, env)
-    env.conditions[:, 0] = True
     _step(tracker, env)
     env.conditions[:, 1] = True
     _step(tracker, env)
-    assert _events(tracker)[-2:] == [("ordered", 9), ("unordered", 9)]
+    assert _events(tracker) == [("ordered", 3)], "A new cycle must observe the first predicate again."
+    env.conditions[:] = True
+    _step(tracker, env)
+    assert _events(tracker) == [("ordered", 3)], "At most one predicate advances per step."
+    env.conditions[:, 0] = False
+    _step(tracker, env)
+    assert _events(tracker) == [("ordered", 3), ("ordered", 9)]
     assert not tracker.is_complete().any(), "Observations alone never make the task succeed."
     return True
 
 
-def _test_desired_states_and_none_gating(_app):
+def _test_demo_failure_sequences(_app):
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
     from isaaclab_arena.progress_tracking.tracked_event_cfg import TrackedEventCfg
+    from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
 
-    env = _env([[False, False]])
-    predicates = [partial(_condition, index=0), partial(_condition, index=1)]
+    # Columns: open near object, closed empty, lifted and grasped, grasped, resting outside bowl.
+    env = _env([[False, False, False, False, True]])
+
+    def released_and_resting(env):
+        return ~env.conditions[:, 3] & env.conditions[:, 4]
+
     tracker = ProgressTracker(
         _success_criteria(),
         1,
         "cpu",
         tracked_events=[
-            TrackedEventCfg("cleared", predicates=[predicates[0]], desired_predicate_state=[False]),
-            TrackedEventCfg("gated", predicates=predicates, desired_predicate_state=[None, True]),
             TrackedEventCfg(
-                "ignored",
-                predicates={f"member_{index}": [predicate] for index, predicate in enumerate(predicates)},
-                desired_predicate_state=[None, True],
+                "failed_grasp",
+                predicate_sequence=[_condition, TrueForConsecutiveStepsCfg(partial(_condition, index=1), 2)],
+            ),
+            TrackedEventCfg(
+                "dropped_object",
+                predicate_sequence=[
+                    TrueForConsecutiveStepsCfg(partial(_condition, index=2), 2),
+                    TrueForConsecutiveStepsCfg(released_and_resting, 2),
+                ],
             ),
         ],
     )
-    _step(tracker, env)
-    assert not _events(tracker), "False requires prior satisfaction."
-    env.conditions[:, 1] = True
-    _step(tracker, env)
-    assert _events(tracker) == [("ignored", 2)]
-    env.conditions[:] = True
-    _step(tracker, env)
-    assert ("gated", 3) not in _events(tracker), "The next member starts on the next step."
-    env.conditions[:, 0] = False
-    _step(tracker, env)
-    assert ("cleared", 4) in _events(tracker)
-    assert ("gated", 4) in _events(tracker)
-    _step(tracker, env)
-    assert ("cleared", 5) not in _events(tracker)
-    assert ("gated", 5) not in _events(tracker)
+    phases = [
+        ([False, False, False, False, True], 3),  # Initial rest is not a drop.
+        ([True, False, False, False, True], 1),
+        ([False, True, False, False, True], 3),  # One failed grasp despite sustained closure.
+        ([False, False, True, True, False], 2),
+        ([False, False, False, False, True], 3),  # One drop despite sustained rest.
+        ([True, False, False, False, True], 1),
+        ([False, True, False, False, True], 2),  # A second failed grasp.
+        ([False, False, True, True, False], 3),  # Clear the drop and satisfy a fresh lift.
+        ([False, False, False, False, True], 2),  # A second drop.
+    ]
+    for conditions, steps in phases:
+        for _ in range(steps):
+            env.conditions[0] = env.conditions.new_tensor(conditions)
+            _step(tracker, env)
+    assert _events(tracker) == [
+        ("failed_grasp", 6),
+        ("dropped_object", 11),
+        ("failed_grasp", 15),
+        ("dropped_object", 20),
+    ]
+    assert not tracker.is_complete().any()
     return True
 
 
@@ -237,8 +248,8 @@ def _test_temporal_event_isolation(_app):
         "cpu",
         env,
         tracked_events=[
-            TrackedEventCfg("gated", predicates=[_condition, counter]),
-            TrackedEventCfg("independent", predicates=[counter]),
+            TrackedEventCfg("gated", predicate_sequence=[_condition, counter]),
+            TrackedEventCfg("independent", predicate_sequence=[counter]),
         ],
     )
     for _ in range(3):
@@ -301,9 +312,9 @@ def _test_callable_events(_app):
             1,
             "cpu",
             tracked_events=[
-                TrackedEventCfg("instant", predicates=[predicate]),
-                TrackedEventCfg("held", predicates=[held]),
-                TrackedEventCfg("ordered", predicates=[held, held]),
+                TrackedEventCfg("instant", predicate_sequence=[predicate]),
+                TrackedEventCfg("held", predicate_sequence=[held]),
+                TrackedEventCfg("ordered", predicate_sequence=[held, held]),
             ],
         )
         for _ in range(5):
@@ -343,69 +354,21 @@ def _test_single_tracker_and_shared_cache(_app):
             2,
             "cpu",
             tracked_events=[
-                TrackedEventCfg("instant", predicates=[condition]),
-                TrackedEventCfg("held", predicates=[held]),
-                TrackedEventCfg("ordered", predicates=[held, held]),
-                TrackedEventCfg("unordered", predicates={"member_0": [held], "member_1": [held]}),
+                TrackedEventCfg("instant", predicate_sequence=[condition]),
+                TrackedEventCfg("held", predicate_sequence=[held]),
+                TrackedEventCfg("ordered", predicate_sequence=[held, held]),
             ],
         )
         assert constructor.call_count == 1, "Events must not construct nested ProgressTrackers."
-        assert criteria_constructor.call_count == 5, "Use one success runner and one runner per event, not per member."
+        assert criteria_constructor.call_count == 4, "Use one success runner and one runner per event, not per member."
     for step, value in enumerate([True] * 5 + [False, True, True], start=1):
         env.conditions[0, 0] = value
         _step(tracker, env)
         assert calls == step, "Success, advancing events, and waiting events share one predicate cache."
-    first_occurrences = [("instant", 1), ("held", 2), ("unordered", 2), ("ordered", 4)]
-    assert _events(tracker, 0) == first_occurrences + [("instant", 7), ("held", 8), ("unordered", 8)]
+    first_occurrences = [("instant", 1), ("held", 2), ("ordered", 4)]
+    assert _events(tracker, 0) == first_occurrences + [("instant", 7), ("held", 8)]
     assert _events(tracker, 1) == first_occurrences
     assert tracker.is_complete().all(), "Clearing an event must not clear task success."
-    return True
-
-
-def _test_desired_states_recheck_completed_temporal_members(_app):
-    from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
-    from isaaclab_arena.progress_tracking.tracked_event_cfg import TrackedEventCfg
-    from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
-
-    env = _env([[False, False]])
-    requirements = [
-        TrueForConsecutiveStepsCfg(_condition, 2),
-        TrueForConsecutiveStepsCfg(partial(_condition, index=1), 2),
-    ]
-    tracker = ProgressTracker(
-        _success_criteria(),
-        1,
-        "cpu",
-        tracked_events=[
-            TrackedEventCfg("ordered", predicates=requirements, desired_predicate_state=[True, False]),
-            TrackedEventCfg(
-                "unordered",
-                predicates={f"member_{index}": [predicate] for index, predicate in enumerate(requirements)},
-                desired_predicate_state=[True, False],
-            ),
-        ],
-    )
-    timeline = [
-        [True, False],
-        [True, False],  # First member completes.
-        [False, True],
-        [False, True],  # Both histories complete; current desired states still fail.
-        [True, False],  # First member must rebuild its entire two-step streak.
-        [True, False],  # First occurrence.
-        [False, False],  # The desired combination clears; reset both histories.
-        [True, True],
-        [True, True],
-        [True, True],
-        [True, True],
-        [True, False],  # Second occurrence requires observing the second member true again.
-    ]
-    for step, values in enumerate(timeline, start=1):
-        env.conditions[0] = env.conditions.new_tensor(values)
-        _step(tracker, env)
-        expected = [("ordered", 6), ("unordered", 6)] if step >= 6 else []
-        if step == 12:
-            expected += [("ordered", 12), ("unordered", 12)]
-        assert _events(tracker) == expected
     return True
 
 
@@ -422,7 +385,7 @@ def _test_rearm_requires_fresh_temporal_sequence(_app):
         tracked_events=[
             TrackedEventCfg(
                 "failure",
-                predicates=[
+                predicate_sequence=[
                     TrueForConsecutiveStepsCfg(_condition, 2),
                     TrueForConsecutiveStepsCfg(partial(_condition, index=1), 3),
                 ],
@@ -439,127 +402,40 @@ def _test_rearm_requires_fresh_temporal_sequence(_app):
     return True
 
 
-def _test_temporal_desired_states_while_waiting(_app):
+def _test_paused_completed_events(_app):
+    import torch
+
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
     from isaaclab_arena.progress_tracking.tracked_event_cfg import TrackedEventCfg
     from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
 
-    env = _env([[False, True]])
+    env = _env([[True], [True]])
     tracker = ProgressTracker(
         _success_criteria(),
-        1,
+        2,
         "cpu",
-        tracked_events=[
-            TrackedEventCfg(
-                "contact_lost_in_region",
-                predicates=[
-                    TrueForConsecutiveStepsCfg(_condition, 2),
-                    partial(_condition, index=1),
-                ],
-                desired_predicate_state=[False, True],
-            )
-        ],
+        tracked_events=[TrackedEventCfg("held", predicate_sequence=[TrueForConsecutiveStepsCfg(_condition, 2)])],
     )
-    # The object stays in the region. Brief contact recovery must not clear the
-    # event: the full two-step contact requirement must become true again.
-    contact = [True, True, True, False, True, False, True, True, True, False, True, True, False]
-    for step, value in enumerate(contact, start=1):
-        env.conditions[0, 0] = value
-        _step(tracker, env)
-        expected = [("contact_lost_in_region", 4)] if step >= 4 else []
-        if step == 13:
-            expected.append(("contact_lost_in_region", 13))
-        assert _events(tracker) == expected
-        if 4 <= step <= 7:
-            assert tracker._tracked_event_runners[0]._waiting_for_clear.item()
-        if step == 8:
-            assert not tracker._tracked_event_runners[0]._waiting_for_clear.item()
-    # The recovery on steps 7-8 is discarded at reset: step 9 alone cannot
-    # establish the next occurrence's two-step contact history.
-    return True
-
-
-def _test_named_sequences_and_desired_state_order(_app):
-    from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
-    from isaaclab_arena.progress_tracking.tracked_event_cfg import TrackedEventCfg
-
-    env = _env([[False, False, True]])
-    first, second, independent = [_condition, partial(_condition, index=1), partial(_condition, index=2)]
-    tracker = ProgressTracker(
-        _success_criteria(),
-        1,
-        "cpu",
-        tracked_events=[
-            TrackedEventCfg(
-                "observed",
-                predicates={"z_sequence": [first, second], "a_sequence": [independent]},
-                desired_predicate_state=[False, True, True],
-            )
-        ],
-    )
-    timeline = [
-        [False, False, True],  # Independent sequence can finish before the other starts.
-        [True, True, True],  # Only the first member of z_sequence can complete now.
-        [True, True, True],  # Both sequences complete, but the desired states do not match.
-        [False, True, True],  # Desired states follow insertion order, not sorted sequence names.
-        [False, True, True],
-        [False, True, False],  # Clear and reset both sequences.
-        [True, True, True],
-        [False, True, True],  # Fresh completion of both sequences.
-    ]
-    for step, values in enumerate(timeline, start=1):
-        env.conditions[0] = env.conditions.new_tensor(values)
-        _step(tracker, env)
-        expected = [("observed", 4)] if step >= 4 else []
-        if step == 8:
-            expected.append(("observed", 8))
-        assert _events(tracker) == expected
-    return True
-
-
-def _test_any_order_rearm_and_desired_states(_app):
-    from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
-    from isaaclab_arena.progress_tracking.tracked_event_cfg import TrackedEventCfg
-
-    env = _env([[True, False]])
-    first, second = _condition, partial(_condition, index=1)
-    tracker = ProgressTracker(
-        _success_criteria(),
-        1,
-        "cpu",
-        tracked_events=[
-            TrackedEventCfg("forward", predicates={"member_0": [first], "member_1": [second]}),
-            TrackedEventCfg("reverse", predicates={"member_0": [second], "member_1": [first]}),
-            TrackedEventCfg("cleared", predicates=[first], desired_predicate_state=[False]),
-            TrackedEventCfg("ignored_tail", predicates=[first, second], desired_predicate_state=[True, None]),
-        ],
-    )
-    for values in (
-        [True, False],
-        [False, True],
-        [True, True],
-        [False, True],
-        [False, False],
-        [True, False],
-        [False, True],
-    ):
-        env.conditions[0] = env.conditions.new_tensor(values)
-        _step(tracker, env)
-    for name in ("forward", "reverse"):
-        assert [step for event_name, step in _events(tracker) if event_name == name] == [2, 7]
-    assert [step for name, step in _events(tracker) if name == "cleared"] == [2, 7]
-    assert [step for name, step in _events(tracker) if name == "ignored_tail"] == [1, 3, 6]
-    # A single true clearing step is not reused as the next cycle's history.
+    _step(tracker, env)
+    _step(tracker, env)
+    # A completed inactive episode must not observe a clearing condition or lose its streak.
+    env.conditions[0, 0] = False
+    env.episode_length_buf += 1
+    tracker.step(env, env.episode_length_buf, event_active_envs=torch.tensor([False, True]))
     env.conditions[0, 0] = True
     _step(tracker, env)
+    _step(tracker, env)
+    _step(tracker, env)
+    assert _events(tracker, 0) == [("held", 2)]
+    assert _events(tracker, 1) == [("held", 2)]
+    # A clearing step observed while active permits a fresh occurrence.
     env.conditions[0, 0] = False
     _step(tracker, env)
-    assert [step for name, step in _events(tracker) if name == "cleared"] == [2, 7]
     env.conditions[0, 0] = True
     _step(tracker, env)
-    env.conditions[0, 0] = False
     _step(tracker, env)
-    assert [step for name, step in _events(tracker) if name == "cleared"] == [2, 7, 11]
+    assert _events(tracker, 0) == [("held", 2), ("held", 9)]
+    assert _events(tracker, 1) == [("held", 2)]
     return True
 
 
@@ -594,13 +470,15 @@ def _test_finished_episode_events(_app, output_dir):
         def get_tracked_events(self):
             held = TrueForConsecutiveStepsCfg(always, required_steps=2)
             return [
-                TrackedEventCfg("instant", predicates=[always]),
-                TrackedEventCfg("held", predicates=[held]),
-                TrackedEventCfg("ordered", predicates=[held, held]),
+                TrackedEventCfg("instant", predicate_sequence=[always]),
+                TrackedEventCfg("held", predicate_sequence=[held]),
+                TrackedEventCfg("ordered", predicate_sequence=[held, held]),
                 TrackedEventCfg(
                     "cleared",
-                    predicates=[TrueForConsecutiveStepsCfg(initially_true, required_steps=2)],
-                    desired_predicate_state=[False],
+                    predicate_sequence=[
+                        TrueForConsecutiveStepsCfg(initially_true, required_steps=2),
+                        lambda env: ~initially_true(env),
+                    ],
                 ),
             ]
 
@@ -655,7 +533,7 @@ def _test_recording_and_validation(_app):
     from isaaclab_arena.recording.progress_terms import record_progress_results
 
     env = _env([[True]])
-    event_cfg = TrackedEventCfg("observed", predicates=[_condition])
+    event_cfg = TrackedEventCfg("observed", predicate_sequence=[_condition])
     env.progress_tracker = ProgressTracker(_success_criteria(), 1, "cpu", tracked_events=[event_cfg])
     tracker = env.progress_tracker
     with pytest.raises(AssertionError, match="step_index"):
@@ -664,15 +542,26 @@ def _test_recording_and_validation(_app):
         ProgressTracker(_success_criteria(), 1, "cpu", tracked_events=[event_cfg, event_cfg])
     with pytest.raises(AssertionError, match="Task success requires"):
         ProgressTracker([], 1, "cpu", tracked_events=[event_cfg])
-    with pytest.raises(TypeError, match="predicates"):
+    with pytest.raises(TypeError, match="predicate_sequence"):
         TrackedEventCfg("invalid")
-    with pytest.raises(AssertionError, match="one desired state"):
-        TrackedEventCfg("invalid", predicates={"a": [_condition, _condition]}, desired_predicate_state=[True])
-    for invalid in ([], {"empty": []}, {}, None, _condition, (_condition,), {"invalid": _condition}):
+    for invalid in (
+        [],
+        {"a": [_condition]},
+        {"empty": []},
+        {},
+        None,
+        _condition,
+        (_condition,),
+        {"invalid": _condition},
+        [True],
+    ):
         with pytest.raises(AssertionError):
-            TrackedEventCfg("invalid", predicates=invalid)
-    with pytest.raises(AssertionError, match="At least one"):
-        TrackedEventCfg("invalid", predicates=[_condition], desired_predicate_state=[None])
+            TrackedEventCfg("invalid", predicate_sequence=invalid)
+    for name in ("", "  ", None):
+        with pytest.raises(AssertionError, match="nonempty name"):
+            TrackedEventCfg(name, predicate_sequence=[_condition])
+    with pytest.raises(TypeError, match="desired_predicate_state"):
+        TrackedEventCfg("invalid", predicate_sequence=[_condition], desired_predicate_state=[False])
     _step(tracker, env)
     with pytest.raises(AssertionError, match="exactly one"):
         tracker.step(env, env.episode_length_buf)
@@ -706,7 +595,7 @@ def _test_builder_and_composition(_app):
 
     class ObservingTask(NoTask):
         def get_tracked_events(self):
-            return [TrackedEventCfg("observed", predicates=[_condition])]
+            return [TrackedEventCfg("observed", predicate_sequence=[_condition])]
 
     description = IsaacLabArenaEnvironment(
         name="observing_task",
@@ -752,10 +641,6 @@ def test_order_and_fresh_history():
     assert run_function_with_persistent_simulation_app(_test_order_and_fresh_history)
 
 
-def test_desired_states_and_none_gating():
-    assert run_function_with_persistent_simulation_app(_test_desired_states_and_none_gating)
-
-
 def test_temporal_event_isolation():
     assert run_function_with_persistent_simulation_app(_test_temporal_event_isolation)
 
@@ -768,24 +653,8 @@ def test_single_tracker_and_shared_cache():
     assert run_function_with_persistent_simulation_app(_test_single_tracker_and_shared_cache)
 
 
-def test_desired_states_recheck_completed_temporal_members():
-    assert run_function_with_persistent_simulation_app(_test_desired_states_recheck_completed_temporal_members)
-
-
 def test_rearm_requires_fresh_temporal_sequence():
     assert run_function_with_persistent_simulation_app(_test_rearm_requires_fresh_temporal_sequence)
-
-
-def test_temporal_desired_states_while_waiting():
-    assert run_function_with_persistent_simulation_app(_test_temporal_desired_states_while_waiting)
-
-
-def test_named_sequences_and_desired_state_order():
-    assert run_function_with_persistent_simulation_app(_test_named_sequences_and_desired_state_order)
-
-
-def test_any_order_rearm_and_desired_states():
-    assert run_function_with_persistent_simulation_app(_test_any_order_rearm_and_desired_states)
 
 
 def test_finished_episode_events(tmp_path):
@@ -798,3 +667,11 @@ def test_recording_and_validation():
 
 def test_builder_and_composition():
     assert run_function_with_persistent_simulation_app(_test_builder_and_composition)
+
+
+def test_demo_failure_sequences():
+    assert run_function_with_persistent_simulation_app(_test_demo_failure_sequences)
+
+
+def test_paused_completed_events():
+    assert run_function_with_persistent_simulation_app(_test_paused_completed_events)
