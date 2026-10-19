@@ -5,8 +5,9 @@ Release Notes
    :maxdepth: 1
    :hidden:
 
-   migration_v0_2_0_to_v0_3_0
+   migration_to_next_release
    migration_v0_3_0_to_v0_3_1
+   migration_v0_2_0_to_v0_3_0
 
 v0.3.1
 -------
