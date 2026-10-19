@@ -17,6 +17,7 @@ from unittest.mock import Mock
 import pytest
 from PIL import Image
 
+from isaaclab_arena.inference.backend import InferenceBackend
 from isaaclab_arena_vlm_agent_policy.embodiment_adapter.adapter import AgentActionAdapter, VLMObservationAdapter
 from isaaclab_arena_vlm_agent_policy.policy.vlm_agent_policy import VLMAgentPolicy, VLMAgentPolicyCfg, encode_image
 
@@ -51,31 +52,36 @@ class ActionAdapter(AgentActionAdapter):
         return super().command_to_action(env, command * self.scale)
 
 
-def response(raw, finish_reason="stop"):
+def response(raw):
     message = SimpleNamespace(content=raw, refusal=None)
-    return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason=finish_reason)])
+    return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason="stop")])
 
 
 @pytest.fixture
-def client(monkeypatch):
-    import isaaclab_arena_vlm_agent_policy.policy.vlm_agent_policy as agent_module
+def backend(monkeypatch):
+    import isaaclab_arena.inference.backend as backend_module
 
     client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=Mock())), close=Mock())
-    monkeypatch.setenv("VLM_TEST_KEY", "test-only")
-    monkeypatch.setattr(agent_module, "OpenAI", Mock(return_value=client))
-    return client
+    client.chat.completions.create.return_value = response("OK")
+    monkeypatch.setattr(backend_module, "OpenAI", Mock(return_value=client))
+    backend = InferenceBackend(api_key="test-only", endpoint="internal", model="test-model", max_retries=1)
+    client.chat.completions.create.reset_mock()
+    yield backend
+    client.close()
 
 
-def make_policy(**kwargs):
+def make_policy(backend, **kwargs):
     config = VLMAgentPolicyCfg(
         system_prompt="Return the joint targets using the supplied schema.",
-        observation_adapter=f"{__name__}.ObservationAdapter",
-        action_adapter=f"{__name__}.ActionAdapter",
-        api_key_env_var="VLM_TEST_KEY",
         image_max_edge=8,
         **kwargs,
     )
-    policy = VLMAgentPolicy(config)
+    policy = VLMAgentPolicy(
+        config,
+        inference_backend=backend,
+        observation_adapter=ObservationAdapter(image_max_edge=config.image_max_edge),
+        action_adapter=ActionAdapter(),
+    )
     policy.set_task_description("Move to the target")
     return policy
 
@@ -89,9 +95,9 @@ def inputs(action_dim=2):
     return env, {"position": positions, "camera_obs": {"front_view": images}}
 
 
-@pytest.mark.parametrize("selection", ["config", "runtime"])
 @pytest.mark.parametrize("action_dim", [2, 5])
-def test_policy_uses_adapter_actions_for_each_environment(client, selection, action_dim):
+def test_policy_uses_adapter_actions_for_each_environment(backend, action_dim):
+    client = backend.client
     calls = []
 
     def create(**kwargs):
@@ -102,21 +108,14 @@ def test_policy_uses_adapter_actions_for_each_environment(client, selection, act
     client.chat.completions.create.side_effect = create
     config = VLMAgentPolicyCfg(
         system_prompt="Use this robot's joint units.",
-        observation_adapter=f"{__name__}.ObservationAdapter" if selection == "config" else "",
-        action_adapter=f"{__name__}.ActionAdapter" if selection == "config" else "",
-        action_adapter_kwargs={"scale": 2},
-        api_key_env_var="VLM_TEST_KEY",
         image_max_edge=8,
     )
-    adapters = (
-        {}
-        if selection == "config"
-        else {
-            "observation_adapter": ObservationAdapter(image_max_edge=8),
-            "action_adapter": ActionAdapter(scale=2),
-        }
+    policy = VLMAgentPolicy(
+        config,
+        inference_backend=backend,
+        observation_adapter=ObservationAdapter(image_max_edge=config.image_max_edge),
+        action_adapter=ActionAdapter(scale=2),
     )
-    policy = VLMAgentPolicy(config, **adapters)
     env, observation = inputs(action_dim)
     try:
         policy.set_task_description("Move each joint")
@@ -142,44 +141,48 @@ def test_policy_uses_adapter_actions_for_each_environment(client, selection, act
         assert all(len(call["messages"]) == 2 for call in calls)
     finally:
         policy.close()
-    client.close.assert_called_once()
+    client.close.assert_not_called()  # The backend belongs to the caller, not the policy.
 
 
 @pytest.mark.parametrize(
-    "bad_raw,finish_reason",
+    "bad_raw,needs_correction",
     [
-        ("not JSON", "stop"),
-        ('{"target": [1]}', "stop"),
-        ('{"target": [1, NaN]}', "stop"),
-        ('{"target": [1, 2]}', "length"),
-        (None, "stop"),
+        ("not JSON", False),
+        ('{"target": [1]}', True),
+        ('{"target": [1, NaN]}', True),
+        (None, False),
     ],
 )
-def test_invalid_responses_are_corrected_before_actions(client, bad_raw, finish_reason):
+def test_invalid_responses_are_corrected_before_actions(backend, bad_raw, needs_correction):
+    client = backend.client
     calls = []
 
     def create(**kwargs):
         calls.append(copy.deepcopy(kwargs))
         if len(calls) == 1:
-            return response(bad_raw, finish_reason)
+            return response(bad_raw)
         return response('{"target": [1, 2]}')
 
     client.chat.completions.create.side_effect = create
-    policy = make_policy(max_attempts=2)
+    policy = make_policy(backend, max_attempts=2)
     env, observation = inputs()
     try:
         action = policy.get_action(env, observation)
         torch.testing.assert_close(action, torch.tensor([[1.0, 1.0], [-1.0, -1.0]]))
         assert len(calls) == 3
-        assert "Invalid actions" in calls[1]["messages"][-1]["content"]
+        if needs_correction:
+            assert "Invalid actions" in calls[1]["messages"][-1]["content"]
+        else:
+            assert calls[1]["messages"] == calls[0]["messages"]  # Backend retries preserve image inputs.
         assert len(calls[2]["messages"]) == 2  # Correction from env 0 must not leak into env 1.
     finally:
         policy.close()
 
 
-def test_invalid_commands_fail_after_bounded_attempts(client):
+def test_invalid_commands_fail_after_bounded_attempts(backend):
+    client = backend.client
     client.chat.completions.create.return_value = response('{"target": [1]}')
-    policy = make_policy(max_attempts=2)
+    policy = make_policy(backend, max_attempts=2)
     policy.action_adapter.command_to_action = Mock()
     try:
         with pytest.raises(AssertionError, match="Wrong command dimensions"):
@@ -190,8 +193,9 @@ def test_invalid_commands_fail_after_bounded_attempts(client):
         policy.close()
 
 
-def test_environment_validation_precedes_inference(client):
-    policy = make_policy()
+def test_environment_validation_precedes_inference(backend):
+    client = backend.client
+    policy = make_policy(backend)
     env, observation = inputs()
     env.unwrapped.action_dim = 0
     try:
@@ -200,13 +204,6 @@ def test_environment_validation_precedes_inference(client):
         client.chat.completions.create.assert_not_called()
     finally:
         policy.close()
-
-
-@pytest.mark.parametrize("class_path", ["", "builtins.dict"])
-def test_missing_or_invalid_adapter_fails_before_inference(class_path):
-    config = VLMAgentPolicyCfg(system_prompt="Test", observation_adapter=class_path)
-    with pytest.raises(AssertionError, match="VLMObservationAdapter"):
-        VLMAgentPolicy(config)
 
 
 @pytest.mark.parametrize("prompt", ["", " \n\t", None])
@@ -228,12 +225,3 @@ def test_image_encoding_preserves_spatial_color_and_aspect_ratio(max_edge, expec
     left, right = image.getpixel((0, 0)), image.getpixel((image.width - 1, 0))
     assert left[0] > left[2] + 100
     assert right[2] > right[0] + 100
-
-
-def test_policy_config_is_registered():
-    from isaaclab_arena.assets.registries import PolicyRegistry
-
-    registry = PolicyRegistry()
-    config = VLMAgentPolicyCfg(system_prompt="Test")
-    assert registry.get_policy("vlm_agent") is VLMAgentPolicy
-    assert registry.get_policy_type_for_cfg(config) is VLMAgentPolicy
