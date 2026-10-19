@@ -9,8 +9,11 @@ from __future__ import annotations
 
 import numpy as np
 import torch
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
+
+from isaaclab_arena.utils.image import resize_rgb_image
 
 
 @dataclass(frozen=True)
@@ -27,16 +30,15 @@ class CameraInput:
     """Optical camera C in reference R, meters and XYZW; C uses +X right, +Y down, +Z forward."""
 
 
-def enable_camera_pose_updates(camera_cfg: Any, camera_keys: tuple[str, ...]) -> None:
+def enable_camera_pose_updates(camera_cfg: Any, camera_names: tuple[str, ...]) -> None:
     """Enable per-step calibration before building the environment.
 
     Args:
         camera_cfg: Arena camera configuration to update in place.
-        camera_keys: RGB observation keys identifying the cameras to configure.
+        camera_names: Camera sensor field names in camera_cfg, independent of observation modality.
     """
-    for key in camera_keys:
-        assert key.endswith("_rgb"), "Camera keys must name RGB observations"
-        cfg = getattr(camera_cfg, key.removesuffix("_rgb"))
+    for camera_name in camera_names:
+        cfg = getattr(camera_cfg, camera_name)
         cfg.update_latest_camera_pose = True
         cfg.update_period = 0.0
 
@@ -45,7 +47,7 @@ def extract_camera_inputs_in_reference_frame(
     env: Any,
     observation: dict,
     env_id: int,
-    camera_keys: tuple[str, ...],
+    camera_names_by_obs_key: Mapping[str, str],
     *,
     T_W_R: torch.Tensor | None = None,
     image_max_edge: int = 384,
@@ -57,7 +59,8 @@ def extract_camera_inputs_in_reference_frame(
         env: Arena environment, optionally gym-wrapped; do not step between observation and extraction.
         observation: Current observations with unnormalized uint8 camera_obs terms.
         env_id: Environment whose images and calibration to extract.
-        camera_keys: RGB observation keys of the form <scene camera name>_rgb.
+        camera_names_by_obs_key: Mapping from RGB observation keys to scene camera sensor names.
+            Keys may use any naming convention; values identify the cameras supplying calibration.
         T_W_R: Reference R in simulation world W for each environment, shaped (N, 7),
             meters and unit XYZW quaternions. Required with calibration. Pass a robot
             root pose for robot-relative calibration, or identity poses for world-relative
@@ -72,21 +75,19 @@ def extract_camera_inputs_in_reference_frame(
     arena_env = env.unwrapped
     assert 0 <= env_id < arena_env.num_envs, "env_id is out of range"
     assert isinstance(image_max_edge, int) and image_max_edge > 0, "image_max_edge must be a positive integer"
-    assert len(set(camera_keys)) == len(camera_keys), "Camera keys must be unique"
     if include_calibration:
         assert T_W_R is not None, "T_W_R is required for calibration"
         _validate_reference_poses(T_W_R, arena_env.num_envs)
 
     result = {}
-    for key in camera_keys:
-        assert key.endswith("_rgb"), "Camera keys must name RGB observations"
+    for key, camera_name in camera_names_by_obs_key.items():
         images = observation["camera_obs"][key]
         assert images.ndim == 4 and images.shape[0] == arena_env.num_envs, "Expected batched HWC camera images"
         image = images[env_id].detach()
-        rgb = _resize_rgb_image(image, image_max_edge)
+        rgb = resize_rgb_image(image, image_max_edge)
         intrinsics, T_R_C = None, None
         if include_calibration:
-            camera = arena_env.scene[key.removesuffix("_rgb")]
+            camera = arena_env.scene[camera_name]
             intrinsics, T_R_C = _extract_camera_calibration_in_reference_frame(
                 camera, env_id, T_W_R, image.shape[:2], rgb.shape[:2]
             )
@@ -107,30 +108,6 @@ def _validate_reference_poses(T_W_R: torch.Tensor, num_envs: int) -> None:
     assert torch.allclose(
         quaternion_norm, torch.ones_like(quaternion_norm), atol=1e-4
     ), "Expected unit XYZW reference quaternions"
-
-
-def _resize_rgb_image(image: torch.Tensor, image_max_edge: int) -> np.ndarray:
-    """Copy an RGB or RGBA image as RGB, resizing without upscaling.
-
-    Args:
-        image: HWC uint8 image.
-        image_max_edge: Maximum output width or height, preserving aspect ratio.
-
-    Returns:
-        Independent HWC uint8 RGB array.
-    """
-    assert image.dtype == torch.uint8 and image.shape[-1] in (3, 4), "Expected unnormalized uint8 RGB or RGBA"
-    source_height, source_width = image.shape[:2]
-    ratio = min(1.0, image_max_edge / max(source_height, source_width))
-    height, width = max(1, round(source_height * ratio)), max(1, round(source_width * ratio))
-    rgb = image[..., :3]
-    if (height, width) != (source_height, source_width):
-        pixels = rgb.permute(2, 0, 1).unsqueeze(0).float()
-        pixels = torch.nn.functional.interpolate(
-            pixels, size=(height, width), mode="bilinear", align_corners=False, antialias=True
-        )
-        rgb = pixels[0].permute(1, 2, 0).round().clamp(0, 255).to(torch.uint8)
-    return rgb.cpu().numpy().copy()
 
 
 def _extract_camera_calibration_in_reference_frame(
@@ -156,7 +133,7 @@ def _extract_camera_calibration_in_reference_frame(
 
     assert (
         camera.cfg.update_latest_camera_pose and camera.cfg.update_period == 0
-    ), "Call enable_camera_pose_updates(camera_cfg, camera_keys) before building the environment"
+    ), "Call enable_camera_pose_updates(camera_cfg, camera_names) before building the environment"
     data = camera.data
     assert tuple(data.image_shape) == tuple(source_shape), "Image dimensions do not match camera calibration"
     source_height, source_width = source_shape
@@ -164,9 +141,12 @@ def _extract_camera_calibration_in_reference_frame(
     intrinsics = data.intrinsic_matrices.torch[env_id].detach().cpu().numpy().copy()
     intrinsics[0, :] *= width / source_width
     intrinsics[1, :] *= height / source_height
-    t_W_C = data.pos_w.torch[env_id : env_id + 1]
-    q_W_C = data.quat_w_ros.torch[env_id : env_id + 1]
+    t_W_C = data.pos_w.torch[env_id : env_id + 1]  # Camera C's origin in world W, meters; retain the batch dimension.
+    q_W_C = data.quat_w_ros.torch[env_id : env_id + 1]  # Optical C-to-W rotation, XYZW.
+    # Select reference R's world pose for this environment, matching the camera tensor's device and dtype.
     T_W_R_env = T_W_R[env_id : env_id + 1].to(device=t_W_C.device, dtype=t_W_C.dtype)
+    # Express camera C in reference R: T_R_C = inverse(T_W_R) * T_W_C.
     t_R_C, q_R_C = subtract_frame_transforms(T_W_R_env[:, :3], T_W_R_env[:, 3:], t_W_C, q_W_C)
+    # Return an independent CPU pose [x, y, z, qx, qy, qz, qw], without the batch dimension.
     T_R_C = torch.cat((t_R_C, q_R_C), dim=-1)[0].detach().cpu().numpy().copy()
     return intrinsics, T_R_C
