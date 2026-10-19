@@ -110,9 +110,8 @@ class VariationRecorder:
         for variation_key, variation in get_enabled_variations_by_key(variations).items():
             assert (
                 variation_key not in self.records
-            ), f"VariationRecorder: asset_name '{variation_key}' is already attached."
+            ), f"VariationRecorder: variation '{variation_key}' is already attached."
 
-            # Create a record for the variation
             record = VariationRecord(name=variation_key, cfg=variation.cfg)
             self.records[variation_key] = record
 
