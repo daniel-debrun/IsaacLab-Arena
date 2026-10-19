@@ -11,16 +11,17 @@ from copy import deepcopy
 from dataclasses import field
 from typing import TYPE_CHECKING
 
-from isaaclab.sim import MultiAssetSpawnerCfg, MultiUsdFileCfg
 from isaaclab.sim.spawners.spawner_cfg import SpawnerCfg
 from isaaclab.utils.configclass import configclass
 
+from isaaclab_arena.assets.object import Object, assert_named_spawn_cfg
+from isaaclab_arena.assets.object_set import RigidObjectSet
+from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.variations.choice_sampler import ChoiceSamplerCfg
 from isaaclab_arena.variations.variation_base import BuildTimeVariationBase, VariationBaseCfg
 
 if TYPE_CHECKING:
     from isaaclab_arena.assets.asset import Asset
-    from isaaclab_arena.assets.object import Object
 
 
 @configclass
@@ -36,27 +37,6 @@ class AssetSelectionVariationCfg(VariationBaseCfg):
 
     sampler_cfg: ChoiceSamplerCfg = field(default_factory=ChoiceSamplerCfg)
     """Sampler that draws the candidate name."""
-
-
-def assert_named_spawn_cfg(named_spawn_cfg: tuple[str, SpawnerCfg], owner: str) -> None:
-    """Assert that ``named_spawn_cfg`` is a (name, spawn configuration) pair with one spawn configuration.
-
-    Args:
-        named_spawn_cfg: Pair to check, such as AssetRegistry.get_named_spawn_cfg() returns.
-        owner: What received the pair, for example ``"Object 'pickup' asset="``. Starts each assert message.
-    """
-    assert isinstance(named_spawn_cfg, tuple) and len(named_spawn_cfg) == 2, (
-        f"{owner}: pass a (name, spawn configuration) pair with one spawn configuration, such as"
-        " AssetRegistry.get_named_spawn_cfg() returns."
-    )
-    asset_name, spawn_cfg = named_spawn_cfg
-    assert (
-        isinstance(asset_name, str) and asset_name
-    ), f"{owner}: the asset name is {asset_name!r}; pass a non-empty string."
-    assert isinstance(spawn_cfg, SpawnerCfg) and not isinstance(spawn_cfg, (MultiAssetSpawnerCfg, MultiUsdFileCfg)), (
-        f"{owner}: '{asset_name}' is a {type(spawn_cfg).__name__}; pass one spawn configuration, not a"
-        " MultiAssetSpawnerCfg or MultiUsdFileCfg."
-    )
 
 
 class AssetSelectionVariation(BuildTimeVariationBase):
@@ -116,12 +96,6 @@ class AssetSelectionVariation(BuildTimeVariationBase):
         Args:
             asset: Object to add the selection to.
         """
-        # Imported here because object.py imports this module for assert_named_spawn_cfg, and the asset modules
-        # load pxr.
-        from isaaclab_arena.assets.object import Object
-        from isaaclab_arena.assets.object_set import RigidObjectSet
-        from isaaclab_arena.assets.object_type import ObjectType
-
         assert not isinstance(asset, RigidObjectSet), (
             f"'{asset.name}' is a RigidObjectSet, which already spawns one member per environment."
             " Add AssetSelectionVariation to a rigid Object."
