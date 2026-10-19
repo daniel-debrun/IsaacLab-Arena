@@ -57,13 +57,17 @@ class AssetSelectionVariation(BuildTimeVariationBase):
         cfg: AssetSelectionVariationCfg | None = None,
         name: str = "asset_selection",
     ):
+        assert isinstance(rigid_object, Object), (
+            f"AssetSelectionVariation needs a rigid Object, but got a {type(rigid_object).__name__}."
+            " Pass the Object itself."
+        )
         assert not isinstance(rigid_object, RigidObjectSet), (
             f"'{rigid_object.name}' is a RigidObjectSet, which already spawns one member per environment."
             " Add AssetSelectionVariation to a rigid Object."
         )
-        assert isinstance(rigid_object, Object) and rigid_object.object_type == ObjectType.RIGID, (
-            f"AssetSelectionVariation needs a rigid Object, but '{rigid_object.name}' ({type(rigid_object).__name__})"
-            " is not one."
+        assert rigid_object.object_type == ObjectType.RIGID, (
+            f"AssetSelectionVariation needs a rigid Object, but '{rigid_object.name}' is a"
+            f" {rigid_object.object_type.value} Object."
         )
         assert not any(
             isinstance(variation, AssetSelectionVariation) for variation in rigid_object.get_variations()

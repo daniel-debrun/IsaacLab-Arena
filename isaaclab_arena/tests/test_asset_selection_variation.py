@@ -230,8 +230,12 @@ def _test_asset_selection_rejects_invalid_configuration(simulation_app, case_id)
 
     multi_asset_spawn_cfg = sim_utils.MultiAssetSpawnerCfg(assets_cfg=[candidate[1]])
     invalid_configurations = {
+        "object_name_instead_of_object": (
+            lambda: AssetSelectionVariation("pickup", [candidate]),
+            "needs a rigid Object, but got a str",
+        ),
         "rigid_object_set": (add_to_rigid_object_set, "already spawns one member per environment"),
-        "base_object": (add_to_base_object, "needs a rigid Object"),
+        "base_object": (add_to_base_object, "needs a rigid Object, but 'table' is a base Object"),
         "bounding_box_override": (
             build_with_bounding_box_set_after_add_variation,
             "'pickup' sets a bounding_box override",
@@ -310,6 +314,7 @@ def test_recorded_asset_name_is_replayed(tmp_path):
 @pytest.mark.parametrize(
     "case_id",
     [
+        "object_name_instead_of_object",
         "rigid_object_set",
         "base_object",
         "bounding_box_override",
