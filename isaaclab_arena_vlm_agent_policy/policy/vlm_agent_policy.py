@@ -25,7 +25,7 @@ from typing import Any
 from openai import OpenAI
 from PIL import Image
 
-from isaaclab_arena.agentic_environment_generation.inference_backend import INTERNAL_ENDPOINT
+from isaaclab_arena.inference.backend import INTERNAL_ENDPOINT
 from isaaclab_arena.policy.policy_base import PolicyCfg
 
 

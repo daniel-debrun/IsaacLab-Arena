@@ -84,6 +84,5 @@ def test_goal_camera_contract(tmp_path):
     assert run_function_with_persistent_simulation_app(
         _test_goal_camera_contract,
         enable_cameras=True,
-        force_disable_fabric=False,
         output=tmp_path,
     )
