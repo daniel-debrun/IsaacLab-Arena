@@ -9,6 +9,8 @@ Deliver review findings as a **pending** GitHub review: inline comments on the r
 
 Creating, changing or deleting a pending review writes to GitHub under the reviewer's account. Do it only after the reviewer's explicit go-ahead for that PR. All commands run on the host, where `gh` is authenticated as the reviewer.
 
+Invoking this skill authorizes local drafting and read-only GitHub checks. Show the exact comments and summary locally, including attribution, and wait for explicit approval before creating or changing a GitHub pending review. Never submit the review.
+
 ## The payload
 
 Build this JSON, save it locally (e.g. `/tmp/<repo>-pr<N>-review/pending_review.json`), validate it, then send it.
