@@ -27,7 +27,12 @@ class PendingReviewValidationTest(unittest.TestCase):
         )
 
     def payload(self, **changes):
-        comment = {"path": "example.py", "line": 2, "side": "RIGHT", "body": "Check this change."}
+        comment = {
+            "path": "example.py",
+            "line": 2,
+            "side": "RIGHT",
+            "body": "_AI-drafted (Codex), reviewed by me._\n\nCheck this change.",
+        }
         comment.update(changes)
         return {"commit_id": "head", "comments": [comment]}
 
@@ -76,11 +81,37 @@ class PendingReviewValidationTest(unittest.TestCase):
         self.assertEqual(len(validate_payload(payload, "head", self.hunks)), 2)
 
     def test_summary_only_review(self):
-        self.assertEqual(validate_payload({"commit_id": "head", "body": "No findings."}, "head", {}), [])
+        self.assertEqual(
+            validate_payload(
+                {"commit_id": "head", "body": "_AI-drafted (Codex), reviewed by me._\n\nNo findings."}, "head", {}
+            ),
+            [],
+        )
+
+    def test_attribution_required_in_summary_and_comments(self):
+        for body in (
+            "Missing attribution.",
+            "_AI-drafted (Codex)._\n\nMissing reviewer acknowledgement.",
+            "_AI-drafted (Codex), reviewed by me._\nMissing blank line.",
+            "Finding first.\n\n_AI-drafted (Codex), reviewed by me._\n\n",
+        ):
+            with self.subTest(body=body):
+                self.assertTrue(validate_payload(self.payload(body=body), "head", self.hunks))
+                self.assertTrue(validate_payload({"commit_id": "head", "body": body}, "head", {}))
+
+    def test_attribution_accepts_different_agent_names(self):
+        for agent_name in ("Codex", "Claude Code"):
+            with self.subTest(agent_name=agent_name):
+                body = f"_AI-drafted ({agent_name}), reviewed by me._\n\nCheck this change."
+                payload = self.payload(body=body)
+                payload["body"] = body
+                self.assertEqual(validate_payload(payload, "head", self.hunks), [])
 
     def test_head_change_during_validation(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json") as payload_file:
-            json.dump({"commit_id": "head", "body": "No findings."}, payload_file)
+            json.dump(
+                {"commit_id": "head", "body": "_AI-drafted (Codex), reviewed by me._\n\nNo findings."}, payload_file
+            )
             payload_file.flush()
             with (
                 patch("sys.argv", ["validate", "owner/repo", "1", payload_file.name]),

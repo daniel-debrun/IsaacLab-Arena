@@ -9,9 +9,8 @@ Usage (on the host, with ``gh`` authenticated):
     python3 -I skills/developer/draft-pr-review/validate_pending_review.py OWNER/REPO PR_NUMBER PAYLOAD.json
 
 Checks that the payload has no ``event`` (so the review stays pending), that ``commit_id`` is the
-current PR head, that comment bodies are nonempty, and that every inline comment is anchored
-on a line inside GitHub's diff. Only
-read-only ``gh`` commands are run. A payload without ``body`` checks comments meant for an existing
+current PR head, that the summary and comments start with the attribution line, and that every
+inline comment is anchored on a line inside GitHub's diff. Only read-only ``gh`` commands are run. A payload without ``body`` checks comments meant for an existing
 pending review.
 """
 
@@ -25,6 +24,7 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 
+ATTRIBUTION_LINE = re.compile(r"^_AI-drafted \([^()\r\n]+\), reviewed by me\._\n\n")
 HUNK_HEADER = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 
 
@@ -152,6 +152,8 @@ def validate_payload(payload: object, head_sha: str, hunks_by_path: dict[str, li
         problems.append(f"commit_id {payload.get('commit_id')} is not the PR head {head_sha}")
     if "body" in payload and (not isinstance(payload["body"], str) or not payload["body"].strip()):
         problems.append("review body must be a nonempty string")
+    elif "body" in payload and not ATTRIBUTION_LINE.match(payload["body"]):
+        problems.append("review body must start with the attribution line followed by a blank line")
     comments = payload.get("comments", [])
     if not isinstance(comments, list):
         return problems + ["comments must be a list"]
@@ -163,6 +165,8 @@ def validate_payload(payload: object, head_sha: str, hunks_by_path: dict[str, li
             continue
         if not isinstance(comment.get("body"), str) or not comment["body"].strip():
             problems.append(f"comment {index}: body must be a nonempty string")
+        elif not ATTRIBUTION_LINE.match(comment["body"]):
+            problems.append(f"comment {index}: body must start with the attribution line followed by a blank line")
         anchor_problem = find_anchor_problem(comment, hunks_by_path)
         if anchor_problem is not None:
             problems.append(f"comment {index}: {anchor_problem}")

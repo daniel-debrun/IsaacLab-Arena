@@ -5,7 +5,7 @@ description: Turns review findings from a local or agent-assisted code review in
 
 # Draft a Pending PR Review
 
-Deliver review findings as a **pending** GitHub review: inline comments on the right diff lines plus a summary. Only the reviewer can see a pending review. They edit and submit it themselves; the agent never submits.
+Deliver review findings as a **pending** GitHub review: inline comments on the right diff lines plus a summary. Only the reviewer can see a pending review. They edit and submit it themselves; the agent never submits. Every review summary and inline comment starts with `_AI-drafted (<agent name>), reviewed by me._` followed by a blank line.
 
 Creating, changing or deleting a pending review writes to GitHub under the reviewer's account. Do it only after the reviewer's explicit go-ahead for that PR. All commands run on the host, where `gh` is authenticated as the reviewer.
 
@@ -18,19 +18,20 @@ Build this JSON, save it locally (e.g. `/tmp/<repo>-pr<N>-review/pending_review.
 ```json
 {
   "commit_id": "<PR head SHA>",
-  "body": "<short verdict>. <whether anything was run, e.g. 'Everything below comes from reading the code at `abc1234`; nothing was run.'>\n\n<index of the inline comments, most important first>\n\n<points that have no line in the diff>",
+  "body": "_AI-drafted (<agent name>), reviewed by me._\n\n<short verdict>. <whether anything was run, e.g. 'Everything below comes from reading the code at `abc1234`; nothing was run.'>\n\n<index of the inline comments, most important first>\n\n<points that have no line in the diff>",
   "comments": [
     {"path": "pkg/builder.py", "line": 339, "side": "RIGHT",
-     "body": "**Blocking: <title>**\n\n<what the code does now>\n\n<why it matters: failure scenario or cost>\n\n<suggestion>"},
+     "body": "_AI-drafted (<agent name>), reviewed by me._\n\n**Blocking: <title>**\n\n<what the code does now>\n\n<why it matters: failure scenario or cost>\n\n<suggestion>"},
     {"path": "pkg/builder.py", "start_line": 304, "line": 331, "start_side": "RIGHT", "side": "RIGHT",
-     "body": "**Design: <title>**\n\n..."},
+     "body": "_AI-drafted (<agent name>), reviewed by me._\n\n**Design: <title>**\n\n..."},
     {"path": "tests/test_replay.py", "line": 253, "side": "LEFT",
-     "body": "**Question: <about deleted code>**\n\n..."}
+     "body": "_AI-drafted (<agent name>), reviewed by me._\n\n**Question: <about deleted code>**\n\n..."}
   ]
 }
 ```
 
 - No `event` key: that is what makes the review PENDING. A valid `event` submits the review immediately; invalid values are rejected.
+- Replace `<agent name>` with the drafting agent’s name. Preserve the attribution when adding or editing comments.
 - Refer to code by its name (class, function, method, variable), with file:line, so each comment can be checked without searching.
 - Write each comment as short paragraphs, one point each: what the code does now, why it matters, then the suggestion. Put lists of items in bullets.
 - `side: RIGHT` takes new-file line numbers of added or context lines; `side: LEFT` takes old-file line numbers of deleted lines. A range must stay inside one hunk. Points without a diff line go in the summary.
@@ -45,7 +46,7 @@ Build this JSON, save it locally (e.g. `/tmp/<repo>-pr<N>-review/pending_review.
 5. Validate: `python3 -I skills/developer/draft-pr-review/validate_pending_review.py OWNER/REPO N payload.json`. Fix everything it reports.
 6. Recheck the head SHA immediately before writing. If it changed, refresh the findings and validate again. Create: `gh api repos/OWNER/REPO/pulls/N/reviews --method POST --input payload.json > response.json`, then read `response.json`. Expect `"state": "PENDING"`.
 7. Confirm anchors: `gh api repos/OWNER/REPO/pulls/N/reviews/ID/comments --jq '.[] | "\(.path): \(.diff_hunk | split("\n") | last)"'`. For pending comments `line` is null; the last `diff_hunk` line is the anchored line.
-8. Hand over `https://github.com/OWNER/REPO/pull/N/files`. The reviewer reads and edits every comment, then uses "Finish your review" → Comment, Request changes or Approve.
+8. Hand over `https://github.com/OWNER/REPO/pull/N/files`. The reviewer reads and edits every comment before submission, which makes "reviewed by me" true, then uses "Finish your review" → Comment, Request changes or Approve.
 
 ## Adding to an existing pending review
 
@@ -69,7 +70,7 @@ A second POST to `.../reviews` fails while a pending review exists. Add threads 
 ## Changing an existing pending review
 
 1. Confirm the review is still PENDING before each write; stop if it was submitted or discarded. Fetch the current review and its comments and compare them with the saved payload. If they differ, the reviewer edited them in the UI: ask before overwriting anything.
-2. Summary: `gh api repos/OWNER/REPO/pulls/N/reviews/ID --method PUT --input body.json` with `{"body": "..."}`. This works while the review is pending.
+2. Summary: `gh api repos/OWNER/REPO/pulls/N/reviews/ID --method PUT --input body.json` with `{"body": "_AI-drafted (<agent name>), reviewed by me._\n\n..."}`. This works while the review is pending.
 3. Inline comments: the REST endpoints for single comments (`GET`/`PATCH repos/OWNER/REPO/pulls/comments/CID`) return 404 for pending comments. Take the comment's `node_id` from `.../reviews/ID/comments` and update it with GraphQL, building the new body from the current GitHub text so UI edits survive:
 
    ```bash
