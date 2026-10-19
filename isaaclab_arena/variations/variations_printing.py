@@ -58,7 +58,9 @@ def get_variations_catalogue_as_string(
         return _EMPTY_MESSAGE
     # Resolve the overrides into a single cfg up front, then read each field's
     # effective (post-override) default from it while formatting below.
-    resolved_variations_cfg: Any | None = variations_hydra.resolve_variations_cfg(variations, hydra_overrides or [])
+    resolved_variations_cfg: Any | None = variations_hydra.build_variations_cfg_with_overrides(
+        variations, hydra_overrides or []
+    )
     lines = ["Variations (Hydra-configurable)", "=" * 32, ""]
     # Sort so the catalog is deterministic regardless of dict insertion order.
     for asset_name in sorted(variations.keys()):

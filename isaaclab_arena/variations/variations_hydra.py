@@ -74,12 +74,12 @@ def apply_overrides(
 ) -> None:
     """Apply Hydra-style overrides to ``variations`` in-place.
 
-    Resolves a typed ``VariationsCfg`` with ``hydra_overrides`` and applies
+    Builds a typed ``VariationsCfg`` with ``hydra_overrides`` and applies
     each per-variation cfg through ``VariationBase.apply_cfg``.
 
     Args:
         variations: ``{asset_name: [variation, ...]}`` mapping whose cfgs
-            will be replaced by the resolved values.
+            will be replaced by the values after applying overrides.
         hydra_overrides: Hydra override strings, dotted-path syntax
             mirroring the schema attribute paths. Example::
 
@@ -89,7 +89,7 @@ def apply_overrides(
                     "cracker_box.color.sampler.high=[1.0,1.0,0.0]",
                 ])
     """
-    all_variations_cfg = resolve_variations_cfg(variations, hydra_overrides)
+    all_variations_cfg = build_variations_cfg_with_overrides(variations, hydra_overrides)
     if all_variations_cfg is None:
         return
     # Loop over the variations' cfgs and apply the overrides.
@@ -100,7 +100,7 @@ def apply_overrides(
             variation.apply_cfg(variation_cfg)
 
 
-def resolve_variations_cfg(
+def build_variations_cfg_with_overrides(
     variations: dict[str, list[VariationBase]],
     hydra_overrides: list[str],
 ) -> Any | None:
@@ -113,7 +113,7 @@ def resolve_variations_cfg(
         hydra_overrides: Hydra override strings.
 
     Returns:
-        The resolved ``VariationsCfg`` instance, including overridden values, or ``None`` when
+        The built ``VariationsCfg`` instance, including overridden values, or ``None`` when
         ``variations`` is empty.
     """
     variations_cfg_cls = _build_variations_cfg_type(variations)
