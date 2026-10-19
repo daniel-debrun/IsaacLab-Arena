@@ -47,8 +47,11 @@ class GearInsertionCriteria:
     xy_threshold: float = 0.0035
     """Maximum lateral insertion-point error, including the reduced peg's radial clearance, in meters."""
 
-    z_threshold: float = 0.002
-    """Maximum absolute insertion-depth error in meters."""
+    max_depth_below_target_m: float = 0.002
+    """Maximum insertion-point distance below the target along the target's Z axis, in meters."""
+
+    max_height_above_target_m: float = 0.001
+    """Maximum insertion-point distance above the target along the target's Z axis, in meters."""
 
     upright_axis_threshold_deg: float = 5.0
     """Maximum angle between the gear and target up axes in degrees."""
@@ -59,20 +62,17 @@ class GearInsertionCriteria:
     angular_velocity_threshold: float = 0.5
     """Maximum gear angular speed in radians per second."""
 
-    support_z_threshold: float = 0.001
-    """Maximum distance that the gear may remain above the target frame."""
-
     consecutive_success_steps: int = 10
     """Control steps for which the gear must remain seated and settled."""
 
     def __post_init__(self) -> None:
         assert len(self.gear_insertion_offset_xyz) == 3, "gear_insertion_offset_xyz must contain three values"
         assert self.xy_threshold >= 0.0, "xy_threshold must be non-negative"
-        assert self.z_threshold >= 0.0, "z_threshold must be non-negative"
+        assert self.max_depth_below_target_m >= 0.0, "max_depth_below_target_m must be non-negative"
+        assert self.max_height_above_target_m >= 0.0, "max_height_above_target_m must be non-negative"
         assert 0.0 <= self.upright_axis_threshold_deg < 90.0, "upright_axis_threshold_deg must be in [0, 90)"
         assert self.linear_velocity_threshold >= 0.0, "linear_velocity_threshold must be non-negative"
         assert self.angular_velocity_threshold >= 0.0, "angular_velocity_threshold must be non-negative"
-        assert self.support_z_threshold >= 0.0, "support_z_threshold must be non-negative"
         assert self.consecutive_success_steps > 0, "consecutive_success_steps must be positive"
 
 
@@ -147,8 +147,8 @@ class GearInsertionTask(TaskBase):
                 func=depth_in_range,
                 params={
                     **mating_params,
-                    "depth_min": -criteria.z_threshold,
-                    "depth_max": min(criteria.z_threshold, criteria.support_z_threshold),
+                    "depth_min": -criteria.max_depth_below_target_m,
+                    "depth_max": criteria.max_height_above_target_m,
                 },
             ),
             TerminationTermCfg(

@@ -7,12 +7,11 @@ from __future__ import annotations
 
 import torch
 from abc import ABC
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 import isaaclab.envs.mdp as mdp_isaac_lab
 import isaaclab.sim as sim_utils
 from isaaclab.actuators import ImplicitActuatorCfg
-from isaaclab.actuators.actuator_base import resolve_joint_parameter
 from isaaclab.assets.articulation.articulation_cfg import ArticulationCfg
 from isaaclab.controllers.differential_ik_cfg import DifferentialIKControllerCfg
 from isaaclab.envs.mdp.actions.actions_cfg import (
@@ -29,11 +28,9 @@ from isaaclab.managers import SceneEntityCfg
 from isaaclab.markers.config import FRAME_MARKER_CFG
 from isaaclab.sensors.camera.camera_cfg import CameraCfg
 from isaaclab.sensors.frame_transformer.frame_transformer_cfg import FrameTransformerCfg, OffsetCfg
-from isaaclab.sim.schemas import JointDriveFragment, UsdPhysicsDriveCfg
 from isaaclab.sim.spawners.from_files import spawn_from_usd
 from isaaclab.sim.utils import clone
 from isaaclab.utils.configclass import configclass
-from isaaclab.utils.string import resolve_matching_names
 
 from isaaclab_arena.assets.nucleus import ARENA_NUCLEUS_DIR
 from isaaclab_arena.assets.register import register_asset
@@ -97,19 +94,6 @@ _DROID_NEWTON_GRIPPER_MIMIC_SIGNS = {
     "right_inner_finger_joint": 1.0,
     "right_inner_finger_knuckle_joint": -1.0,
 }
-
-
-@configclass
-class _NewtonJointPropertiesCfg(JointDriveFragment):
-    """Author Newton joint inertia and solver velocity limits when spawning DROID."""
-
-    _usd_namespace: ClassVar[str | None] = "newton"
-
-    armature: float | None = None
-    """Added joint inertia [kg·m²] for revolute joints."""
-
-    velocity_limit: float | None = None
-    """Requested solver joint velocity limit [rad/s] for revolute joints."""
 
 
 class DroidEmbodimentBase(EmbodimentBase, ABC):
@@ -181,7 +165,6 @@ class DroidEmbodimentBase(EmbodimentBase, ABC):
         if backend is PhysicsBackend.NEWTON:
             self._configure_newton_spawn()
             self._configure_newton_gripper()
-            self._configure_newton_joint_properties()
 
     def _configure_newton_spawn(self) -> None:
         """Apply Newton-compatible robot spawning shared across DROID control modes."""
@@ -221,38 +204,6 @@ class DroidEmbodimentBase(EmbodimentBase, ABC):
             close_command_expr={"finger_joint": _DROID_NEWTON_GRIPPER_CLOSE_RAD},
         )
         self.observation_config.policy.gripper_pos = ObsTerm(func=newton_gripper_pos)
-
-    def _configure_newton_joint_properties(self) -> None:
-        """Keep implicit actuator tuning in the USD imported by Newton simulation rebuilds."""
-        robot_cfg = self.scene_config.robot
-        joint_properties = {}
-        for actuator in robot_cfg.actuators.values():
-            _, joint_names = resolve_matching_names(actuator.joint_names_expr, _DROID_JOINT_NAMES)
-            resolved = {}
-            for parameter in ("stiffness", "damping", "joint_effort_limit", "armature", "joint_velocity_limit"):
-                value = getattr(actuator, parameter)
-                # None preserves the USD value. Dictionaries use Lab's per-joint matching
-                # and zero-fill semantics, just as they do when constructing an actuator.
-                resolved[parameter] = (
-                    [None] * len(joint_names)
-                    if value is None
-                    else resolve_joint_parameter(value, None, joint_names, num_envs=1, device="cpu")[0].tolist()
-                )
-            for index, joint_name in enumerate(joint_names):
-                joint_properties[f"/.*/{joint_name}"] = [
-                    UsdPhysicsDriveCfg(
-                        drive_type="force",
-                        stiffness=resolved["stiffness"][index],
-                        damping=resolved["damping"][index],
-                        max_force=resolved["joint_effort_limit"][index],
-                    ),
-                    _NewtonJointPropertiesCfg(
-                        armature=resolved["armature"][index],
-                        velocity_limit=resolved["joint_velocity_limit"][index],
-                    ),
-                ]
-        robot_cfg.spawn.joint_drive_props = joint_properties
-        robot_cfg.spawn.joint_drive_props_create_if_missing = True
 
     def get_bounding_box(self) -> AxisAlignedBoundingBox:
         """Return root-relative placement bounds from the composed on-stand USD spawn.
@@ -670,8 +621,8 @@ def spawn_newton_droid(
 ):
     """Spawn DROID from USD and apply Newton-specific rigid-body and collision setup."""
     from isaaclab.sim import schemas
-    from isaaclab_newton.sim.schemas import MujocoRigidBodyPropertiesCfg
-    from pxr import Sdf, Usd, UsdPhysics
+    from isaaclab_newton.sim.schemas import MujocoCollisionCfg, MujocoRigidBodyPropertiesCfg
+    from pxr import Sdf, Usd, UsdGeom, UsdPhysics
 
     from isaaclab_arena.utils.usd.helpers import move_collision_schemas_to_meshes
 
@@ -687,6 +638,17 @@ def spawn_newton_droid(
         prim_path,
         MujocoRigidBodyPropertiesCfg(gravcomp=1.0),
         prim.GetStage(),
+    )
+    # Convex pads provide stable contact patches for the shared Newton Robotiq gripper.
+    pad_count = 0
+    for child in Usd.PrimRange(prim):
+        if child.IsA(UsdGeom.Mesh) and "fingertipsstep" in child.GetName():
+            UsdPhysics.MeshCollisionAPI.Apply(child).CreateApproximationAttr().Set("convexHull")
+            pad_count += 1
+    assert pad_count == 2, f"Expected two DROID fingertip meshes, found {pad_count}"
+    schemas.apply_collision_properties(
+        f"{prim.GetPath()}/Gripper/.*",
+        [MujocoCollisionCfg(priority=2, condim=4, solref=(0.002, 1.0), solimp=(0.95, 0.99, 0.001, 0.5, 2.0))],
     )
     joints = {child.GetName(): child for child in Usd.PrimRange(prim) if child.IsA(UsdPhysics.RevoluteJoint)}
     # Author native couplings explicitly: the USD's PhysX mimic defaults are too

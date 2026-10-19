@@ -59,9 +59,8 @@ def _test_gear_insertion_rejects_unseated_or_moving_gears(simulation_app):
     gear = poses["gear"]
     gear[1, 3:] = torch.tensor([0, 0, math.sin(0.6), math.cos(0.6)], dtype=gear.dtype)
     gear[2, 0] += criteria.xy_threshold + 0.001
-    # Inside the symmetric Z tolerance, but too high to count as supported.
-    gear[3, 2] += (criteria.support_z_threshold + criteria.z_threshold) / 2
-    gear[4, 2] -= criteria.z_threshold + 0.001
+    gear[3, 2] += criteria.max_height_above_target_m + 0.0005
+    gear[4, 2] -= criteria.max_depth_below_target_m + 0.001
     tilt = torch.tensor(math.radians(criteria.upright_axis_threshold_deg + 1), dtype=gear.dtype)
     zero = torch.zeros_like(tilt)
     gear[5, 3:] = quat_from_euler_xyz(tilt, zero, zero)
@@ -80,6 +79,31 @@ def _test_gear_insertion_rejects_unseated_or_moving_gears(simulation_app):
 
 def test_gear_insertion_rejects_unseated_or_moving_gears():
     assert run_function_with_persistent_simulation_app(_test_gear_insertion_rejects_unseated_or_moving_gears)
+
+
+def _test_gear_insertion_depth_limits_are_independent(simulation_app):
+    import torch
+
+    from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
+    from isaaclab_arena.tasks.gear_insertion_task import GearInsertionCriteria
+
+    criteria = GearInsertionCriteria(
+        max_depth_below_target_m=0.001,
+        max_height_above_target_m=0.003,
+        consecutive_success_steps=1,
+    )
+    task, env, poses, _, _ = _make_task_and_state(4, criteria)
+    # A larger upper allowance must not be clamped by the lower allowance.
+    # Exercise both sides of each limit through the task's actual success tracker.
+    poses["gear"][:, 2] += torch.tensor([-0.0015, -0.0005, 0.0025, 0.0035], dtype=torch.float64)
+    tracker = ProgressTracker(task.get_termination_cfg().success, env.num_envs, env.device, env=env)
+    _step_progress(tracker, env)
+    assert tracker.is_complete().tolist() == [False, True, True, False]
+    return True
+
+
+def test_gear_insertion_depth_limits_are_independent():
+    assert run_function_with_persistent_simulation_app(_test_gear_insertion_depth_limits_are_independent)
 
 
 def _test_gear_insertion_streak_interruption_and_partial_reset(simulation_app):

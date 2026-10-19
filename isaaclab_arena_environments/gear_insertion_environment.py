@@ -45,14 +45,10 @@ class GearInsertionEnvironmentCfg(ArenaEnvironmentCfg):
     teleop_device: str | None = None
     """Arena teleoperation device, such as ``keyboard`` or ``spacemouse``."""
 
-    episode_length_s: float = 70.0
-    """Maximum episode duration."""
-
     position_randomization_m: float = 0.05
     """Maximum initial X/Y offset for each gear asset; zero keeps the nominal positions."""
 
     def __post_init__(self) -> None:
-        assert self.episode_length_s > 0.0, "episode_length_s must be positive"
         assert (
             math.isfinite(self.position_randomization_m) and self.position_randomization_m >= 0.0
         ), "position_randomization_m must be finite and non-negative"
@@ -142,7 +138,7 @@ class GearInsertionEnvironment(ArenaEnvironmentFactory[GearInsertionEnvironmentC
             held_asset=medium_gear,
             insertion_target=insertion_target,
             background_scene=background,
-            episode_length_s=cfg.episode_length_s,
+            episode_length_s=70.0,
         )
         return IsaacLabArenaEnvironment(
             name=self.name,

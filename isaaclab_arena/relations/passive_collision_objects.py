@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-import torch
 from collections import defaultdict
 from collections.abc import Iterable
 from typing import TYPE_CHECKING
@@ -50,23 +49,15 @@ def get_placement_collision_objects(
             for asset in scene_assets
         )
     )
-    passive_assets = discover_passive_assets(scene_assets, include_background=include_background)
+    passive_assets = discover_passive_assets(
+        scene_assets, include_background=include_background, placement_assets=placement_assets
+    )
     passive_asset_set = set(passive_assets)
     # A parent's collision geometry already contains its passive references.
     collision_objects = []
     for asset in passive_assets:
-        if isinstance(asset, ObjectReference):
-            if asset.parent_asset in passive_asset_set:
-                continue
-            # A referenced target frame need not contain collision geometry.
-            bounds = asset.get_bounding_box()
-            has_geometry = bool(
-                torch.isfinite(bounds.min_point).all()
-                and torch.isfinite(bounds.max_point).all()
-                and torch.all(bounds.min_point <= bounds.max_point)
-            )
-            if not has_geometry:
-                continue
+        if isinstance(asset, ObjectReference) and asset.parent_asset in passive_asset_set:
+            continue
         collision_objects.append(asset)
     if not include_background:
         return collision_objects
@@ -81,24 +72,33 @@ def get_placement_collision_objects(
 def discover_passive_assets(
     assets: Iterable[Asset | RigidObjectSet],
     include_background: bool = False,
+    *,
+    placement_assets: Iterable[PlaceableAsset] = (),
 ) -> list[Object | ObjectReference]:
     """Return original relation-free scene assets with fixed placement geometry.
 
     Objects need a fixed Pose. Included backgrounds may omit their pose to use identity.
-    Discovery does not aggregate geometry or remove references covered by a parent.
+    References on placed parents are excluded. References on passive parents remain
+    separate here; collision construction aggregates their geometry later.
 
     Args:
         assets: Scene assets to scan for relation-free fixed objects.
         include_background: Include Background assets, treating an unset pose as identity.
             Returned assets retain their identities, including references to returned parents.
+        placement_assets: Assets being placed; their child references move with them
+            and cannot be treated as fixed obstacles at their initial poses.
     """
     passive_assets: list[Object | ObjectReference] = []
+    placement_asset_set = set(placement_assets)
     for asset in assets:
         if not isinstance(asset, (Object, ObjectReference)):
             continue
         if isinstance(asset, Background) and not include_background:
             continue
         if asset.get_relations():
+            continue
+        if isinstance(asset, ObjectReference) and asset.parent_asset in placement_asset_set:
+            # The parent's placement geometry already contains its referenced children.
             continue
         # Without a USD path, only rigid objects are obstacles: object sets and primitive shapes take their bounds
         # from object_cfg.spawn. This skips lights and the ground plane, whose spawn configurations have no bounds.

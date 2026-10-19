@@ -154,8 +154,8 @@ def test_newton_droid_ik_lifts_on_teleop_command():
     assert run_function_with_persistent_simulation_app(_test_newton_droid_ik_lifts_on_teleop_command)
 
 
-def _test_newton_droid_actuation_survives_simulation_rebuild(simulation_app) -> bool:
-    """The gripper and arm must remain controllable after rebuilding the simulation."""
+def _test_newton_droid_actuation_survives_episode_reset(simulation_app) -> bool:
+    """The gripper and arm must remain controllable across ordinary episode resets."""
     import torch
 
     with _newton_droid_env("newton_droid_recording_reset_test") as (env, pos_sensitivity):
@@ -176,7 +176,6 @@ def _test_newton_droid_actuation_survives_simulation_rebuild(simulation_app) -> 
         signs = torch.tensor([mimic_signs[name] for name in gripper_names], device=base_env.device)
         with torch.inference_mode():
             for _ in range(2):
-                base_env.sim.reset()
                 env.reset()
                 for command, targets in (
                     (0.0, gripper_cfg.open_command_expr),
@@ -193,7 +192,7 @@ def _test_newton_droid_actuation_survives_simulation_rebuild(simulation_app) -> 
                             settled_positions.append(robot.data.joint_pos.torch[:, gripper_ids].clone())
                     positions = torch.stack(settled_positions)
                     jitter = positions.amax(dim=0) - positions.amin(dim=0)
-                    assert jitter.max().item() < 1e-3, f"Gripper oscillated after rebuild: {jitter}"
+                    assert jitter.max().item() < 1e-3, f"Gripper oscillated after episode reset: {jitter}"
                     expected = signs * targets["finger_joint"]
                     torch.testing.assert_close(positions[-1, 0], expected, rtol=0.0, atol=1e-3)
                     motor_positions = positions[..., :1]
@@ -211,8 +210,8 @@ def _test_newton_droid_actuation_survives_simulation_rebuild(simulation_app) -> 
 
 
 @pytest.mark.with_newton
-def test_newton_droid_actuation_survives_simulation_rebuild():
-    assert run_function_with_persistent_simulation_app(_test_newton_droid_actuation_survives_simulation_rebuild)
+def test_newton_droid_actuation_survives_episode_reset():
+    assert run_function_with_persistent_simulation_app(_test_newton_droid_actuation_survives_episode_reset)
 
 
 def _test_newton_droid_embodiment_config_contract(simulation_app) -> bool:
@@ -251,58 +250,3 @@ def _test_newton_droid_embodiment_config_contract(simulation_app) -> bool:
 @pytest.mark.with_newton
 def test_newton_droid_embodiment_config_contract():
     assert run_function_with_persistent_simulation_app(_test_newton_droid_embodiment_config_contract)
-
-
-def _test_newton_droid_joint_properties_resolve_per_joint_settings(simulation_app):
-    """Author scalar, regex-mapped, and inherited settings through the USD spawn path."""
-    import math
-
-    from isaaclab.actuators import ImplicitActuatorCfg
-    from isaaclab.sim.schemas import apply_joint_drive_properties
-    from pxr import Usd, UsdGeom, UsdPhysics
-
-    from isaaclab_arena.embodiments.droid.droid import DroidDifferentialIKEmbodiment
-
-    embodiment = DroidDifferentialIKEmbodiment()
-    embodiment.scene_config.robot.actuators = {
-        "shoulder": ImplicitActuatorCfg(
-            joint_names_expr=["panda_joint[1-4]"],
-            stiffness={"panda_joint[1-2]": 400.0, "panda_joint3": 200.0},
-            damping=80.0,
-            joint_effort_limit={"panda_joint[1-4]": 87.0},
-            armature={"panda_joint[1-2]": 0.01, "panda_joint[3-4]": 0.02},
-            joint_velocity_limit={"panda_joint[1-4]": 2.0},
-        ),
-        "forearm": ImplicitActuatorCfg(joint_names_expr=["panda_joint5"], stiffness=None, damping=None),
-    }
-    embodiment._configure_newton_joint_properties()
-    stage = Usd.Stage.CreateInMemory()
-    UsdGeom.Xform.Define(stage, "/Robot")
-    UsdGeom.Xform.Define(stage, "/Robot/joints")
-    joints = []
-    for index in range(1, 6):
-        joint = UsdPhysics.RevoluteJoint.Define(stage, f"/Robot/joints/panda_joint{index}").GetPrim()
-        drive = UsdPhysics.DriveAPI.Apply(joint, "angular")
-        drive.CreateStiffnessAttr(3.0)
-        drive.CreateDampingAttr(4.0)
-        joints.append(joint)
-    spawn = embodiment.scene_config.robot.spawn
-    for pattern, fragments in spawn.joint_drive_props.items():
-        assert apply_joint_drive_properties("/Robot" + pattern, fragments, stage, create_if_missing=True)
-    for index, stiffness in enumerate((400.0, 400.0, 200.0, 0.0)):
-        joint = joints[index]
-        drive = UsdPhysics.DriveAPI(joint, "angular")
-        assert drive.GetStiffnessAttr().Get() == pytest.approx(stiffness * math.pi / 180.0)
-        assert drive.GetDampingAttr().Get() == pytest.approx(80.0 * math.pi / 180.0)
-        assert drive.GetMaxForceAttr().Get() == pytest.approx(87.0)
-        assert joint.GetAttribute("newton:armature").Get() == pytest.approx(0.01 if index < 2 else 0.02)
-        assert joint.GetAttribute("newton:velocityLimit").Get() == pytest.approx(2.0)
-    inherited_drive = UsdPhysics.DriveAPI(joints[-1], "angular")
-    assert inherited_drive.GetStiffnessAttr().Get() == 3.0
-    assert inherited_drive.GetDampingAttr().Get() == 4.0
-    return True
-
-
-@pytest.mark.with_newton
-def test_newton_droid_joint_properties_resolve_per_joint_settings():
-    assert run_function_with_persistent_simulation_app(_test_newton_droid_joint_properties_resolve_per_joint_settings)
