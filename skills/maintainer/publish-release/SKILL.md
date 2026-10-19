@@ -54,7 +54,7 @@ pandoc --from=rst --to=gfm \
 Rewrite relative links to `https://isaac-sim.github.io/IsaacLab-Arena/release/$VERSION/`. Check the
 rendered Markdown, issue links, migration-guide link, and versioned documentation links.
 
-## 3. Tag and publish
+## 3. Tag and create the draft release
 
 ```bash
 git tag "$TAG" "$RELEASE_COMMIT"
@@ -68,19 +68,31 @@ gh release create "$TAG" \
   --draft
 
 gh release view "$TAG" --repo isaac-sim/IsaacLab-Arena --web
+```
+
+Verify that the tag resolves to `RELEASE_COMMIT` and that the GitHub Release remains a draft.
+
+## 4. Review and publish the release
+
+Stop after opening the draft release. Require the user to review the rendered title, notes, links,
+tag, and target commit, then explicitly confirm that the release should be made public. Do not
+publish based on an earlier general instruction to run this workflow.
+
+Only after receiving that confirmation, publish the release:
+
+```bash
 gh release edit "$TAG" --repo isaac-sim/IsaacLab-Arena --draft=false
 ```
 
-Verify that the tag resolves to `RELEASE_COMMIT` and that the GitHub Release and versioned
-documentation are public.
+Verify that the GitHub Release and versioned documentation are public.
 
-## 4. Update main's stable-documentation pointer
+## 5. Update main's stable-documentation pointer
 
 Create a separate branch from the latest `main`. Update the development warning in
 `docs/index.rst` so its tested-version text and URL point to `release/$VERSION`, build the docs, and
 open a separate PR to `main`. Do not include this main-only pointer update in the release tag.
 
-## 5. Verify the release
+## 6. Verify the release
 
 Confirm:
 
