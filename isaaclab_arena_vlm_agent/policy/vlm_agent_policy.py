@@ -7,44 +7,27 @@
 
 from __future__ import annotations
 
-import base64
-import io
 import json
 import numpy as np
 import torch
 from collections import deque
 from dataclasses import dataclass
 
-from PIL import Image
+from pydantic import ValidationError
 
-from isaaclab_arena.inference.backend import InferenceBackend, InferenceRequest
+from isaaclab_arena.inference.backend import InferenceBackend, InferenceRequest, build_strict_schema
 from isaaclab_arena.policy.policy_base import PolicyBase, PolicyCfg
-from isaaclab_arena_vlm_agent_policy.embodiment_adapter.action_adapter import (
+from isaaclab_arena.utils.image import encode_image
+from isaaclab_arena_vlm_agent.embodiment_adapter.action_adapter import (
     AgentActionAdapter,
     ChunkActionAdapter,
     GoalActionAdapter,
+    InvalidAgentResponse,
 )
-from isaaclab_arena_vlm_agent_policy.embodiment_adapter.observation_adapter import VLMObservationAdapter
-
-
-def encode_image(image: np.ndarray, max_edge: int = 384) -> str:
-    """Encode an RGB or RGBA image as JPEG, preserving aspect ratio without upscaling.
-
-    Args:
-        image: HWC uint8 pixels; the alpha channel, if present, is discarded.
-        max_edge: Maximum encoded image width or height.
-
-    Returns:
-        A JPEG data URL for an image-capable chat-completion endpoint.
-    """
-    assert isinstance(max_edge, int) and max_edge > 0, "max_edge must be a positive integer"
-    assert image.ndim == 3 and image.shape[-1] in (3, 4), f"Unexpected image shape {image.shape}"
-    assert image.dtype == np.uint8, f"Expected uint8 pixels, got {image.dtype}"
-    frame = Image.fromarray(image[..., :3])
-    frame.thumbnail((max_edge, max_edge))
-    buffer = io.BytesIO()
-    frame.save(buffer, format="JPEG", quality=85)
-    return "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
+from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import (
+    CAMERA_OBSERVATION_GROUP,
+    VLMObservationAdapter,
+)
 
 
 @dataclass
@@ -54,7 +37,7 @@ class VLMAgentPolicyCfg(PolicyCfg):
     system_prompt: str = ""
     """Required system message defining the task, units, and response contract."""
 
-    image_max_edge: int = 384
+    image_max_width_or_height: int = 384
     """Maximum image width or height sent to the endpoint."""
 
     max_attempts: int = 3
@@ -64,7 +47,7 @@ class VLMAgentPolicyCfg(PolicyCfg):
         assert (
             isinstance(self.system_prompt, str) and self.system_prompt.strip()
         ), "Set policy.system_prompt in the experiment"
-        assert isinstance(self.image_max_edge, int) and self.image_max_edge > 0
+        assert isinstance(self.image_max_width_or_height, int) and self.image_max_width_or_height > 0
         assert isinstance(self.max_attempts, int) and self.max_attempts >= 1
 
 
@@ -95,14 +78,12 @@ class VLMAgentPolicy(PolicyBase[VLMAgentPolicyCfg]):
         super().__init__(config)
         assert isinstance(observation_adapter, VLMObservationAdapter)
         assert isinstance(action_adapter, AgentActionAdapter)
+        assert observation_adapter.camera_keys, "Configure at least one camera observation key"
         self.observation_adapter = observation_adapter
         self.action_adapter = action_adapter
+        self._response_schema = build_strict_schema(action_adapter.response_model)
         self._inference_backend = inference_backend
         self.task_description = None
-
-    @property
-    def is_remote(self) -> bool:
-        return True
 
     def get_action(self, env, observation) -> torch.Tensor:
         """Infer a batch of native actions from the current observation.
@@ -115,7 +96,9 @@ class VLMAgentPolicy(PolicyBase[VLMAgentPolicyCfg]):
             Actions shaped (num_envs, action_dim) on the environment device.
         """
         assert self.task_description, "Set the task description before requesting actions"
-        self.action_adapter.validate_environment(env)
+        assert self.action_adapter.is_robot_action_space_supported(
+            env
+        ), "Robot action space is unsupported by this adapter"
         states = self.observation_adapter.extract_proprioception(env, observation)
         assert len(states) == env.unwrapped.num_envs, "Expected one state per environment"
         actions = []
@@ -136,12 +119,12 @@ class VLMAgentPolicy(PolicyBase[VLMAgentPolicyCfg]):
         """Prepare current state and images for a new inference request."""
         content = [{"type": "text", "text": json.dumps({"task": self.task_description, "proprioception": state})}]
         for key in self.observation_adapter.camera_keys:
-            images = observation["camera_obs"][key]
+            images = observation[CAMERA_OBSERVATION_GROUP][key]
             assert images.ndim == 4 and images.shape[0] == env.unwrapped.num_envs, "Expected batched HWC images"
             image = images[env_id].detach().cpu().numpy()
             content.extend([
                 {"type": "text", "text": f"camera={key}"},
-                {"type": "image_url", "image_url": {"url": encode_image(image, self.config.image_max_edge)}},
+                {"type": "image_url", "image_url": {"url": encode_image(image, self.config.image_max_width_or_height)}},
             ])
         return content
 
@@ -155,20 +138,30 @@ class VLMAgentPolicy(PolicyBase[VLMAgentPolicyCfg]):
             payload = self._inference_backend.infer(
                 InferenceRequest(
                     messages=messages,
-                    response_schema=self.action_adapter.response_schema,
+                    response_schema=self._response_schema,
                     schema_name="agent_actions",
                     retry_label="policy_action",
                 )
             )
             try:
-                command = np.asarray(self.action_adapter.decode_command(payload, state), dtype=np.float32)
-                self.action_adapter.validate_command(command)
-                return command
-            except (AssertionError, ValueError, KeyError, TypeError) as exc:
-                if attempt == self.config.max_attempts - 1:
-                    raise
-                messages.append({"role": "assistant", "content": json.dumps(payload)})
-                messages.append({"role": "user", "content": f"Invalid actions: {exc}. Return a corrected prediction."})
+                response = self.action_adapter.response_model.model_validate(payload)
+                command = np.asarray(self.action_adapter.decode_command(response, state), dtype=np.float32)
+            except (InvalidAgentResponse, ValidationError) as exc:
+                rejection = exc
+            else:
+                # Adapter implementation errors must propagate without asking the model to fix them.
+                is_valid = self.action_adapter.is_command_valid(command)
+                try:
+                    assert is_valid, "Expected finite commands with the adapter's required shape"
+                except AssertionError as exc:
+                    rejection = exc
+                else:
+                    return command
+            messages.append({"role": "assistant", "content": json.dumps(payload)})
+            messages.append(
+                {"role": "user", "content": f"Invalid actions: {rejection}. Return a corrected prediction."}
+            )
+        raise rejection
 
 
 class AgentCommandedChunkPolicy(VLMAgentPolicy):

@@ -9,41 +9,48 @@ import numpy as np
 import torch
 from abc import ABC, abstractmethod
 
+from pydantic import BaseModel
+
+
+class InvalidAgentResponse(ValueError):
+    """An adapter rejected model output and requests a corrected response."""
+
 
 class AgentActionAdapter(ABC):
-    """Validate model responses and convert commands into environment actions."""
+    """Validate model responses and convert commands into robot actions."""
 
-    response_schema: dict
-    """JSON schema requested from the model; decode_command must also validate the response locally."""
+    response_model: type[BaseModel]
+    """Response model used to generate the requested schema and validate model output."""
 
     @abstractmethod
-    def validate_environment(self, env) -> None:
-        """Check that the environment accepts this adapter's actions.
+    def is_robot_action_space_supported(self, env) -> bool:
+        """Return whether the robot action space supports this adapter's commands.
 
         Args:
             env: Arena environment, optionally gym-wrapped.
         """
 
     @abstractmethod
-    def decode_command(self, payload: dict, proprioception: dict) -> np.ndarray:
-        """Validate a response and return one command with adapter-defined dimensions and units.
+    def decode_command(self, response: BaseModel, proprioception: dict) -> np.ndarray:
+        """Decode a validated response into commands with adapter-defined dimensions and units.
+
+        Use InvalidAgentResponse to request a correction for robot-specific constraints.
 
         Args:
-            payload: Parsed model response.
+            response: Model output validated against response_model.
             proprioception: State sent with this inference request.
 
         Returns:
             A nonempty, finite one-dimensional command array.
         """
 
-    def validate_command(self, command: np.ndarray) -> None:
-        """Check that a decoded command is a nonempty, finite vector.
+    def is_command_valid(self, command: np.ndarray) -> bool:
+        """Return whether a decoded command is a nonempty, finite vector.
 
         Args:
             command: Decoded command to validate before execution.
         """
-        assert command.ndim == 1 and command.size > 0, "Expected one command vector"
-        assert np.isfinite(command).all(), "Decoded command must be finite"
+        return bool(command.ndim == 1 and command.size > 0 and np.isfinite(command).all())
 
     def command_to_action(self, env, command: np.ndarray) -> torch.Tensor:
         """Convert a command into one native action on the environment device.
@@ -61,7 +68,7 @@ class AgentActionAdapter(ABC):
 class ChunkActionAdapter(AgentActionAdapter):
     """Decode fixed-length command sequences for AgentCommandedChunkPolicy.
 
-    Implement decode_command to return (chunk_size, command_dim) and response_schema
+    Implement decode_command to return (chunk_size, command_dim) and response_model
     to describe that response. command_to_action converts one row at a time.
     """
 
@@ -69,16 +76,18 @@ class ChunkActionAdapter(AgentActionAdapter):
         assert type(chunk_size) is int and chunk_size > 0, "chunk_size must be a positive integer"
         self.chunk_size = chunk_size
 
-    def validate_command(self, command: np.ndarray) -> None:
-        """Check a decoded chunk before any of its commands are executed.
+    def is_command_valid(self, command: np.ndarray) -> bool:
+        """Return whether a decoded chunk has the required shape and finite values.
 
         Args:
             command: Decoded array shaped (chunk_size, command_dim).
         """
-        assert (
-            command.ndim == 2 and command.shape[0] == self.chunk_size and command.shape[1] > 0
-        ), "Expected (chunk_size, command_dim) commands"
-        assert np.isfinite(command).all(), "Decoded chunk must be finite"
+        return bool(
+            command.ndim == 2
+            and command.shape[0] == self.chunk_size
+            and command.shape[1] > 0
+            and np.isfinite(command).all()
+        )
 
 
 class GoalActionAdapter(AgentActionAdapter):

@@ -18,7 +18,7 @@ from pathlib import Path
 
 PACKAGE_ROOTS = (
     "isaaclab_arena",
-    "isaaclab_arena_vlm_agent_policy",
+    "isaaclab_arena_vlm_agent",
     "isaaclab_arena_cosmos",
     "isaaclab_arena_curobo",
     "isaaclab_arena_dreamzero",
@@ -32,8 +32,8 @@ PACKAGE_ROOTS = (
 DISCOVERABLE_MODULES = (
     "isaaclab_arena.evaluation.policy_runner",
     "isaaclab_arena.tasks.sequential_composite_tasks.franka_put_and_close_door_task",
-    "isaaclab_arena_vlm_agent_policy.embodiment_adapter.action_adapter",
-    "isaaclab_arena_vlm_agent_policy.embodiment_adapter.observation_adapter",
+    "isaaclab_arena_vlm_agent.embodiment_adapter.action_adapter",
+    "isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter",
 )
 
 REPOSITORY_ROOT = Path(__file__).parents[2]

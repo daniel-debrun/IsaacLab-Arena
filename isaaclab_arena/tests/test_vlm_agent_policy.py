@@ -16,20 +16,24 @@ from unittest.mock import Mock
 
 import pytest
 from PIL import Image
+from pydantic import BaseModel, ConfigDict, ValidationError
 
-from isaaclab_arena.inference.backend import InferenceBackend
-from isaaclab_arena_vlm_agent_policy.embodiment_adapter.action_adapter import (
+from isaaclab_arena.inference.backend import InferenceBackend, build_strict_schema
+from isaaclab_arena_vlm_agent.embodiment_adapter.action_adapter import (
     AgentActionAdapter,
     ChunkActionAdapter,
     GoalActionAdapter,
+    InvalidAgentResponse,
 )
-from isaaclab_arena_vlm_agent_policy.embodiment_adapter.observation_adapter import VLMObservationAdapter
-from isaaclab_arena_vlm_agent_policy.policy.vlm_agent_policy import (
+from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import (
+    CAMERA_OBSERVATION_GROUP,
+    VLMObservationAdapter,
+)
+from isaaclab_arena_vlm_agent.policy.vlm_agent_policy import (
     AgentCommandedChunkPolicy,
     AgentCommandedGoalPolicy,
     VLMAgentPolicy,
     VLMAgentPolicyCfg,
-    encode_image,
 )
 
 
@@ -40,23 +44,24 @@ class ObservationAdapter(VLMObservationAdapter):
         return [{"position": row.tolist()} for row in observation["position"]]
 
 
+class JointTargetResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    target: list[float]
+
+
 class ActionAdapter(AgentActionAdapter):
-    response_schema = {
-        "type": "object",
-        "properties": {"target": {"type": "array", "items": {"type": "number"}}},
-        "required": ["target"],
-        "additionalProperties": False,
-    }
+    response_model = JointTargetResponse
 
     def __init__(self, scale=1.0):
         self.scale = scale
 
-    def validate_environment(self, env):
-        assert env.unwrapped.action_dim > 0, "Expected controllable joints"
+    def is_robot_action_space_supported(self, env):
+        return env.unwrapped.action_dim > 0
 
-    def decode_command(self, payload, proprioception):
-        target = np.asarray(payload["target"], dtype=np.float32)
-        assert target.shape == (len(proprioception["position"]),), "Wrong command dimensions"
+    def decode_command(self, response, proprioception):
+        target = np.asarray(response.target, dtype=np.float32)
+        if target.shape != (len(proprioception["position"]),):
+            raise InvalidAgentResponse("Wrong command dimensions")
         return target - np.asarray(proprioception["position"])
 
     def command_to_action(self, env, command):
@@ -84,13 +89,13 @@ def backend(monkeypatch):
 def make_policy(backend, **kwargs):
     config = VLMAgentPolicyCfg(
         system_prompt="Return the joint targets using the supplied schema.",
-        image_max_edge=8,
+        image_max_width_or_height=8,
         **kwargs,
     )
     policy = VLMAgentPolicy(
         config,
         inference_backend=backend,
-        observation_adapter=ObservationAdapter(image_max_edge=config.image_max_edge),
+        observation_adapter=ObservationAdapter(),
         action_adapter=ActionAdapter(),
     )
     policy.set_task_description("Move to the target")
@@ -103,7 +108,7 @@ def inputs(action_dim=2):
     images = torch.zeros((2, 8, 16, 3), dtype=torch.uint8)
     images[0, ..., 0] = 255
     images[1, ..., 2] = 255
-    return env, {"position": positions, "camera_obs": {"front_view": images}}
+    return env, {"position": positions, CAMERA_OBSERVATION_GROUP: {"front_view": images}}
 
 
 @pytest.mark.parametrize("action_dim", [2, 5])
@@ -119,24 +124,23 @@ def test_policy_uses_adapter_actions_for_each_environment(backend, action_dim):
     client.chat.completions.create.side_effect = create
     config = VLMAgentPolicyCfg(
         system_prompt="Use this robot's joint units.",
-        image_max_edge=8,
+        image_max_width_or_height=8,
     )
     policy = VLMAgentPolicy(
         config,
         inference_backend=backend,
-        observation_adapter=ObservationAdapter(image_max_edge=config.image_max_edge),
+        observation_adapter=ObservationAdapter(),
         action_adapter=ActionAdapter(scale=2),
     )
     env, observation = inputs(action_dim)
     try:
         policy.set_task_description("Move each joint")
         torch.testing.assert_close(policy.get_action(env, observation), torch.ones((2, action_dim)))
-        assert policy.is_remote
-        assert policy.observation_adapter.image_max_edge == 8
+        assert not policy.is_remote
         assert len(calls) == 2
         for env_id, call in enumerate(calls):
             assert call["messages"][0] == {"role": "system", "content": config.system_prompt}
-            assert call["response_format"]["json_schema"]["schema"] == ActionAdapter.response_schema
+            assert call["response_format"]["json_schema"]["schema"] == build_strict_schema(ActionAdapter.response_model)
             content = call["messages"][1]["content"]
             state = json.loads(content[0]["text"])
             assert state["task"] == "Move each joint"
@@ -162,6 +166,9 @@ def test_policy_uses_adapter_actions_for_each_environment(backend, action_dim):
         ('{"target": [1]}', True),
         ('{"target": [1, NaN]}', True),
         (None, False),
+        ('{"wrong_field": [1, 2]}', True),
+        ('{"target": "not a list"}', True),
+        ('{"target": [1, 2], "extra": 1}', True),
     ],
 )
 def test_invalid_responses_are_corrected_before_actions(backend, bad_raw, needs_correction):
@@ -196,7 +203,7 @@ def test_invalid_commands_fail_after_bounded_attempts(backend):
     policy = make_policy(backend, max_attempts=2)
     policy.action_adapter.command_to_action = Mock()
     try:
-        with pytest.raises(AssertionError, match="Wrong command dimensions"):
+        with pytest.raises(InvalidAgentResponse, match="Wrong command dimensions"):
             policy.get_action(*inputs())
         assert client.chat.completions.create.call_count == 2
         policy.action_adapter.command_to_action.assert_not_called()
@@ -210,7 +217,7 @@ def test_environment_validation_precedes_inference(backend):
     env, observation = inputs()
     env.unwrapped.action_dim = 0
     try:
-        with pytest.raises(AssertionError, match="controllable joints"):
+        with pytest.raises(AssertionError, match="Robot action space"):
             policy.get_action(env, observation)
         client.chat.completions.create.assert_not_called()
     finally:
@@ -223,44 +230,29 @@ def test_missing_prompt_is_rejected(prompt):
         VLMAgentPolicyCfg(system_prompt=prompt)
 
 
-@pytest.mark.parametrize("max_edge,expected_size", [(4, (4, 2)), (32, (16, 8))])
-def test_image_encoding_preserves_spatial_color_and_aspect_ratio(max_edge, expected_size):
-    pixels = np.zeros((8, 16, 4), dtype=np.uint8)
-    pixels[:, :8, 0] = 255
-    pixels[:, 8:, 2] = 255
-    pixels[..., 3] = 255
-    url = encode_image(pixels, max_edge)
-    image = Image.open(io.BytesIO(base64.b64decode(url.split(",", 1)[1])))
-    assert image.size == expected_size
-    assert image.mode == "RGB"
-    left, right = image.getpixel((0, 0)), image.getpixel((image.width - 1, 0))
-    assert left[0] > left[2] + 100
-    assert right[2] > right[0] + 100
+class JointChunkResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    actions: list[list[float]]
 
 
 class JointChunkAdapter(ChunkActionAdapter):
-    response_schema = {
-        "type": "object",
-        "properties": {"actions": {"type": "array", "items": {"type": "array", "items": {"type": "number"}}}},
-        "required": ["actions"],
-        "additionalProperties": False,
-    }
+    response_model = JointChunkResponse
 
-    def validate_environment(self, env):
-        assert env.unwrapped.action_dim > 0
+    def is_robot_action_space_supported(self, env):
+        return env.unwrapped.action_dim > 0
 
-    def decode_command(self, payload, proprioception):
-        return np.asarray(payload["actions"], dtype=np.float32)
+    def decode_command(self, response, proprioception):
+        return np.asarray(response.actions, dtype=np.float32)
 
 
 class JointGoalAdapter(GoalActionAdapter):
-    response_schema = ActionAdapter.response_schema
+    response_model = JointTargetResponse
 
-    def validate_environment(self, env):
-        assert env.unwrapped.action_dim > 0
+    def is_robot_action_space_supported(self, env):
+        return env.unwrapped.action_dim > 0
 
-    def decode_command(self, payload, proprioception):
-        return np.asarray(payload["target"], dtype=np.float32)
+    def decode_command(self, response, proprioception):
+        return np.asarray(response.target, dtype=np.float32)
 
     def goal_reached(self, goal, proprioception):
         return np.allclose(goal, proprioception["position"])
@@ -324,7 +316,7 @@ def test_whole_chunk_is_validated_before_execution(backend, commands):
     adapter = JointChunkAdapter(chunk_size=3)
     adapter.command_to_action = Mock()
     policy = make_multi_step_policy(backend, adapter)
-    with pytest.raises(AssertionError):
+    with pytest.raises((AssertionError, ValidationError)):
         policy.get_action(*inputs())
     adapter.command_to_action.assert_not_called()
     assert backend.client.chat.completions.create.call_count == 1
@@ -370,3 +362,42 @@ def test_goal_controller_output_is_validated_before_conversion(backend):
     with pytest.raises(AssertionError, match="finite goal command"):
         policy.get_action(*inputs())
     adapter.command_to_action.assert_not_called()
+
+
+@pytest.mark.parametrize("error_type", [KeyError, TypeError, AssertionError, ValueError])
+@pytest.mark.parametrize("method", ["decode_command", "is_command_valid"])
+def test_adapter_implementation_errors_are_not_retried(backend, error_type, method):
+    backend.client.chat.completions.create.return_value = response('{"target": [1, 2]}')
+    policy = make_policy(backend, max_attempts=3)
+    error = error_type("adapter implementation bug")
+    setattr(policy.action_adapter, method, Mock(side_effect=error))
+    with pytest.raises(error_type) as caught:
+        policy.get_action(*inputs())
+    assert caught.value is error
+    assert backend.client.chat.completions.create.call_count == 1
+
+
+def test_empty_choices_retry_without_correction_message(backend):
+    backend.client.chat.completions.create.side_effect = [
+        SimpleNamespace(choices=[]),
+        response('{"target": [1, 2]}'),
+        response('{"target": [1, 2]}'),
+    ]
+    policy = make_policy(backend)
+    policy.get_action(*inputs())
+    calls = backend.client.chat.completions.create.call_args_list
+    assert len(calls) == 3
+    assert calls[0].kwargs["messages"] == calls[1].kwargs["messages"]
+
+
+def test_missing_camera_keys_fail_at_construction(backend):
+    adapter = ObservationAdapter()
+    adapter.camera_keys = ()
+    with pytest.raises(AssertionError, match="camera observation key"):
+        VLMAgentPolicy(
+            VLMAgentPolicyCfg(system_prompt="Control these joints."),
+            inference_backend=backend,
+            observation_adapter=adapter,
+            action_adapter=ActionAdapter(),
+        )
+    backend.client.chat.completions.create.assert_not_called()

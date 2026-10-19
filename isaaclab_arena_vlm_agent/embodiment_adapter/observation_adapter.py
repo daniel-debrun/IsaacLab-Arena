@@ -7,15 +7,15 @@
 
 from abc import ABC, abstractmethod
 
+CAMERA_OBSERVATION_GROUP = "camera_obs"
+"""Observation group containing camera images indexed by camera key."""
+
 
 class VLMObservationAdapter(ABC):
     """Select camera observations and prepare robot state for each environment."""
 
     camera_keys: tuple[str, ...] = ()
     """Keys in camera_obs, in the order sent to the model; no naming convention is required."""
-
-    def __init__(self, image_max_edge: int = 384):
-        self.image_max_edge = image_max_edge
 
     @abstractmethod
     def extract_proprioception(self, env, observation) -> list[dict]:
