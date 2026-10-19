@@ -18,12 +18,12 @@ import pytest
 from PIL import Image
 
 from isaaclab_arena.inference.backend import InferenceBackend
-from isaaclab_arena_vlm_agent_policy.embodiment_adapter.adapter import (
+from isaaclab_arena_vlm_agent_policy.embodiment_adapter.action_adapter import (
     AgentActionAdapter,
     ChunkActionAdapter,
     GoalActionAdapter,
-    VLMObservationAdapter,
 )
+from isaaclab_arena_vlm_agent_policy.embodiment_adapter.observation_adapter import VLMObservationAdapter
 from isaaclab_arena_vlm_agent_policy.policy.vlm_agent_policy import (
     AgentCommandedChunkPolicy,
     AgentCommandedGoalPolicy,
