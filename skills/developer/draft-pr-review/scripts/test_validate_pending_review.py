@@ -12,11 +12,11 @@ import unittest
 from contextlib import redirect_stdout
 from unittest.mock import patch
 
-from validate_pending_review import main, parse_hunks_by_path, validate_payload
+from validate_pending_review import main, parse_hunks_by_path, validate_review_draft
 
 
 class PendingReviewValidationTest(unittest.TestCase):
-    """Exercise anchors and invalid payloads without a GitHub connection."""
+    """Exercise anchors and invalid review drafts without a GitHub connection."""
 
     def setUp(self):
         self.hunks = parse_hunks_by_path(
@@ -26,7 +26,7 @@ class PendingReviewValidationTest(unittest.TestCase):
             "@@ -10 +10 @@\n-old\n+new\n"
         )
 
-    def payload(self, **changes):
+    def make_review_draft(self, **changes):
         comment = {
             "path": "example.py",
             "line": 2,
@@ -39,11 +39,11 @@ class PendingReviewValidationTest(unittest.TestCase):
     def test_header_like_code_is_a_commentable_line(self):
         for side in ("LEFT", "RIGHT"):
             with self.subTest(side=side):
-                self.assertEqual(validate_payload(self.payload(side=side), "head", self.hunks), [])
+                self.assertEqual(validate_review_draft(self.make_review_draft(side=side), "head", self.hunks), [])
 
     def test_range_within_hunk(self):
-        payload = self.payload(start_line=1, start_side="RIGHT", line=3)
-        self.assertEqual(validate_payload(payload, "head", self.hunks), [])
+        review_draft = self.make_review_draft(start_line=1, start_side="RIGHT", line=3)
+        self.assertEqual(validate_review_draft(review_draft, "head", self.hunks), [])
 
     def test_invalid_anchors(self):
         for changes in (
@@ -61,10 +61,10 @@ class PendingReviewValidationTest(unittest.TestCase):
             {"start_line": 1, "start_side": "LEFT"},
         ):
             with self.subTest(changes=changes):
-                self.assertTrue(validate_payload(self.payload(**changes), "head", self.hunks))
+                self.assertTrue(validate_review_draft(self.make_review_draft(**changes), "head", self.hunks))
 
-    def test_malformed_payloads(self):
-        for payload in (
+    def test_malformed_review_drafts(self):
+        for review_draft in (
             None,
             [],
             {"comments": None},
@@ -72,17 +72,17 @@ class PendingReviewValidationTest(unittest.TestCase):
             {"commit_id": "head", "body": 42},
             {"commit_id": "head"},
         ):
-            with self.subTest(payload=payload):
-                self.assertTrue(validate_payload(payload, "head", self.hunks))
+            with self.subTest(review_draft=review_draft):
+                self.assertTrue(validate_review_draft(review_draft, "head", self.hunks))
 
     def test_event_and_stale_head_rejected(self):
-        payload = self.payload()
-        payload.update(event="COMMENT", commit_id="old")
-        self.assertEqual(len(validate_payload(payload, "head", self.hunks)), 2)
+        review_draft = self.make_review_draft()
+        review_draft.update(event="COMMENT", commit_id="old")
+        self.assertEqual(len(validate_review_draft(review_draft, "head", self.hunks)), 2)
 
     def test_summary_only_review(self):
         self.assertEqual(
-            validate_payload(
+            validate_review_draft(
                 {"commit_id": "head", "body": "_AI-drafted (Codex), reviewed by me._\n\nNo findings."}, "head", {}
             ),
             [],
@@ -96,25 +96,26 @@ class PendingReviewValidationTest(unittest.TestCase):
             "Finding first.\n\n_AI-drafted (Codex), reviewed by me._\n\n",
         ):
             with self.subTest(body=body):
-                self.assertTrue(validate_payload(self.payload(body=body), "head", self.hunks))
-                self.assertTrue(validate_payload({"commit_id": "head", "body": body}, "head", {}))
+                self.assertTrue(validate_review_draft(self.make_review_draft(body=body), "head", self.hunks))
+                self.assertTrue(validate_review_draft({"commit_id": "head", "body": body}, "head", {}))
 
     def test_attribution_accepts_different_agent_names(self):
         for agent_name in ("Codex", "Claude Code"):
             with self.subTest(agent_name=agent_name):
                 body = f"_AI-drafted ({agent_name}), reviewed by me._\n\nCheck this change."
-                payload = self.payload(body=body)
-                payload["body"] = body
-                self.assertEqual(validate_payload(payload, "head", self.hunks), [])
+                review_draft = self.make_review_draft(body=body)
+                review_draft["body"] = body
+                self.assertEqual(validate_review_draft(review_draft, "head", self.hunks), [])
 
     def test_head_change_during_validation(self):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json") as payload_file:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json") as review_draft_file:
             json.dump(
-                {"commit_id": "head", "body": "_AI-drafted (Codex), reviewed by me._\n\nNo findings."}, payload_file
+                {"commit_id": "head", "body": "_AI-drafted (Codex), reviewed by me._\n\nNo findings."},
+                review_draft_file,
             )
-            payload_file.flush()
+            review_draft_file.flush()
             with (
-                patch("sys.argv", ["validate", "owner/repo", "1", payload_file.name]),
+                patch("sys.argv", ["validate", "owner/repo", "1", review_draft_file.name]),
                 patch("validate_pending_review.run_gh", side_effect=["head", "", "new-head"]),
                 redirect_stdout(io.StringIO()) as output,
             ):
@@ -126,8 +127,8 @@ class PendingReviewValidationTest(unittest.TestCase):
             'diff --git "a/file\\303\\251.py" "b/file\\303\\251.py"\n'
             '--- "a/file\\303\\251.py"\n+++ /dev/null\n@@ -1 +0,0 @@\n-deleted\n'
         )
-        payload = self.payload(path="fileé.py", side="LEFT", line=1)
-        self.assertEqual(validate_payload(payload, "head", hunks), [])
+        review_draft = self.make_review_draft(path="fileé.py", side="LEFT", line=1)
+        self.assertEqual(validate_review_draft(review_draft, "head", hunks), [])
 
 
 if __name__ == "__main__":

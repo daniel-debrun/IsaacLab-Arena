@@ -3,15 +3,15 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Check a pending GitHub review payload against the pull request before sending it.
+"""Check a pending GitHub review draft against the pull request before sending it.
 
 Usage (on the host, with ``gh`` authenticated):
-    python3 -I skills/developer/draft-pr-review/validate_pending_review.py OWNER/REPO PR_NUMBER PAYLOAD.json
+    python3 -I skills/developer/draft-pr-review/scripts/validate_pending_review.py OWNER/REPO PR_NUMBER REVIEW_DRAFT.json
 
-Checks that the payload has no ``event`` (so the review stays pending), that ``commit_id`` is the
+Checks that the review draft has no ``event`` (so the review stays pending), that ``commit_id`` is the
 current PR head, that the summary and comments start with the attribution line, and that every
-inline comment is anchored on a line inside GitHub's diff. Only read-only ``gh`` commands are run. A payload without ``body`` checks comments meant for an existing
-pending review.
+inline comment is anchored on a line inside GitHub's diff. Only read-only ``gh`` commands are run.
+A review draft without ``body`` checks comments meant for an existing pending review.
 """
 
 from __future__ import annotations
@@ -111,7 +111,7 @@ def find_anchor_problem(comment: dict, hunks_by_path: dict[str, list[DiffHunk]])
     """Explain why an inline comment cannot be anchored on the diff.
 
     Args:
-        comment: One entry of the payload's ``comments`` list.
+        comment: One entry of the review draft's ``comments`` list.
         hunks_by_path: Diff hunks from parse_hunks_by_path.
 
     Returns:
@@ -141,23 +141,23 @@ def find_anchor_problem(comment: dict, hunks_by_path: dict[str, list[DiffHunk]])
     return f"{path}:{start_line}-{end_line} ({side}) is not inside a single diff hunk"
 
 
-def validate_payload(payload: object, head_sha: str, hunks_by_path: dict[str, list[DiffHunk]]) -> list[str]:
-    """Return payload errors that would prevent creating the intended pending review."""
-    if not isinstance(payload, dict):
-        return ["payload must be a JSON object"]
+def validate_review_draft(review_draft: object, head_sha: str, hunks_by_path: dict[str, list[DiffHunk]]) -> list[str]:
+    """Return review draft errors that would prevent creating the intended pending review."""
+    if not isinstance(review_draft, dict):
+        return ["review draft must be a JSON object"]
     problems: list[str] = []
-    if "event" in payload:
-        problems.append("payload has 'event'; remove it so the review is created as PENDING")
-    if payload.get("commit_id") != head_sha:
-        problems.append(f"commit_id {payload.get('commit_id')} is not the PR head {head_sha}")
-    if "body" in payload and (not isinstance(payload["body"], str) or not payload["body"].strip()):
+    if "event" in review_draft:
+        problems.append("review draft has 'event'; remove it so the review is created as PENDING")
+    if review_draft.get("commit_id") != head_sha:
+        problems.append(f"commit_id {review_draft.get('commit_id')} is not the PR head {head_sha}")
+    if "body" in review_draft and (not isinstance(review_draft["body"], str) or not review_draft["body"].strip()):
         problems.append("review body must be a nonempty string")
-    elif "body" in payload and not ATTRIBUTION_LINE.match(payload["body"]):
+    elif "body" in review_draft and not ATTRIBUTION_LINE.match(review_draft["body"]):
         problems.append("review body must start with the attribution line followed by a blank line")
-    comments = payload.get("comments", [])
+    comments = review_draft.get("comments", [])
     if not isinstance(comments, list):
         return problems + ["comments must be a list"]
-    if not comments and "body" not in payload:
+    if not comments and "body" not in review_draft:
         problems.append("provide a review body or at least one comment")
     for index, comment in enumerate(comments):
         if not isinstance(comment, dict):
@@ -177,18 +177,18 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("repository", help="OWNER/REPO, e.g. isaac-sim/IsaacLab-Arena")
     parser.add_argument("pull_request_number", type=int)
-    parser.add_argument("payload_path", help="JSON payload for POST /pulls/{number}/reviews")
+    parser.add_argument("review_draft_path", help="Review draft JSON for POST /pulls/{number}/reviews")
     arguments = parser.parse_args()
 
-    with open(arguments.payload_path) as payload_file:
-        payload = json.load(payload_file)
+    with open(arguments.review_draft_path) as review_draft_file:
+        review_draft = json.load(review_draft_file)
     head_sha = run_gh(
         ["api", f"repos/{arguments.repository}/pulls/{arguments.pull_request_number}", "--jq", ".head.sha"]
     ).strip()
     diff_text = run_gh(["pr", "diff", str(arguments.pull_request_number), "--repo", arguments.repository])
     hunks_by_path = parse_hunks_by_path(diff_text)
 
-    problems = validate_payload(payload, head_sha, hunks_by_path)
+    problems = validate_review_draft(review_draft, head_sha, hunks_by_path)
     latest_head_sha = run_gh(
         ["api", f"repos/{arguments.repository}/pulls/{arguments.pull_request_number}", "--jq", ".head.sha"]
     ).strip()
@@ -200,7 +200,7 @@ def main() -> int:
         for problem in problems:
             print(f"  - {problem}")
         return 1
-    print(f"OK: {len(payload.get('comments', []))} inline comments, pinned to {head_sha[:10]}, no event")
+    print(f"OK: {len(review_draft.get('comments', []))} inline comments, pinned to {head_sha[:10]}, no event")
     return 0
 
 

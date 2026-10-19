@@ -11,7 +11,7 @@ Creating, changing or deleting a pending review writes to GitHub under the revie
 
 Invoking this skill authorizes local drafting and read-only GitHub checks. Show the exact comments and summary locally, including attribution, and wait for explicit approval before creating or changing a GitHub pending review. Never submit the review.
 
-## The payload
+## The review draft
 
 Build this JSON, save it locally (e.g. `/tmp/<repo>-pr<N>-review/pending_review.json`), validate it, then send it.
 
@@ -43,8 +43,8 @@ Build this JSON, save it locally (e.g. `/tmp/<repo>-pr<N>-review/pending_review.
 2. Head SHA: `gh api repos/OWNER/REPO/pulls/N --jq .head.sha` → `commit_id`. Check each line reference in the findings with `git show <sha>:<path>`.
 3. Existing pending review (GitHub allows one per user per PR): `gh api repos/OWNER/REPO/pulls/N/reviews --paginate --jq '.[] | select(.state=="PENDING") | .id'`. If one exists, use the reviewer’s instructions about adding comments; ask only if that choice is unresolved (see "Adding to an existing pending review").
 4. Existing discussion: read the review summaries, inline threads (`.../pulls/N/comments`) and top-level comments (`.../issues/N/comments`). If someone already raised a point, even partly, tell the reviewer and wait for their answer before posting.
-5. Validate: `python3 -I skills/developer/draft-pr-review/validate_pending_review.py OWNER/REPO N payload.json`. Fix everything it reports.
-6. Recheck the head SHA immediately before writing. If it changed, refresh the findings and validate again. Create: `gh api repos/OWNER/REPO/pulls/N/reviews --method POST --input payload.json > response.json`, then read `response.json`. Expect `"state": "PENDING"`.
+5. Validate: `python3 -I skills/developer/draft-pr-review/scripts/validate_pending_review.py OWNER/REPO N pending_review.json`. Fix everything it reports.
+6. Recheck the head SHA immediately before writing. If it changed, refresh the findings and validate again. Create: `gh api repos/OWNER/REPO/pulls/N/reviews --method POST --input pending_review.json > response.json`, then read `response.json`. Expect `"state": "PENDING"`.
 7. Confirm anchors: `gh api repos/OWNER/REPO/pulls/N/reviews/ID/comments --jq '.[] | "\(.path): \(.diff_hunk | split("\n") | last)"'`. For pending comments `line` is null; the last `diff_hunk` line is the anchored line.
 8. Hand over `https://github.com/OWNER/REPO/pull/N/files`. The reviewer reads and edits every comment before submission, which makes "reviewed by me" true, then uses "Finish your review" → Comment, Request changes or Approve.
 
@@ -54,7 +54,7 @@ A second POST to `.../reviews` fails while a pending review exists. Add threads 
 
 1. Get the review: `gh api repos/OWNER/REPO/pulls/N/reviews --paginate --jq '.[] | select(.state=="PENDING") | {id, node_id, commit_id}'`. Its `commit_id` must be the PR head; if not, ask the reviewer.
 2. Read its comments (`.../reviews/ID/comments`) so the new ones don't repeat what the reviewer already wrote.
-3. Validate a payload with `commit_id` and `comments` only (no `body`), as in step 5.
+3. Validate a review draft with `commit_id` and `comments` only (no `body`), as in step 5.
 4. Recheck the review state and PR head before each write; stop if either changed. Add each comment:
 
    ```bash
@@ -69,7 +69,7 @@ A second POST to `.../reviews` fails while a pending review exists. Add threads 
 
 ## Changing an existing pending review
 
-1. Confirm the review is still PENDING before each write; stop if it was submitted or discarded. Fetch the current review and its comments and compare them with the saved payload. If they differ, the reviewer edited them in the UI: ask before overwriting anything.
+1. Confirm the review is still PENDING before each write; stop if it was submitted or discarded. Fetch the current review and its comments and compare them with the saved review draft. If they differ, the reviewer edited them in the UI: ask before overwriting anything.
 2. Summary: `gh api repos/OWNER/REPO/pulls/N/reviews/ID --method PUT --input body.json` with `{"body": "_AI-drafted (<agent name>), reviewed by me._\n\n..."}`. This works while the review is pending.
 3. Inline comments: the REST endpoints for single comments (`GET`/`PATCH repos/OWNER/REPO/pulls/comments/CID`) return 404 for pending comments. Take the comment's `node_id` from `.../reviews/ID/comments` and update it with GraphQL, building the new body from the current GitHub text so UI edits survive:
 
@@ -86,7 +86,7 @@ A second POST to `.../reviews` fails while a pending review exists. Add threads 
 
 | Mistake | Result |
 |---|---|
-| Payload contains `event` | Review is published immediately |
+| Review draft contains `event` | Review is published immediately |
 | Anchor outside a diff hunk | POST fails with 422 |
 | `commit_id` is not the head | Comments land on outdated lines |
 | `--jq` on a failing call | jq error hides the API's 404/422; look at the raw response first |
@@ -98,7 +98,7 @@ A second POST to `.../reviews` fails while a pending review exists. Add threads 
 Run the host-only regression tests with:
 
 ```bash
-python3 -m unittest discover -s skills/developer/draft-pr-review -p 'test_*.py'
+python3 -m unittest discover -s skills/developer/draft-pr-review/scripts -p 'test_*.py'
 ```
 
 Validation is read-only and cannot lock the PR head or review state. Recheck both before writing. If a write fails or its response is lost, fetch the current review before retrying so comments are not duplicated.
