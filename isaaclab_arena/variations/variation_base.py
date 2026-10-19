@@ -121,8 +121,15 @@ class VariationBase(ABC):
         """
         # One seed per variation from the build seed and the variation key. Torch generator seeds are 64-bit, so keep
         # the first 8 bytes of the digest.
-        # TODO(cvolk, 2026.10.19): Reseed each run-time draw from the seed, the variation key and a global episode
-        # index in start order, so episode k gets the same values for any num_envs and reset order.
+        # TODO(cvolk, 2026.10.19): Make run-time values reproducible per episode, also across num_envs.
+        # Today a run-time variation draws from this one generator in the order environments reset, so which episode
+        # gets which value depends on num_envs and on when episodes end. Instead, derive each run-time draw from the
+        # build seed, the variation key and a global episode index that counts started episodes across all
+        # environments (environments that reset in the same step are counted in env id order). Episode k then gets
+        # the same values for any num_envs. This needs that index at draw time: the env counts episodes per
+        # environment (IsaacLabArenaManagerBasedEnv.get_episode_index), while VariationReplayScheduler already counts
+        # started episodes globally for recorded replay, so both should share one counter. Build-time draws stay as
+        # they are.
         digest = hashlib.sha256(f"{seed}:{variation_key}".encode()).digest()
         variation_seed = int.from_bytes(digest[:8], "big")
         self._generator = torch.Generator(device="cpu").manual_seed(variation_seed)
