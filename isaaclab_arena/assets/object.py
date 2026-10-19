@@ -48,11 +48,7 @@ def assert_named_spawn_cfg(named_spawn_cfg: tuple[str, SpawnerCfg], owner: str) 
 
 
 class Object(RootedObjectBase):
-    """Scene object spawned from a USD file or a spawn configuration, as a rigid, articulated or static (``BASE``) asset.
-
-    A rigid Object can also leave its asset open, or give a default with ``asset``, and let an AssetSelectionVariation
-    choose the asset at build time.
-    """
+    """Scene object spawned from a USD file or a spawn configuration, as a rigid, articulated or static (``BASE``) asset."""
 
     def __init__(
         self,
