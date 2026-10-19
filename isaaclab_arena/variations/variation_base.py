@@ -119,8 +119,10 @@ class VariationBase(ABC):
             seed: Environment seed.
             variation_key: This variation's ``<asset_name>.<variation_name>`` key.
         """
-        # Torch generator seeds are 64-bit, so keep the first 8 bytes of the digest.
+        # The key gives each variation its own random stream: with the seed alone, equal sampler cfgs draw equal values,
+        # and with one shared generator, a variation's values change when others are enabled, disabled or reordered.
         digest = hashlib.sha256(f"{seed}:{variation_key}".encode()).digest()
+        # Torch generator seeds are 64-bit, so keep the first 8 bytes of the digest.
         variation_seed = int.from_bytes(digest[:8], "big")
         # TODO(cvolk, 2026.10.19): Make run-time values reproducible per episode, also across num_envs.
         # Today a run-time variation draws from this one generator in the order environments reset, so which episode
