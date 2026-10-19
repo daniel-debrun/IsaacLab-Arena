@@ -113,14 +113,11 @@ class VariationBase(ABC):
         """
 
     def configure_at_build_time(self, seed: int, variation_key: str) -> None:
-        """Seed this variation's sampler, then run its build-time preparation and realization for one env build.
-
-        The sampler draws from a new generator seeded from ``seed`` and ``variation_key``, at build time and on every
-        reset after it, so the same seed gives the same sequence of values, whatever other variations draw.
+        """Seed this variation's draws and apply its build-time effect for one environment build.
 
         Args:
-            seed: Seed of the build, ArenaEnvBuilderCfg.seed.
-            variation_key: Key of this variation in the build, "<asset_name>.<variation_name>".
+            seed: Seed of the build, ``ArenaEnvBuilderCfg.seed``.
+            variation_key: Key of this variation in the build, ``<asset_name>.<variation_name>``.
         """
         # One seed per variation from the build seed and the variation key. Torch generator seeds are 64-bit, so keep
         # the first 8 bytes of the digest.
