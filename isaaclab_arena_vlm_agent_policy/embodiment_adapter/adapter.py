@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Observation and action contracts for a stateless VLM policy."""
+"""Observation and action contracts for VLM policies."""
 
 import numpy as np
 import torch
@@ -58,6 +58,15 @@ class AgentActionAdapter(ABC):
             A nonempty, finite one-dimensional command array.
         """
 
+    def validate_command(self, command: np.ndarray) -> None:
+        """Check that a decoded command is a nonempty, finite vector.
+
+        Args:
+            command: Decoded command to validate before execution.
+        """
+        assert command.ndim == 1 and command.size > 0, "Expected one command vector"
+        assert np.isfinite(command).all(), "Decoded command must be finite"
+
     def command_to_action(self, env, command: np.ndarray) -> torch.Tensor:
         """Convert a command into one native action on the environment device.
 
@@ -69,3 +78,62 @@ class AgentActionAdapter(ABC):
             One-dimensional float32 action tensor; override for other action conventions.
         """
         return torch.as_tensor(command, dtype=torch.float32, device=env.unwrapped.device)
+
+
+class ChunkActionAdapter(AgentActionAdapter):
+    """Decode fixed-length command sequences for AgentCommandedChunkPolicy.
+
+    Implement decode_command to return (chunk_size, command_dim) and response_schema
+    to describe that response. command_to_action converts one row at a time.
+    """
+
+    def __init__(self, chunk_size: int):
+        assert type(chunk_size) is int and chunk_size > 0, "chunk_size must be a positive integer"
+        self.chunk_size = chunk_size
+
+    def validate_command(self, command: np.ndarray) -> None:
+        """Check a decoded chunk before any of its commands are executed.
+
+        Args:
+            command: Decoded array shaped (chunk_size, command_dim).
+        """
+        assert (
+            command.ndim == 2 and command.shape[0] == self.chunk_size and command.shape[1] > 0
+        ), "Expected (chunk_size, command_dim) commands"
+        assert np.isfinite(command).all(), "Decoded chunk must be finite"
+
+
+class GoalActionAdapter(AgentActionAdapter):
+    """Decode goals and provide closed-loop commands for AgentCommandedGoalPolicy.
+
+    Goals are finite vectors with adapter-defined dimensions and units. A new goal
+    is requested when goal_reached returns True or max_steps commands have executed.
+    """
+
+    def __init__(self, max_steps: int):
+        assert type(max_steps) is int and max_steps > 0, "max_steps must be a positive integer"
+        self.max_steps = max_steps
+
+    @abstractmethod
+    def goal_reached(self, goal: np.ndarray, proprioception: dict) -> bool:
+        """Check goal completion against the current measured state.
+
+        Args:
+            goal: Validated goal for one environment.
+            proprioception: Current state from the observation adapter.
+
+        Returns:
+            Whether to request a new goal before the next action.
+        """
+
+    @abstractmethod
+    def compute_command(self, goal: np.ndarray, proprioception: dict) -> np.ndarray:
+        """Compute one command toward the goal using current measured state.
+
+        Args:
+            goal: Validated goal for one environment.
+            proprioception: Current state from the observation adapter.
+
+        Returns:
+            A finite command vector for command_to_action.
+        """

@@ -18,8 +18,19 @@ import pytest
 from PIL import Image
 
 from isaaclab_arena.inference.backend import InferenceBackend
-from isaaclab_arena_vlm_agent_policy.embodiment_adapter.adapter import AgentActionAdapter, VLMObservationAdapter
-from isaaclab_arena_vlm_agent_policy.policy.vlm_agent_policy import VLMAgentPolicy, VLMAgentPolicyCfg, encode_image
+from isaaclab_arena_vlm_agent_policy.embodiment_adapter.adapter import (
+    AgentActionAdapter,
+    ChunkActionAdapter,
+    GoalActionAdapter,
+    VLMObservationAdapter,
+)
+from isaaclab_arena_vlm_agent_policy.policy.vlm_agent_policy import (
+    AgentCommandedChunkPolicy,
+    AgentCommandedGoalPolicy,
+    VLMAgentPolicy,
+    VLMAgentPolicyCfg,
+    encode_image,
+)
 
 
 class ObservationAdapter(VLMObservationAdapter):
@@ -225,3 +236,137 @@ def test_image_encoding_preserves_spatial_color_and_aspect_ratio(max_edge, expec
     left, right = image.getpixel((0, 0)), image.getpixel((image.width - 1, 0))
     assert left[0] > left[2] + 100
     assert right[2] > right[0] + 100
+
+
+class JointChunkAdapter(ChunkActionAdapter):
+    response_schema = {
+        "type": "object",
+        "properties": {"actions": {"type": "array", "items": {"type": "array", "items": {"type": "number"}}}},
+        "required": ["actions"],
+        "additionalProperties": False,
+    }
+
+    def validate_environment(self, env):
+        assert env.unwrapped.action_dim > 0
+
+    def decode_command(self, payload, proprioception):
+        return np.asarray(payload["actions"], dtype=np.float32)
+
+
+class JointGoalAdapter(GoalActionAdapter):
+    response_schema = ActionAdapter.response_schema
+
+    def validate_environment(self, env):
+        assert env.unwrapped.action_dim > 0
+
+    def decode_command(self, payload, proprioception):
+        return np.asarray(payload["target"], dtype=np.float32)
+
+    def goal_reached(self, goal, proprioception):
+        return np.allclose(goal, proprioception["position"])
+
+    def compute_command(self, goal, proprioception):
+        return np.clip(goal - np.asarray(proprioception["position"]), -0.25, 0.25)
+
+
+def make_multi_step_policy(backend, adapter):
+    policy_type = AgentCommandedChunkPolicy if isinstance(adapter, ChunkActionAdapter) else AgentCommandedGoalPolicy
+    policy = policy_type(
+        VLMAgentPolicyCfg(system_prompt="Control these joints.", max_attempts=1),
+        inference_backend=backend,
+        observation_adapter=ObservationAdapter(),
+        action_adapter=adapter,
+    )
+    policy.set_task_description("Move")
+    policy.reset()  # Reset before the first observation must be harmless.
+    return policy
+
+
+@pytest.mark.parametrize("action_dim", [2, 5])
+def test_chunks_replay_in_order_and_reset_independently(backend, action_dim):
+    calls = []
+
+    def create(**kwargs):
+        calls.append(copy.deepcopy(kwargs))
+        start = 3 * (len(calls) - 1) + 1
+        return response(json.dumps({"actions": [[value] * action_dim for value in range(start, start + 3)]}))
+
+    backend.client.chat.completions.create.side_effect = create
+    policy = make_multi_step_policy(backend, JointChunkAdapter(chunk_size=3))
+    env, observation = inputs(action_dim)
+    torch.testing.assert_close(
+        policy.get_action(env, observation), torch.tensor([[1.0] * action_dim, [4.0] * action_dim])
+    )
+    torch.testing.assert_close(
+        policy.get_action(env, observation), torch.tensor([[2.0] * action_dim, [5.0] * action_dim])
+    )
+    assert len(calls) == 2
+    policy.reset(torch.tensor([0]))
+    observation["position"].add_(10)
+    torch.testing.assert_close(
+        policy.get_action(env, observation), torch.tensor([[7.0] * action_dim, [6.0] * action_dim])
+    )
+    assert len(calls) == 3
+    current_state = json.loads(calls[2]["messages"][1]["content"][0]["text"])["proprioception"]
+    assert current_state["position"] == observation["position"][0].tolist()
+    torch.testing.assert_close(
+        policy.get_action(env, observation), torch.tensor([[8.0] * action_dim, [10.0] * action_dim])
+    )
+    assert len(calls) == 4
+    policy.reset()
+    policy.get_action(env, observation)
+    assert len(calls) == 6
+
+
+@pytest.mark.parametrize("commands", [[[1, 2]], [1, 2, 3], [[1, 2], [3, float("nan")], [4, 5]]])
+def test_whole_chunk_is_validated_before_execution(backend, commands):
+    backend.client.chat.completions.create.return_value = response(json.dumps({"actions": commands}))
+    adapter = JointChunkAdapter(chunk_size=3)
+    adapter.command_to_action = Mock()
+    policy = make_multi_step_policy(backend, adapter)
+    with pytest.raises(AssertionError):
+        policy.get_action(*inputs())
+    adapter.command_to_action.assert_not_called()
+    assert backend.client.chat.completions.create.call_count == 1
+
+
+@pytest.mark.parametrize("action_dim", [2, 5])
+def test_goals_use_measured_feedback_step_limit_and_partial_reset(backend, action_dim):
+    calls = []
+
+    def create(**kwargs):
+        calls.append(copy.deepcopy(kwargs))
+        state = json.loads(kwargs["messages"][1]["content"][0]["text"])["proprioception"]
+        return response(json.dumps({"target": (np.asarray(state["position"]) + 1).tolist()}))
+
+    backend.client.chat.completions.create.side_effect = create
+    policy = make_multi_step_policy(backend, JointGoalAdapter(max_steps=2))
+    env, observation = inputs(action_dim)
+    torch.testing.assert_close(policy.get_action(env, observation), torch.full((2, action_dim), 0.25))
+    assert len(calls) == 2
+    # Env 0 reaches its goal; env 1 is close enough to require a smaller command.
+    observation["position"][0].add_(1)
+    observation["position"][1].add_(0.9)
+    expected = torch.stack((torch.full((action_dim,), 0.25), torch.full((action_dim,), 0.1)))
+    torch.testing.assert_close(policy.get_action(env, observation), expected)
+    assert len(calls) == 3
+    # Env 1 exhausts its budget while env 0 continues its second goal.
+    torch.testing.assert_close(policy.get_action(env, observation), torch.full((2, action_dim), 0.25))
+    assert len(calls) == 4
+    policy.reset(torch.tensor([0]))
+    policy.get_action(env, observation)
+    assert len(calls) == 5
+    policy.reset()
+    policy.get_action(env, observation)
+    assert len(calls) == 7
+
+
+def test_goal_controller_output_is_validated_before_conversion(backend):
+    backend.client.chat.completions.create.return_value = response('{"target": [1, 2]}')
+    adapter = JointGoalAdapter(max_steps=2)
+    adapter.compute_command = Mock(return_value=np.array([np.inf, 0]))
+    adapter.command_to_action = Mock()
+    policy = make_multi_step_policy(backend, adapter)
+    with pytest.raises(AssertionError, match="finite goal command"):
+        policy.get_action(*inputs())
+    adapter.command_to_action.assert_not_called()
