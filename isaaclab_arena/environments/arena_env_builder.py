@@ -193,7 +193,7 @@ class ArenaEnvBuilder:
         return variations_printing.get_variations_catalogue_as_string(variations, hydra_overrides=self.hydra_overrides)
 
     def _build_variation_events_cfg(self) -> Any | None:
-        """Build a configclass with one EventTermCfg per enabled runtime variation.
+        """Build a configclass with one EventTermCfg per enabled run-time variation.
 
         Returns ``None`` when no run-time variation is enabled.
         """
