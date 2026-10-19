@@ -124,12 +124,8 @@ class VariationBase(ABC):
         digest = hashlib.sha256(f"{seed}:{variation_key}".encode()).digest()
         # Torch generator seeds are 64-bit, so keep the first 8 bytes of the digest.
         variation_seed = int.from_bytes(digest[:8], "big")
-        # TODO(cvolk, 2026.10.19): Make run-time values reproducible per episode, also across num_envs.
-        # Today a run-time variation draws from this one generator in the order environments reset, so which episode
-        # gets which value depends on num_envs and on when episodes end. Instead, derive each run-time draw from the
-        # seed, the variation key and the episode's global start index. In a reset event, that index is
-        # IsaacLabArenaManagerBasedRLEnv._started_episode_count before the reset plus the environment's position among
-        # the sorted env ids that start an episode. Episode k then gets the same values for any num_envs.
+        # Keep the generator on CPU: there, torch.rand and torch.randint give the same values however the draws are
+        # split across resets, so the k-th episode to start gets the same run-time values for any num_envs.
         self._generator = torch.Generator(device="cpu").manual_seed(variation_seed)
         self._sampler.set_generator(self._generator)
         self._prepare_at_build_time()

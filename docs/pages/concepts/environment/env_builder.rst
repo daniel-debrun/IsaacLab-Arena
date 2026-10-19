@@ -100,8 +100,10 @@ not fix the other.
 
 There is no separate variation seed: each variation draws from its own
 generator, seeded from ``--seed`` and the variation's
-``<asset_name>.<variation_name>`` key. Which environment and episode gets which
-run-time value depends on ``num_envs`` and on when environments reset. See
+``<asset_name>.<variation_name>`` key. Run-time variations hand out their
+values in episode-start order, so the k-th episode to start gets the same
+values for any ``num_envs``. Which environment runs it still depends on
+``num_envs`` and on when environments reset. See
 :doc:`../variations/variations` and
 :doc:`../object_placement/pooled_placement`.
 
