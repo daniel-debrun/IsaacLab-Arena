@@ -564,6 +564,9 @@ class ArenaEnvBuilder:
 
         The default operation is to call with no arguments, in which case the env_cfg is built from the
         Arena description passed to the builder at construction.
+        The registered constructor supplies env_kwargs even when the caller only passes cfg to gym.make.
+        A registration shares samplers across constructions; close its current env before making another.
+        Each construction starts fresh runtime recording and restarts recorded replay.
 
         Args:
             env_cfg: The optional environment cfg to use.
@@ -582,16 +585,16 @@ class ArenaEnvBuilder:
         _configure_arena_visualizer_defaults(env_cfg)
         self.arena_env.scene.validate_simulation_cfg(env_cfg.sim)
         entry_point = self.get_entry_point()
-        # Register the environment with the Gym registry.
-        # NOTE(alexmillane, 2026-08-05): Do not spread env_kwargs into the registry kwargs. env_kwargs carries the
-        # VariationRecorder, whose bind_env() holds a reference to the constructed env
-        # (and thus its SimulationContext/PhysX GPU buffers). The Gym registry is process-global
-        # and never cleared, so pinning it there retains every registered env's GPU memory until
-        # process exit — an unbounded leak across a persistent SimulationApp.
-        # TODO(alexmillane, 2026-08-05): Fix this issue and remove this note.
-        # TODO(qianl, 2026-10-12): Restore Isaac Lab interoperability without retaining these runtime objects in
-        # the Gym registry. Relation placement and enabled run-time variations currently fail because their
-        # VariationRecorder is not forwarded to and bound by Isaac Lab's later gym.make() call.
+        # The registered factory retains runtime objects for Gym-only callers.
+        # VariationRecorder holds the env weakly, so the recorder does not keep a closed simulation alive.
+
+        def create_env(**kwargs):
+            # Sampler callbacks capture these objects, so preserve their identity across Gym's kwargs deepcopy.
+            env_type = (
+                gym.envs.registration.load_env_creator(entry_point) if isinstance(entry_point, str) else entry_point
+            )
+            return env_type(**(env_kwargs | kwargs))
+
         kwargs = {
             "env_cfg_entry_point": env_cfg,
         }
@@ -601,7 +604,7 @@ class ArenaEnvBuilder:
             kwargs[self.arena_env.rl_framework_entry_point] = self.arena_env.rl_policy_cfg
         gym.register(
             id=name,
-            entry_point=entry_point,
+            entry_point=create_env,
             kwargs=kwargs,
             disable_env_checker=True,
         )
@@ -654,6 +657,6 @@ class ArenaEnvBuilder:
         Returns:
             A tuple containing the environment and the environment configuration.
         """
-        name, cfg, env_kwargs = self.build_registered(env_cfg, env_kwargs)
-        env = gym.make(name, cfg=cfg, render_mode=render_mode, **env_kwargs)
+        name, cfg, _ = self.build_registered(env_cfg, env_kwargs)
+        env = gym.make(name, cfg=cfg, render_mode=render_mode)
         return env, cfg

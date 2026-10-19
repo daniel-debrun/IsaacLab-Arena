@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import torch
+import weakref
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -71,6 +72,10 @@ class VariationRecord:
             return self._samples_by_env_episode[key]
         return self._build_time_sample
 
+    def clear_runtime_samples(self) -> None:
+        """Discard per-episode samples while retaining the build-time draw."""
+        self._samples_by_env_episode.clear()
+
     def release_episode(self, env_id: int, episode_idx: int) -> None:
         """Release the run-time sample retained for a finished episode."""
         self._samples_by_env_episode.pop(EnvEpisodeKey(env_id, episode_idx), None)
@@ -83,12 +88,16 @@ class VariationRecorder:
         # Records are keyed by: "{asset_name}.{variation_name}"
         self.records: dict[str, VariationRecord] = {}
         self.placement_record: VariationRecord | None = None
-        # Bound after env construction; supplies the episode index for per-env run-time draws.
+        # Non-owning reference: registered sampler callbacks must not keep a simulation alive.
         self._env: Any = None
 
     def bind_env(self, env: Any) -> None:
-        """Bind the env so run-time draws can be attributed to its current episode index."""
-        self._env = env
+        """Start recording for a new env, retaining build-time draws and clearing prior runtime samples."""
+        for record in self.records.values():
+            record.clear_runtime_samples()
+        if self.placement_record is not None:
+            self.placement_record.clear_runtime_samples()
+        self._env = weakref.proxy(env)
 
     def __getitem__(self, key: str) -> VariationRecord:
         """Return the record stored under "{asset_name}.{variation_name}"."""
