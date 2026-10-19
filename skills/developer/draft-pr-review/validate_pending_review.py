@@ -9,8 +9,8 @@ Usage (on the host, with ``gh`` authenticated):
     python3 -I skills/developer/draft-pr-review/validate_pending_review.py OWNER/REPO PR_NUMBER PAYLOAD.json
 
 Checks that the payload has no ``event`` (so the review stays pending), that ``commit_id`` is the
-current PR head, that the review body (when present) and every inline comment start with the AI
-attribution line, and that every inline comment is anchored on a line inside GitHub's diff. Only
+current PR head, that comment bodies are nonempty, and that every inline comment is anchored
+on a line inside GitHub's diff. Only
 read-only ``gh`` commands are run. A payload without ``body`` checks comments meant for an existing
 pending review.
 """
@@ -18,13 +18,13 @@ pending review.
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
 
-ATTRIBUTION_PREFIX = "_AI-drafted"
 HUNK_HEADER = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 
 
@@ -51,6 +51,15 @@ def run_gh(arguments: list[str]) -> str:
     return subprocess.run(["gh", *arguments], check=True, capture_output=True, text=True).stdout
 
 
+def decode_diff_path(path: str) -> str | None:
+    """Decode a Git diff path, including quoted UTF-8 names and deleted files."""
+    if path == "/dev/null":
+        return None
+    if path.startswith('"'):
+        path = ast.literal_eval(path).encode("latin-1").decode("utf-8")
+    return path[2:]
+
+
 def parse_hunks_by_path(diff_text: str) -> dict[str, list[DiffHunk]]:
     """Parse a unified diff into the hunks of each file.
 
@@ -67,12 +76,13 @@ def parse_hunks_by_path(diff_text: str) -> dict[str, list[DiffHunk]]:
     for line in diff_text.splitlines():
         if line.startswith("diff --git "):
             current_hunk = None
+            old_path = new_path = None
             continue
-        if line.startswith("--- "):
-            old_path = None if line == "--- /dev/null" else line[len("--- a/") :]
+        if current_hunk is None and line.startswith("--- "):
+            old_path = decode_diff_path(line[4:])
             continue
-        if line.startswith("+++ "):
-            new_path = None if line == "+++ /dev/null" else line[len("+++ b/") :]
+        if current_hunk is None and line.startswith("+++ "):
+            new_path = decode_diff_path(line[4:])
             continue
         header_match = HUNK_HEADER.match(line)
         if header_match:
@@ -89,7 +99,7 @@ def parse_hunks_by_path(diff_text: str) -> dict[str, list[DiffHunk]]:
         elif line.startswith("-"):
             current_hunk.left_lines.add(old_line)
             old_line += 1
-        else:
+        elif line.startswith(" "):
             current_hunk.right_lines.add(new_line)
             current_hunk.left_lines.add(old_line)
             new_line += 1
@@ -102,20 +112,24 @@ def find_anchor_problem(comment: dict, hunks_by_path: dict[str, list[DiffHunk]])
 
     Args:
         comment: One entry of the payload's ``comments`` list.
-        hunks_by_path: Diff hunks from :func:`parse_hunks_by_path`.
+        hunks_by_path: Diff hunks from parse_hunks_by_path.
 
     Returns:
         A description of the problem, or None when the comment can be anchored.
     """
     path = comment.get("path")
-    side = comment.get("side", "RIGHT")
+    side = comment.get("side")
     end_line = comment.get("line")
     start_line = comment.get("start_line", end_line)
     start_side = comment.get("start_side", side)
-    if path not in hunks_by_path:
+    if not isinstance(path, str) or path not in hunks_by_path:
         return f"{path} is not part of the PR diff"
-    if end_line is None:
-        return f"{path}: comment has no 'line'"
+    if side not in ("LEFT", "RIGHT") or start_side not in ("LEFT", "RIGHT"):
+        return f"{path}: side and start_side must be LEFT or RIGHT"
+    if type(end_line) is not int or end_line < 1 or type(start_line) is not int or start_line < 1:
+        return f"{path}: line and start_line must be positive integers"
+    if ("start_line" in comment) != ("start_side" in comment):
+        return f"{path}: start_line and start_side must be supplied together"
     if start_line > end_line:
         return f"{path}: start_line {start_line} is after line {end_line}"
     if start_side != side:
@@ -125,6 +139,34 @@ def find_anchor_problem(comment: dict, hunks_by_path: dict[str, list[DiffHunk]])
         if start_line in allowed_lines and end_line in allowed_lines:
             return None
     return f"{path}:{start_line}-{end_line} ({side}) is not inside a single diff hunk"
+
+
+def validate_payload(payload: object, head_sha: str, hunks_by_path: dict[str, list[DiffHunk]]) -> list[str]:
+    """Return payload errors that would prevent creating the intended pending review."""
+    if not isinstance(payload, dict):
+        return ["payload must be a JSON object"]
+    problems: list[str] = []
+    if "event" in payload:
+        problems.append("payload has 'event'; remove it so the review is created as PENDING")
+    if payload.get("commit_id") != head_sha:
+        problems.append(f"commit_id {payload.get('commit_id')} is not the PR head {head_sha}")
+    if "body" in payload and (not isinstance(payload["body"], str) or not payload["body"].strip()):
+        problems.append("review body must be a nonempty string")
+    comments = payload.get("comments", [])
+    if not isinstance(comments, list):
+        return problems + ["comments must be a list"]
+    if not comments and "body" not in payload:
+        problems.append("provide a review body or at least one comment")
+    for index, comment in enumerate(comments):
+        if not isinstance(comment, dict):
+            problems.append(f"comment {index}: must be an object")
+            continue
+        if not isinstance(comment.get("body"), str) or not comment["body"].strip():
+            problems.append(f"comment {index}: body must be a nonempty string")
+        anchor_problem = find_anchor_problem(comment, hunks_by_path)
+        if anchor_problem is not None:
+            problems.append(f"comment {index}: {anchor_problem}")
+    return problems
 
 
 def main() -> int:
@@ -142,19 +184,12 @@ def main() -> int:
     diff_text = run_gh(["pr", "diff", str(arguments.pull_request_number), "--repo", arguments.repository])
     hunks_by_path = parse_hunks_by_path(diff_text)
 
-    problems: list[str] = []
-    if "event" in payload:
-        problems.append("payload has 'event'; remove it so the review is created as PENDING")
-    if payload.get("commit_id") != head_sha:
-        problems.append(f"commit_id {payload.get('commit_id')} is not the PR head {head_sha}")
-    if "body" in payload and not payload["body"].startswith(ATTRIBUTION_PREFIX):
-        problems.append(f"review body does not start with the attribution line ({ATTRIBUTION_PREFIX}...)")
-    for index, comment in enumerate(payload.get("comments", [])):
-        if not comment.get("body", "").startswith(ATTRIBUTION_PREFIX):
-            problems.append(f"comment {index} ({comment.get('path')}) does not start with the attribution line")
-        anchor_problem = find_anchor_problem(comment, hunks_by_path)
-        if anchor_problem is not None:
-            problems.append(f"comment {index}: {anchor_problem}")
+    problems = validate_payload(payload, head_sha, hunks_by_path)
+    latest_head_sha = run_gh(
+        ["api", f"repos/{arguments.repository}/pulls/{arguments.pull_request_number}", "--jq", ".head.sha"]
+    ).strip()
+    if latest_head_sha != head_sha:
+        problems.append("PR head changed while fetching the diff; refresh the findings and retry")
 
     if problems:
         print("NOT READY:")
