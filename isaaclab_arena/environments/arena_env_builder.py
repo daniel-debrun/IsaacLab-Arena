@@ -295,7 +295,7 @@ class ArenaEnvBuilder:
         """Build the environment configuration and constructor arguments without registering it.
 
         Applies variation overrides and build-time variations, prepares relation placement,
-        and combines scene, embodiment, and task settings. This updates the source components.
+        and combines scene, embodiment, and task settings.
 
         Returns:
             An (env_cfg, env_kwargs) tuple, with constructor arguments to forward to gym.make.
