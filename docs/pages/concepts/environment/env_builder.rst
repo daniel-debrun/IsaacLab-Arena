@@ -70,7 +70,7 @@ Seeds during compilation
 
 Environment compilation and rollout use more than one random stream, so locking
 a single global seed is not enough when you need layouts, object-set picks, or
-run-time variation draws to be reproducible independently.
+variation values to be reproducible independently.
 
 What it is
 ~~~~~~~~~~
@@ -100,8 +100,9 @@ not fix the other.
 
 There is no separate variation seed: each variation draws from its own
 generator, seeded from ``--seed`` and the variation's
-``<asset_name>.<variation_name>`` key. Run-time draws still depend on the order
-in which environments reset. See :doc:`../variations/variations` and
+``<asset_name>.<variation_name>`` key. Which environment and episode gets which
+run-time value depends on ``num_envs`` and on when environments reset. See
+:doc:`../variations/variations` and
 :doc:`../object_placement/pooled_placement`.
 
 How to set it
