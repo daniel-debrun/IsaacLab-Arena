@@ -17,6 +17,7 @@ from isaaclab.managers import EventTermCfg, SceneEntityCfg
 from isaaclab.utils.configclass import configclass
 
 from isaaclab_arena.assets.asset import Asset
+from isaaclab_arena.variations.bernoulli_sampler import BernoulliSampler
 from isaaclab_arena.variations.uniform_sampler import UniformSampler, UniformSamplerCfg
 from isaaclab_arena.variations.variation_base import (
     RunTimeVariationBase,
@@ -196,6 +197,20 @@ def test_apply_cfg_keeps_generator():
     torch.testing.assert_close(
         variation.sampler.sample(num_samples=4), reference_variation.sampler.sample(num_samples=4)
     )
+
+
+def test_bernoulli_sampler_draws_from_its_generator():
+    # No build-time variation uses BernoulliSampler, so the build-time seeding tests do not reach it.
+    generator = torch.Generator().manual_seed(7)
+    sampler = BernoulliSampler(probability=0.5)
+    sampler.set_generator(generator)
+    global_random_state = torch.get_rng_state()
+
+    first_draws = sampler.sample(num_samples=16)
+    generator.manual_seed(7)
+
+    assert sampler.sample(num_samples=16) == first_draws
+    assert torch.equal(torch.get_rng_state(), global_random_state)
 
 
 def test_build_event_cfg_uses_configured_asset_name():

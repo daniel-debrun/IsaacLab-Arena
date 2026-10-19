@@ -3,8 +3,6 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-import torch
-
 from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
 
 HEADLESS = True
@@ -161,23 +159,6 @@ def _test_hydra_override_enables_disappear(simulation_app):
     return True
 
 
-def _test_disappear_draws_ignore_global_random_state(simulation_app):
-    from isaaclab_arena.variations.object_disappear_variation import ObjectDisappearVariation
-
-    reference_variation = ObjectDisappearVariation(asset_name="sphere")
-    reference_variation.configure_at_build_time(seed=7, variation_key=f"sphere.{reference_variation.name}")
-    expected_disappearances = reference_variation.sampler.sample(num_samples=16)
-    variation = ObjectDisappearVariation(asset_name="sphere")
-    variation.configure_at_build_time(seed=7, variation_key=f"sphere.{variation.name}")
-    # A policy or another event term can draw from torch's global random state between resets.
-    torch.rand(16)
-    disappearances = variation.sampler.sample(num_samples=16)
-    assert (
-        disappearances == expected_disappearances
-    ), f"Seed 7 drew {expected_disappearances} without a global draw and {disappearances} with one."
-    return True
-
-
 def test_object_disappear_variation_registration():
     assert run_function_with_persistent_simulation_app(
         _test_object_disappear_variation_registration,
@@ -209,12 +190,5 @@ def test_disappeared_object_survives_relation_placement():
 def test_hydra_override_enables_disappear():
     assert run_function_with_persistent_simulation_app(
         _test_hydra_override_enables_disappear,
-        headless=HEADLESS,
-    )
-
-
-def test_disappear_draws_ignore_global_random_state():
-    assert run_function_with_persistent_simulation_app(
-        _test_disappear_draws_ignore_global_random_state,
         headless=HEADLESS,
     )
