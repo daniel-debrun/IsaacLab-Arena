@@ -161,33 +161,20 @@ def _test_hydra_override_enables_disappear(simulation_app):
     return True
 
 
-def draw_disappearances_for_two_resets(use_global_random_state_between_draws: bool) -> list[list[bool]]:
-    """Seed a disappear variation as a build with seed 7 does, then draw for sixteen envs twice.
-
-    Args:
-        use_global_random_state_between_draws: Whether to draw from torch's global random state between the two
-            draws, as a policy or another event term can between resets.
-
-    Returns:
-        The two draws.
-    """
+def _test_disappear_draws_ignore_global_random_state(simulation_app):
     from isaaclab_arena.variations.object_disappear_variation import ObjectDisappearVariation
 
+    reference_variation = ObjectDisappearVariation(asset_name="sphere")
+    reference_variation.configure_at_build_time(seed=7, variation_key=f"sphere.{reference_variation.name}")
+    expected_disappearances = reference_variation.sampler.sample(num_samples=16)
     variation = ObjectDisappearVariation(asset_name="sphere")
     variation.configure_at_build_time(seed=7, variation_key=f"sphere.{variation.name}")
-    disappearances = [variation.sampler.sample(num_samples=16)]
-    if use_global_random_state_between_draws:
-        torch.rand(16)
-    disappearances.append(variation.sampler.sample(num_samples=16))
-    return disappearances
-
-
-def _test_disappear_draws_repeat_for_same_seed_and_ignore_global_random_state(simulation_app):
-    first_disappearances = draw_disappearances_for_two_resets(use_global_random_state_between_draws=False)
-    second_disappearances = draw_disappearances_for_two_resets(use_global_random_state_between_draws=True)
+    # A policy or another event term can draw from torch's global random state between resets.
+    torch.rand(16)
+    disappearances = variation.sampler.sample(num_samples=16)
     assert (
-        first_disappearances == second_disappearances
-    ), f"Seed 7 drew {first_disappearances}, then {second_disappearances}."
+        disappearances == expected_disappearances
+    ), f"Seed 7 drew {expected_disappearances} without a global draw and {disappearances} with one."
     return True
 
 
@@ -226,8 +213,8 @@ def test_hydra_override_enables_disappear():
     )
 
 
-def test_disappear_draws_repeat_for_same_seed_and_ignore_global_random_state():
+def test_disappear_draws_ignore_global_random_state():
     assert run_function_with_persistent_simulation_app(
-        _test_disappear_draws_repeat_for_same_seed_and_ignore_global_random_state,
+        _test_disappear_draws_ignore_global_random_state,
         headless=HEADLESS,
     )

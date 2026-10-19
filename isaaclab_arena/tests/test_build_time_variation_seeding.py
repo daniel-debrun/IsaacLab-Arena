@@ -58,12 +58,14 @@ def get_build_time_values(seed: int, directional_light_first: bool = False) -> d
     return values
 
 
-def _test_same_seed_draws_same_build_time_values(simulation_app):
-    first_values = get_build_time_values(seed=7)
+def _test_same_seed_draws_same_build_time_values_in_any_order(simulation_app):
+    dome_light_first_values = get_build_time_values(seed=7)
     # Advance torch's global random state; build-time draws must not read it.
     torch.rand(1)
-    second_values = get_build_time_values(seed=7)
-    assert first_values == second_values, f"Seed 7 drew {first_values}, then {second_values}."
+    directional_light_first_values = get_build_time_values(seed=7, directional_light_first=True)
+    assert (
+        dome_light_first_values == directional_light_first_values
+    ), f"Dome light first: {dome_light_first_values}; directional light first: {directional_light_first_values}."
     return True
 
 
@@ -85,15 +87,6 @@ def _test_build_time_values_differ_by_seed_and_variation_key(simulation_app):
     return True
 
 
-def _test_build_time_values_do_not_depend_on_variation_order(simulation_app):
-    dome_light_first_values = get_build_time_values(seed=7)
-    directional_light_first_values = get_build_time_values(seed=7, directional_light_first=True)
-    assert (
-        dome_light_first_values == directional_light_first_values
-    ), f"Dome light first: {dome_light_first_values}; directional light first: {directional_light_first_values}."
-    return True
-
-
 def _test_build_time_variations_leave_global_random_state_unchanged(simulation_app):
     global_random_state = torch.get_rng_state()
     get_build_time_values(seed=7)
@@ -103,9 +96,9 @@ def _test_build_time_variations_leave_global_random_state_unchanged(simulation_a
     return True
 
 
-def test_same_seed_draws_same_build_time_values():
+def test_same_seed_draws_same_build_time_values_in_any_order():
     assert run_function_with_persistent_simulation_app(
-        _test_same_seed_draws_same_build_time_values,
+        _test_same_seed_draws_same_build_time_values_in_any_order,
         headless=HEADLESS,
     )
 
@@ -113,13 +106,6 @@ def test_same_seed_draws_same_build_time_values():
 def test_build_time_values_differ_by_seed_and_variation_key():
     assert run_function_with_persistent_simulation_app(
         _test_build_time_values_differ_by_seed_and_variation_key,
-        headless=HEADLESS,
-    )
-
-
-def test_build_time_values_do_not_depend_on_variation_order():
-    assert run_function_with_persistent_simulation_app(
-        _test_build_time_values_do_not_depend_on_variation_order,
         headless=HEADLESS,
     )
 
