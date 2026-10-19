@@ -19,12 +19,12 @@ from PIL import Image
 
 from isaaclab_arena.inference.backend import InferenceBackend, InferenceRequest
 from isaaclab_arena.policy.policy_base import PolicyBase, PolicyCfg
-from isaaclab_arena_vlm_agent_policy.embodiment_adapter.adapter import (
+from isaaclab_arena_vlm_agent_policy.embodiment_adapter.action_adapter import (
     AgentActionAdapter,
     ChunkActionAdapter,
     GoalActionAdapter,
-    VLMObservationAdapter,
 )
+from isaaclab_arena_vlm_agent_policy.embodiment_adapter.observation_adapter import VLMObservationAdapter
 
 
 def encode_image(image: np.ndarray, max_edge: int = 384) -> str:
