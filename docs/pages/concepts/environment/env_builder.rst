@@ -55,9 +55,11 @@ to each manager are tabulated below:
 +-------------+-----------------------+-------------------------+----------------------+
 
 
-``ArenaEnvBuilder.compose_manager_cfg()`` first assembles the partial manager contributions
-from each component into a set of complete managers. Then it merges these complete managers
-into a single ``ManagerBasedRLEnvCfg``.
+``ArenaEnvBuilder.build_env_cfg()`` combines configuration contributions from the scene,
+embodiment, and task into an ``IsaacLabArenaManagerBasedRLEnvCfg``. It returns that
+configuration and the constructor arguments to forward to ``gym.make``. It also
+applies build-time variations and prepares relation placement, updating the source
+components before collecting their configurations.
 
 By default, the builder also solves spatial relations for placed objects and
 supported robot embodiments. Set

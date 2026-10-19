@@ -100,7 +100,7 @@ def _create_interactive_environment(
     assert (
         arena_builder.resolved_physics_backend is not PhysicsBackend.NEWTON
     ), "environment_runner mouse interaction currently requires PhysX"
-    env_cfg, env_kwargs = arena_builder.compose_manager_cfg()
+    env_cfg, env_kwargs = arena_builder.build_env_cfg()
     # Enable mouse picking without recording the interactive session.
     env_cfg.sim.enable_scene_query_support = True
     env_cfg.recorders = {}

@@ -43,7 +43,7 @@ def _test_disabled_camera_intrinsics_variation_not_in_events_cfg(simulation_app)
 
     arena_env = get_test_environment(camera_intrinsics_variation_enabled=False)
     args_cli = get_isaaclab_arena_cli_parser().parse_args(["--num_envs", "1", "--enable_cameras"])
-    env_cfg, _ = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).compose_manager_cfg()
+    env_cfg, _ = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).build_env_cfg()
 
     assert not hasattr(env_cfg.events, EVENT_NAME), (
         f"Disabled variation must not add '{EVENT_NAME}' to env_cfg.events; "
@@ -59,7 +59,7 @@ def _test_enabled_camera_intrinsics_variation_in_events_cfg(simulation_app):
 
     arena_env = get_test_environment(camera_intrinsics_variation_enabled=True)
     args_cli = get_isaaclab_arena_cli_parser().parse_args(["--num_envs", "1", "--enable_cameras"])
-    env_cfg, _ = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).compose_manager_cfg()
+    env_cfg, _ = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).build_env_cfg()
 
     assert hasattr(
         env_cfg.events, EVENT_NAME
@@ -79,7 +79,7 @@ def _test_disabled_camera_intrinsics_variation_keeps_tiled_camera(simulation_app
 
     arena_env = get_test_environment(camera_intrinsics_variation_enabled=False)
     args_cli = get_isaaclab_arena_cli_parser().parse_args(["--num_envs", "1", "--enable_cameras"])
-    env_cfg, _ = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).compose_manager_cfg()
+    env_cfg, _ = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).build_env_cfg()
 
     camera_cfg = getattr(env_cfg.scene, CAMERA_NAME)
     assert isinstance(camera_cfg, TiledCameraCfg), (
@@ -97,7 +97,7 @@ def _test_enabled_camera_intrinsics_variation_forces_untiled_camera(simulation_a
 
     arena_env = get_test_environment(camera_intrinsics_variation_enabled=True)
     args_cli = get_isaaclab_arena_cli_parser().parse_args(["--num_envs", "1", "--enable_cameras"])
-    env_cfg, _ = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).compose_manager_cfg()
+    env_cfg, _ = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).build_env_cfg()
 
     camera_cfg = getattr(env_cfg.scene, CAMERA_NAME)
     assert isinstance(camera_cfg, CameraCfg) and not isinstance(camera_cfg, TiledCameraCfg), (

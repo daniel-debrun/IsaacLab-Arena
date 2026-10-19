@@ -248,7 +248,7 @@ def _test_hdr_variation_recorder_captures_chosen_hdr_name(simulation_app):
     scene = Scene(assets=[dome_light])
 
     # Attach the recorder after the cfg is finalized but before the build, mirroring
-    # the order ArenaEnvBuilder.compose_manager_cfg uses.
+    # the order ArenaEnvBuilder.build_env_cfg uses.
     recorder = VariationRecorder()
     recorder.attach(scene.get_asset_variations())
 

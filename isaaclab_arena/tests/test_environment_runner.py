@@ -109,8 +109,8 @@ def test_create_interactive_environment_rejects_newton_backend(presets, env_defa
         def resolved_physics_backend(self) -> PhysicsBackend:
             return self.cfg.presets if self.cfg.presets is not None else self.arena_env.default_physics_backend
 
-        def compose_manager_cfg(self):
-            raise AssertionError("compose_manager_cfg should not run when Newton is rejected")
+        def build_env_cfg(self):
+            raise AssertionError("build_env_cfg should not run when Newton is rejected")
 
     monkeypatch.setattr(
         environment_runner,
@@ -277,7 +277,7 @@ def test_main_closes_the_environment_when_the_run_loop_fails(monkeypatch):
         def resolved_physics_backend(self) -> PhysicsBackend:
             return self.cfg.presets if self.cfg.presets is not None else self.arena_env.default_physics_backend
 
-        def compose_manager_cfg(self):
+        def build_env_cfg(self):
             return env_cfg, {"example_kwarg": "value"}
 
         def make_registered(self, received_env_cfg, received_env_kwargs):

@@ -73,7 +73,7 @@ def _create_trajectory_recording_env(output_dir):
         recorder_dataset_filename=DATASET_FILENAME,
     )
     env_builder = ArenaEnvBuilder(arena_environment, builder_cfg)
-    env_cfg, env_kwargs = env_builder.compose_manager_cfg()
+    env_cfg, env_kwargs = env_builder.build_env_cfg()
 
     env = env_builder.make_registered(env_cfg, env_kwargs)
     env.unwrapped.episode_recorder.set_job_name("trajectory_recording")

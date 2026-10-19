@@ -96,7 +96,7 @@ def _configure_arena_visualizer_defaults(env_cfg: IsaacLabArenaManagerBasedRLEnv
 
 
 class ArenaEnvBuilder:
-    """Compose IsaacLab Arena → IsaacLab configs"""
+    """Build Isaac Lab configurations and registered environments from an Arena environment."""
 
     def __init__(
         self,
@@ -192,8 +192,8 @@ class ArenaEnvBuilder:
         variations: dict[str, list[VariationBase]] = self.get_all_variations()
         return variations_printing.get_variations_catalogue_as_string(variations, hydra_overrides=self.hydra_overrides)
 
-    def _compose_variations_event_cfg(self) -> Any | None:
-        """Build a configclass with one :class:`EventTermCfg` per enabled run-time variation.
+    def _build_variation_events_cfg(self) -> Any | None:
+        """Build a configclass with one EventTermCfg per enabled runtime variation.
 
         Returns ``None`` when no run-time variation is enabled.
         """
@@ -238,7 +238,7 @@ class ArenaEnvBuilder:
         )
         return recorder_cfg
 
-    def _compose_metrics_cfg(self, metrics: list[MetricBase] | None) -> object | None:
+    def _build_metrics_cfg(self, metrics: list[MetricBase] | None) -> object | None:
         """Build a configclass container with one ``MetricTermCfg`` field per metric."""
         if not metrics:
             return None
@@ -269,10 +269,10 @@ class ArenaEnvBuilder:
         termination_fields = [(name, TerminationTermCfg, term) for name, term in termination_terms.items()]
         return make_configclass("TerminationsCfg", termination_fields)()
 
-    def _compose_episode_recorders_cfg(self, extra_terms: dict[str, EpisodeRecorderTermCfg] | None = None) -> object:
+    def _build_episode_recorders_cfg(self, extra_terms: dict[str, EpisodeRecorderTermCfg] | None = None) -> object:
         """Build a configclass container with one EpisodeRecorderTermCfg field per episode recorder term.
 
-        Note that this function automatically adds the core, variations, and progress terms. The
+        Includes the built-in core, placement, variations, and progress terms. The
         progress term records nothing for tasks that define no completion criteria.
         """
         fields = [
@@ -291,13 +291,14 @@ class ArenaEnvBuilder:
             fields.append((name, EpisodeRecorderTermCfg, term_cfg))
         return make_configclass("EpisodeRecorderManagerCfg", fields)()
 
-    def compose_manager_cfg(self) -> tuple[IsaacLabArenaManagerBasedRLEnvCfg, dict[str, Any]]:
-        """Return the base ManagerBased cfg and the env kwargs (no registration).
+    def build_env_cfg(self) -> tuple[IsaacLabArenaManagerBasedRLEnvCfg, dict[str, Any]]:
+        """Build the environment configuration and constructor arguments without registering it.
 
-        env_kwargs carries arguments to be forwarded to gym.make for construction of the IsaacLabArenaManagerBasedRLEnv.
+        Applies variation overrides and build-time variations, prepares relation placement,
+        and combines scene, embodiment, and task settings. This updates the source components.
 
         Returns:
-            An (env_cfg, env_kwargs) tuple.
+            An (env_cfg, env_kwargs) tuple, with constructor arguments to forward to gym.make.
         """
         # Apply Hydra variation overrides. Needs to happen before build-time variations are applied.
         variations = self.get_all_variations()
@@ -356,7 +357,7 @@ class ArenaEnvBuilder:
                 [(PLACEMENT_RESET_EVENT_NAME, EventTermCfg, make_placement_event(placement_sampler))],
             )
             placement_event_cfg = PlacementEventCfg()
-        variations_event_cfg = self._compose_variations_event_cfg()
+        variations_event_cfg = self._build_variation_events_cfg()
         task_termination_cfg = task.get_termination_cfg()
         assert isinstance(
             task_termination_cfg, TaskTerminationCfg
@@ -409,7 +410,7 @@ class ArenaEnvBuilder:
             elif isinstance(device_cfg, DeviceCfg):
                 teleop_devices_cfg = DevicesCfg(devices={self.arena_env.teleop_device.name: device_cfg})
         metrics = task.get_metrics()
-        metrics_cfg = self._compose_metrics_cfg(metrics)
+        metrics_cfg = self._build_metrics_cfg(metrics)
         metrics_recorder_manager_cfg = metrics_to_recorder_manager_cfg(metrics)
         # Base has to be specified explicitly to avoid type errors and not lose inheritance.
         recorder_manager_cfg = combine_configclass_instances(
@@ -447,7 +448,7 @@ class ArenaEnvBuilder:
             task.get_commands_cfg(),
         )
 
-        episode_recorders_cfg = self._compose_episode_recorders_cfg(self.arena_env.episode_recorder_terms)
+        episode_recorders_cfg = self._build_episode_recorders_cfg(self.arena_env.episode_recorder_terms)
 
         viewer_cfg = task.get_viewer_cfg()
 
@@ -582,7 +583,7 @@ class ArenaEnvBuilder:
         apply_arena_global_settings()
         name = self.arena_env.name
         if env_cfg is None:
-            env_cfg, env_kwargs = self.compose_manager_cfg()
+            env_cfg, env_kwargs = self.build_env_cfg()
         elif env_kwargs is None:
             env_kwargs = {}
         _configure_arena_visualizer_defaults(env_cfg)
