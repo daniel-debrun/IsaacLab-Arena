@@ -11,9 +11,8 @@ on:
   push:
     branches: [ "main" ]
   schedule:
-    # Nightly at 18:00 Pacific, including the live environment-generation tests.
-    - cron: '0 18 * * *'
-      timezone: America/Los_Angeles
+    # Nightly at 06:00 UTC, including the live environment-generation tests.
+    - cron: '0 6 * * *'
   workflow_dispatch:
 
 # Concurrency control to prevent parallel runs on the same PR
