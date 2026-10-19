@@ -126,10 +126,7 @@ class VariationBase(ABC):
         # gets which value depends on num_envs and on when episodes end. Instead, derive each run-time draw from the
         # build seed, the variation key and a global episode index that counts started episodes across all
         # environments (environments that reset in the same step are counted in env id order). Episode k then gets
-        # the same values for any num_envs. This needs that index at draw time: the env counts episodes per
-        # environment (IsaacLabArenaManagerBasedEnv.get_episode_index), while VariationReplayScheduler already counts
-        # started episodes globally for recorded replay, so both should share one counter. Build-time draws stay as
-        # they are.
+        # the same values for any num_envs.
         digest = hashlib.sha256(f"{seed}:{variation_key}".encode()).digest()
         variation_seed = int.from_bytes(digest[:8], "big")
         self._generator = torch.Generator(device="cpu").manual_seed(variation_seed)
