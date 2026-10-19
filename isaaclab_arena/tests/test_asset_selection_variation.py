@@ -39,9 +39,15 @@ def make_abc_candidates():
 
 
 def compose_pick_and_place_with_selection(
-    selection, *, seed=42, default_asset=None, hydra_overrides=None, recorded_variation_samples_path=None
+    asset_candidates,
+    *,
+    selection_cfg=None,
+    seed=42,
+    default_asset=None,
+    hydra_overrides=None,
+    recorded_variation_samples_path=None,
 ):
-    """Compose a PickAndPlaceTask environment whose pickup Object, on a table, carries ``selection``.
+    """Compose a PickAndPlaceTask environment whose pickup Object, on a table, selects from ``asset_candidates``.
 
     Returns:
         The pickup Object, the composed env_cfg and the env_kwargs.
@@ -59,6 +65,7 @@ def compose_pick_and_place_with_selection(
     from isaaclab_arena.scene.scene import Scene
     from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask
     from isaaclab_arena.utils.pose import Pose
+    from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariation
 
     # A fixed 2 m by 2 m table, 0.1 m thick, with its top at TABLE_TOP_Z.
     table = Object(
@@ -70,7 +77,7 @@ def compose_pick_and_place_with_selection(
     )
     # asset=None declares the pickup without an asset of its own.
     pickup = Object(name="pickup", asset=default_asset, relations=[On(table, clearance_m=ON_CLEARANCE_M)])
-    pickup.add_variation(selection)
+    pickup.add_variation(AssetSelectionVariation(pickup, asset_candidates, cfg=selection_cfg))
     plate_spawn_cfg = sim_utils.CuboidCfg(
         size=(0.3, 0.3, 0.02),
         rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
@@ -95,17 +102,15 @@ def compose_pick_and_place_with_selection(
 
 
 def _test_selected_asset_is_spawned_placed_and_recorded(simulation_app):
-    from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariation
     from isaaclab_arena.variations.variations_hydra import overrides_from_dict
 
     short_candidate = make_cuboid_candidate("short", 0.1)
     tall_candidate = make_cuboid_candidate("tall", 0.3)
     # Declared disabled next to a default asset; the build's overrides enable it and keep only "tall".
-    selection = AssetSelectionVariation(asset_candidates=[short_candidate, tall_candidate])
     hydra_overrides = overrides_from_dict({f"{SELECTION_KEY}.enabled": True, f"{SELECTION_KEY}.asset_names": ["tall"]})
 
     pickup, env_cfg, env_kwargs = compose_pick_and_place_with_selection(
-        selection, default_asset=short_candidate, hydra_overrides=hydra_overrides
+        [short_candidate, tall_candidate], default_asset=short_candidate, hydra_overrides=hydra_overrides
     )
 
     assert env_cfg.scene.pickup.spawn.size[2] == pytest.approx(0.3)
@@ -118,15 +123,15 @@ def _test_selected_asset_is_spawned_placed_and_recorded(simulation_app):
 
 
 def _test_in_order_selection_follows_build_seed(simulation_app):
-    from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariation, AssetSelectionVariationCfg
+    from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariationCfg
 
     spawned_heights = []
     for seed in (42, 43, 44):
-        selection = AssetSelectionVariation(
-            asset_candidates=make_abc_candidates(),
-            cfg=AssetSelectionVariationCfg(enabled=True, asset_names=["c", "a", "b"]),
+        _, env_cfg, _ = compose_pick_and_place_with_selection(
+            make_abc_candidates(),
+            selection_cfg=AssetSelectionVariationCfg(enabled=True, asset_names=["c", "a", "b"]),
+            seed=seed,
         )
-        _, env_cfg, _ = compose_pick_and_place_with_selection(selection, seed=seed)
         spawned_heights.append(env_cfg.scene.pickup.spawn.size[2])
 
     # 42 % 3 == 0, so seed 42 takes the first of asset_names and each next seed the next one.
@@ -137,14 +142,14 @@ def _test_in_order_selection_follows_build_seed(simulation_app):
 def _test_random_selection_depends_only_on_seed_and_key(simulation_app):
     import torch
 
-    from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariation, AssetSelectionVariationCfg
+    from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariationCfg
 
     def compose_random_selection(seed):
-        selection = AssetSelectionVariation(
-            asset_candidates=make_abc_candidates(),
-            cfg=AssetSelectionVariationCfg(enabled=True, random_choice=True),
+        _, env_cfg, _ = compose_pick_and_place_with_selection(
+            make_abc_candidates(),
+            selection_cfg=AssetSelectionVariationCfg(enabled=True, random_choice=True),
+            seed=seed,
         )
-        _, env_cfg, _ = compose_pick_and_place_with_selection(selection, seed=seed)
         return env_cfg.scene.pickup.spawn.size[2]
 
     # A draw from torch's global random state would differ between these two builds.
@@ -160,19 +165,17 @@ def _test_random_selection_depends_only_on_seed_and_key(simulation_app):
 
 
 def _test_recorded_asset_name_is_replayed(simulation_app, tmp_path):
-    from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariation, AssetSelectionVariationCfg
+    from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariationCfg
 
     recorded_samples_path = tmp_path / "asset_selection_replay.jsonl"
     recorded_row = json.dumps({"variations": {SELECTION_KEY: "tall"}})
     recorded_samples_path.write_text(f"{recorded_row}\n" * NUM_ENVS)
     # In order with seed 42, a live draw over [short, tall] takes "short" (42 % 2 == 0).
-    selection = AssetSelectionVariation(
-        asset_candidates=[make_cuboid_candidate("short", 0.1), make_cuboid_candidate("tall", 0.3)],
-        cfg=AssetSelectionVariationCfg(enabled=True),
-    )
-
     _, env_cfg, env_kwargs = compose_pick_and_place_with_selection(
-        selection, seed=42, recorded_variation_samples_path=str(recorded_samples_path)
+        [make_cuboid_candidate("short", 0.1), make_cuboid_candidate("tall", 0.3)],
+        selection_cfg=AssetSelectionVariationCfg(enabled=True),
+        seed=42,
+        recorded_variation_samples_path=str(recorded_samples_path),
     )
 
     assert env_cfg.scene.pickup.spawn.size[2] == pytest.approx(0.3)
@@ -201,32 +204,28 @@ def _test_asset_selection_rejects_invalid_configuration(simulation_app, case_id)
             Object(name=name, object_type=ObjectType.RIGID, spawner_cfg=spawn_cfg)
             for name, spawn_cfg in make_abc_candidates()
         ]
-        RigidObjectSet(name="pickup", objects=members).add_variation(AssetSelectionVariation([candidate]))
+        pickup_set = RigidObjectSet(name="pickup", objects=members)
+        pickup_set.add_variation(AssetSelectionVariation(pickup_set, [candidate]))
 
     def add_to_base_object():
         table = Object(name="table", object_type=ObjectType.BASE, spawner_cfg=sim_utils.CuboidCfg(size=(1.0, 1.0, 0.1)))
-        table.add_variation(AssetSelectionVariation([candidate]))
+        table.add_variation(AssetSelectionVariation(table, [candidate]))
 
     def build_with_bounding_box_set_after_add_variation():
         pickup = Object(name="pickup")
-        pickup.add_variation(AssetSelectionVariation([candidate], cfg=AssetSelectionVariationCfg(enabled=True)))
+        pickup.add_variation(AssetSelectionVariation(pickup, [candidate], cfg=AssetSelectionVariationCfg(enabled=True)))
         pickup.bounding_box = AxisAlignedBoundingBox(min_point=(0.0, 0.0, 0.0), max_point=(0.1, 0.1, 0.1))
         arena_env = IsaacLabArenaEnvironment(name="bounding_box_override", scene=Scene(assets=[pickup]))
         ArenaEnvBuilder(arena_env, ArenaEnvBuilderCfg(num_envs=1)).compose_manager_cfg()
 
     def add_second_selection():
         pickup = Object(name="pickup")
-        pickup.add_variation(AssetSelectionVariation([candidate]))
-        pickup.add_variation(AssetSelectionVariation([candidate], name="second_asset_selection"))
-
-    def add_one_selection_to_two_objects():
-        selection = AssetSelectionVariation([candidate])
-        Object(name="pickup").add_variation(selection)
-        Object(name="other_pickup").add_variation(selection)
+        pickup.add_variation(AssetSelectionVariation(pickup, [candidate]))
+        pickup.add_variation(AssetSelectionVariation(pickup, [candidate], name="second_asset_selection"))
 
     def override_with_unknown_name():
         pickup = Object(name="pickup")
-        pickup.add_variation(AssetSelectionVariation([candidate]))
+        pickup.add_variation(AssetSelectionVariation(pickup, [candidate]))
         variations_hydra.apply_overrides({"pickup": pickup.get_variations()}, [f"{SELECTION_KEY}.asset_names=[banana]"])
 
     multi_asset_spawn_cfg = sim_utils.MultiAssetSpawnerCfg(assets_cfg=[candidate[1]])
@@ -238,11 +237,13 @@ def _test_asset_selection_rejects_invalid_configuration(simulation_app, case_id)
             "'pickup' sets a bounding_box override",
         ),
         "second_selection": (add_second_selection, "already has an AssetSelectionVariation"),
-        "selection_on_two_objects": (add_one_selection_to_two_objects, "was already added to 'pickup'"),
-        "no_candidates": (lambda: AssetSelectionVariation([]), "at least one"),
-        "duplicate_names": (lambda: AssetSelectionVariation([candidate, candidate]), "Duplicate candidate name"),
+        "no_candidates": (lambda: AssetSelectionVariation(Object(name="pickup"), []), "at least one"),
+        "duplicate_names": (
+            lambda: AssetSelectionVariation(Object(name="pickup"), [candidate, candidate]),
+            "Duplicate candidate name",
+        ),
         "multi_spawner_candidate": (
-            lambda: AssetSelectionVariation([("several", multi_asset_spawn_cfg)]),
+            lambda: AssetSelectionVariation(Object(name="pickup"), [("several", multi_asset_spawn_cfg)]),
             (
                 "AssetSelectionVariation 'asset_selection' candidate 0: 'several' is a MultiAssetSpawnerCfg; pass one"
                 " spawn configuration"
@@ -266,7 +267,9 @@ def _test_placement_replay_needs_recorded_asset_selection(simulation_app, tmp_pa
 
     pickup = Object(name="pickup")
     pickup.add_variation(
-        AssetSelectionVariation([make_cuboid_candidate("cube", 0.1)], cfg=AssetSelectionVariationCfg(enabled=True))
+        AssetSelectionVariation(
+            pickup, [make_cuboid_candidate("cube", 0.1)], cfg=AssetSelectionVariationCfg(enabled=True)
+        )
     )
     # One layout row as write_placement_samples writes it: a pose for pickup and no variation values.
     pickup_pose = {"position_xyz": [0.0, 0.0, 0.05], "rotation_xyzw": [0.0, 0.0, 0.0, 1.0]}
@@ -311,7 +314,6 @@ def test_recorded_asset_name_is_replayed(tmp_path):
         "base_object",
         "bounding_box_override",
         "second_selection",
-        "selection_on_two_objects",
         "no_candidates",
         "duplicate_names",
         "multi_spawner_candidate",

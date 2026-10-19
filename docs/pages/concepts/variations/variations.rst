@@ -235,6 +235,7 @@ The environment's Python code declares the candidates as ``(name, spawn configur
    pick_up_object = Object(name="pickup")
    pick_up_object.add_variation(
        AssetSelectionVariation(
+           pick_up_object,
            asset_candidates=[cracker_box_asset, sugar_box_asset, mustard_bottle_asset],
            cfg=AssetSelectionVariationCfg(enabled=True),
        )

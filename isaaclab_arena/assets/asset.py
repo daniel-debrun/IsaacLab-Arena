@@ -29,14 +29,14 @@ class Asset:
         self.variations: dict[str, VariationBase] = {}
 
     def add_variation(self, variation: VariationBase) -> None:
-        """Add ``variation`` under its ``name``, which must be unused on this asset.
+        """Attach a variation under its instance ``name``, which must not already be attached.
 
-        The variation's ``on_add_to_asset`` hook can reject this asset.
+        Subclasses call this from their ``__init__`` to declare the variations
+        they support.
         """
         assert (
             variation.name not in self.variations
         ), f"Asset '{self.name}' ({type(self).__name__}) already has variation '{variation.name}' attached."
-        variation.on_add_to_asset(self)
         self.variations[variation.name] = variation
 
     def get_variation(self, name: str) -> VariationBase:
