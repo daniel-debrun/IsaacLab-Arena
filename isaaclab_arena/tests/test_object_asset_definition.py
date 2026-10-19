@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for declaring an Object from an asset definition or without an asset."""
+"""Tests for declaring an Object with asset= or without an asset."""
 
 import re
 
@@ -51,7 +51,7 @@ def test_get_named_spawn_cfg_copies_a_registered_rigid_object():
     assert result, "Test failed"
 
 
-def _test_object_declared_with_asset_definition_or_without_asset(simulation_app) -> bool:
+def _test_object_declared_with_asset_or_without_asset(simulation_app) -> bool:
     from isaaclab_arena.assets.object import Object
     from isaaclab_arena.assets.object_type import ObjectType
 
@@ -69,9 +69,9 @@ def _test_object_declared_with_asset_definition_or_without_asset(simulation_app)
     return True
 
 
-def test_object_declared_with_asset_definition_or_without_asset():
+def test_object_declared_with_asset_or_without_asset():
     result = run_function_with_persistent_simulation_app(
-        _test_object_declared_with_asset_definition_or_without_asset, headless=HEADLESS
+        _test_object_declared_with_asset_or_without_asset, headless=HEADLESS
     )
     assert result, "Test failed"
 
