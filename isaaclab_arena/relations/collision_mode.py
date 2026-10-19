@@ -16,7 +16,7 @@ class CollisionMode(Enum):
     """Collision-detection method for no-overlap constraints."""
 
     BBOX = "bbox"
-    """Axis-aligned bounding box overlap volume (fast, conservative)."""
+    """Oriented bounding boxes with a projected-overlap penalty."""
 
     MESH = "mesh"
     """Sphere-to-SDF queries against actual mesh geometry (accurate, slower)."""

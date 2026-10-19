@@ -271,19 +271,19 @@ class ObjectPlacer:
     @staticmethod
     def _rank_candidates(batch: PlacementCandidateBatch, num_envs: int) -> list[PlacementCandidateBatch]:
         """Rank by failed checks and loss within each environment, retaining candidate identities."""
-        candidates_per_env = [[] for _ in range(num_envs)]
-        for candidate in batch.candidates:
+        indices_per_env = [[] for _ in range(num_envs)]
+        for index, candidate in enumerate(batch.candidates):
             assert candidate.validation is not None and candidate.loss is not None
-            candidates_per_env[candidate.env_id].append(candidate)
+            indices_per_env[candidate.env_id].append(index)
         ranked = []
-        for candidates in candidates_per_env:
-            candidates.sort(
-                key=lambda candidate: (
-                    *candidate.validation.get_number_of_required_and_optional_failures,
-                    candidate.loss,
+        for indices in indices_per_env:
+            indices.sort(
+                key=lambda index: (
+                    *batch.candidates[index].validation.get_number_of_required_and_optional_failures,
+                    batch.candidates[index].loss,
                 )
             )
-            ranked.append(PlacementCandidateBatch(candidates))
+            ranked.append(batch.select(indices))
         return ranked
 
     @staticmethod

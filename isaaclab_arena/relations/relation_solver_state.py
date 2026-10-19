@@ -9,11 +9,14 @@ import torch
 from typing import TYPE_CHECKING
 
 from isaaclab_arena.relations.relations import get_anchor_objects
-from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
+from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox, BoundingBox
 
 if TYPE_CHECKING:
+    from isaaclab_arena.relations.collision_mode import CollisionMode
     from isaaclab_arena.relations.collision_object import CollisionObject
+    from isaaclab_arena.relations.no_overlap_bbox import NoOverlapPairCache
     from isaaclab_arena.relations.placement_asset import PlaceableAsset
+    from isaaclab_arena.relations.warp_mesh_manager import WarpMeshAndSphereCache
 
 
 class RelationSolverState:
@@ -33,6 +36,7 @@ class RelationSolverState:
         device: torch.device | None = None,
         env_bboxes: dict[PlaceableAsset, AxisAlignedBoundingBox] | None = None,
         collision_objects: list[CollisionObject] | None = None,
+        collision_bboxes: dict[PlaceableAsset, BoundingBox] | None = None,
     ):
         """Initialize optimization state.
 
@@ -46,6 +50,8 @@ class RelationSolverState:
             collision_objects: Optional fixed background obstacles that participate in
                 no-overlap collision only (never in relation constraints). They keep a
                 constant world bounding box and are not optimized. Must be disjoint from objects.
+            collision_bboxes: Oriented bounds relative to each movable object origin;
+                omitted entries use the supplied env_bboxes or object bounds.
         """
         assert len(initial_positions) >= 1, "initial_positions must contain at least one dict."
         anchor_objects = get_anchor_objects(objects)
@@ -114,6 +120,89 @@ class RelationSolverState:
             obj: obj.get_world_bounding_box().to(self._device)
             for obj in (*self._anchor_objects, *self._collision_objects)
         }
+
+        self._enclosing_collision_bboxes = dict(self._fixed_obstacle_world_bboxes)
+        for obj in self._optimizable_objects:
+            self._enclosing_collision_bboxes[obj] = self.get_bbox(obj)
+        self._collision_bboxes: dict[PlaceableAsset | CollisionObject, BoundingBox] = dict(
+            self._fixed_obstacle_world_bboxes
+        )
+        for obj in self._optimizable_objects:
+            bounds = (
+                collision_bboxes[obj]
+                if collision_bboxes is not None and obj in collision_bboxes
+                else self._enclosing_collision_bboxes[obj]
+            )
+            self._collision_bboxes[obj] = bounds.to(self._device)
+        self._collision_boxes_axis_aligned = all(
+            isinstance(box, AxisAlignedBoundingBox) for box in self._collision_bboxes.values()
+        )
+        """Whether every collision box uses environment-aligned min/max bounds."""
+        self._collision_geometry = {}
+        """Fixed center offsets (B, 3), half-lengths (B, 3), and axes (B, 3, 3), with B = batch size."""
+        if not self.collision_boxes_axis_aligned:
+            for obj in self._collision_bboxes:
+                self.get_collision_geometry(obj)
+        self._no_overlap_pair_cache: NoOverlapPairCache | None = None
+        """Pair routing and fixed projections for the current collision configuration."""
+        self._no_overlap_pair_cache_key: tuple[WarpMeshAndSphereCache | None, CollisionMode, bool] | None = None
+
+    @property
+    def collision_boxes_axis_aligned(self) -> bool:
+        """Whether every collision box uses environment-aligned min/max bounds."""
+        return self._collision_boxes_axis_aligned
+
+    def get_no_overlap_pair_cache(
+        self,
+        mesh_manager: WarpMeshAndSphereCache | None,
+        default_collision_mode: CollisionMode,
+        skip_mesh_pairs: bool,
+    ) -> NoOverlapPairCache:
+        """Return pair routing and projections for this solve's fixed collision configuration.
+
+        Args:
+            mesh_manager: Collision mesh cache, or None.
+            default_collision_mode: Mode for objects without an explicit override.
+            skip_mesh_pairs: Exclude pairs represented by the mesh collision loss.
+
+        Returns:
+            Ordered pair groups and fixed face projections, independent of live positions.
+        """
+        from isaaclab_arena.relations.no_overlap_bbox import prepare_no_overlap_pair_cache
+
+        key = (mesh_manager, default_collision_mode, skip_mesh_pairs)
+        if key != self._no_overlap_pair_cache_key:
+            self._no_overlap_pair_cache = prepare_no_overlap_pair_cache(
+                self, mesh_manager, default_collision_mode, skip_mesh_pairs
+            )
+            self._no_overlap_pair_cache_key = key
+        return self._no_overlap_pair_cache
+
+    def get_collision_bbox(self, obj: PlaceableAsset | CollisionObject) -> BoundingBox:
+        """Return cached collision bounds, local for movable objects and world-frame for fixed objects."""
+        return self._collision_bboxes[obj]
+
+    def get_enclosing_collision_bbox(self, obj: PlaceableAsset | CollisionObject) -> AxisAlignedBoundingBox:
+        """Return cached enclosing bounds used by mesh fallbacks; fixed objects use world bounds."""
+        return self._enclosing_collision_bboxes[obj]
+
+    def get_collision_geometry(
+        self, obj: PlaceableAsset | CollisionObject
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Return cached center offsets (B, 3), half-lengths (B, 3), and axes (B, 3, 3)."""
+        if obj not in self._collision_geometry:
+            from isaaclab.utils.math import matrix_from_quat
+
+            box = self._collision_bboxes[obj]
+            if isinstance(box, AxisAlignedBoundingBox):
+                box = box.to_obb()
+            R_W_B = matrix_from_quat(box.rotation_W_B_xyzw)
+            self._collision_geometry[obj] = (
+                box.center_W.expand(self.batch_size, 3),
+                box.half_extents.expand(self.batch_size, 3),
+                R_W_B.expand(self.batch_size, 3, 3),
+            )
+        return self._collision_geometry[obj]
 
     @property
     def device(self) -> torch.device:
