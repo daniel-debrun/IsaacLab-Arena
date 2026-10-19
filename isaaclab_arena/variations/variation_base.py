@@ -125,8 +125,9 @@ class VariationBase(ABC):
         # TODO(cvolk, 2026.10.19): Make run-time values reproducible per episode, also across num_envs.
         # Today a run-time variation draws from this one generator in the order environments reset, so which episode
         # gets which value depends on num_envs and on when episodes end. Instead, derive each run-time draw from the
-        # build seed, the variation key and the episode's global start index, as counted by
-        # IsaacLabArenaManagerBasedEnv._started_episode_count. Episode k then gets the same values for any num_envs.
+        # seed, the variation key and the episode's global start index. In a reset event, that index is
+        # IsaacLabArenaManagerBasedEnv._started_episode_count before the reset plus the environment's position among
+        # the sorted env ids that start an episode. Episode k then gets the same values for any num_envs.
         self._generator = torch.Generator(device="cpu").manual_seed(variation_seed)
         self._sampler.set_generator(self._generator)
         self._prepare_at_build_time()
