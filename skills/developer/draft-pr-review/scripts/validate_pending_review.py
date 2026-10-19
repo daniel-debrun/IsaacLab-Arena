@@ -73,7 +73,7 @@ def parse_hunks_by_path(diff_text: str) -> dict[str, list[DiffHunk]]:
     old_path = new_path = None
     current_hunk: DiffHunk | None = None
     old_line = new_line = 0
-    for line in diff_text.splitlines():
+    for line in diff_text.split("\n"):
         if line.startswith("diff --git "):
             current_hunk = None
             old_path = new_path = None
