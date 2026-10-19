@@ -31,10 +31,7 @@ class SamplerBaseCfg:
 
 
 class SamplerBase(ABC):
-    """Base class shared by every sampler family.
-
-    Random draws use the generator from set_generator, or torch's global random state while none is set.
-    """
+    """Base class shared by every sampler family."""
 
     def __init__(self) -> None:
         self._listeners: list[Callable[[Any, torch.Tensor | None], None]] = []
@@ -42,7 +39,7 @@ class SamplerBase(ABC):
         self._generator: torch.Generator | None = None
 
     def set_generator(self, generator: torch.Generator | None) -> None:
-        """Set the generator this sampler's random draws come from."""
+        """Set the generator for random draws; ``None`` draws from torch's global random state."""
         self._generator = generator
 
     def set_replay_sampler(

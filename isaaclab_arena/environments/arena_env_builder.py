@@ -223,7 +223,6 @@ class ArenaEnvBuilder:
 
         These mutate asset configs in place (e.g. a dome light's spawner
         texture), so this must run before ``scene_cfg`` is materialised.
-        Each variation draws from a generator seeded by ``cfg.seed`` and its key "<asset_name>.<variation_name>".
         """
         for variation_key, variation in get_enabled_variations_by_key(self.get_all_variations()).items():
             variation.configure_at_build_time(seed=self.cfg.seed, variation_key=variation_key)

@@ -116,19 +116,17 @@ class VariationBase(ABC):
         """Seed this variation's draws and apply its build-time effect for one environment build.
 
         Args:
-            seed: Seed of the build, ``ArenaEnvBuilderCfg.seed``.
-            variation_key: Key of this variation in the build, ``<asset_name>.<variation_name>``.
+            seed: Environment seed.
+            variation_key: This variation's ``<asset_name>.<variation_name>`` key.
         """
-        # One seed per variation from the build seed and the variation key. Torch generator seeds are 64-bit, so keep
-        # the first 8 bytes of the digest.
+        # Torch generator seeds are 64-bit, so keep the first 8 bytes of the digest.
+        digest = hashlib.sha256(f"{seed}:{variation_key}".encode()).digest()
+        variation_seed = int.from_bytes(digest[:8], "big")
         # TODO(cvolk, 2026.10.19): Make run-time values reproducible per episode, also across num_envs.
         # Today a run-time variation draws from this one generator in the order environments reset, so which episode
         # gets which value depends on num_envs and on when episodes end. Instead, derive each run-time draw from the
-        # build seed, the variation key and a global episode index that counts started episodes across all
-        # environments (environments that reset in the same step are counted in env id order). Episode k then gets
-        # the same values for any num_envs.
-        digest = hashlib.sha256(f"{seed}:{variation_key}".encode()).digest()
-        variation_seed = int.from_bytes(digest[:8], "big")
+        # build seed, the variation key and the episode's global start index, as counted by
+        # IsaacLabArenaManagerBasedEnv._started_episode_count. Episode k then gets the same values for any num_envs.
         self._generator = torch.Generator(device="cpu").manual_seed(variation_seed)
         self._sampler.set_generator(self._generator)
         self._prepare_at_build_time()
@@ -157,7 +155,7 @@ class VariationBase(ABC):
 
 
 def get_enabled_variations_by_key(variations: dict[str, list[VariationBase]]) -> dict[str, VariationBase]:
-    """Return the enabled variations in ``variations`` keyed by "<asset_name>.<variation_name>"."""
+    """Return the enabled variations in ``variations`` keyed by ``<asset_name>.<variation_name>``."""
     enabled_variations_by_key: dict[str, VariationBase] = {}
     for asset_name, asset_variations in variations.items():
         for variation in asset_variations:
