@@ -121,6 +121,8 @@ class VariationBase(ABC):
         """
         # One seed per variation from the build seed and the variation key. Torch generator seeds are 64-bit, so keep
         # the first 8 bytes of the digest.
+        # TODO(cvolk, 2026.10.19): Reseed each run-time draw from the seed, the variation key and a global episode
+        # index in start order, so episode k gets the same values for any num_envs and reset order.
         digest = hashlib.sha256(f"{seed}:{variation_key}".encode()).digest()
         variation_seed = int.from_bytes(digest[:8], "big")
         self._generator = torch.Generator(device="cpu").manual_seed(variation_seed)
