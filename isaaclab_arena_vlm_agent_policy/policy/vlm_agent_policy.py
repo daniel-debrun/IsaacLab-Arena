@@ -8,20 +8,15 @@
 from __future__ import annotations
 
 import base64
-import importlib
 import io
 import json
 import numpy as np
-import os
 import torch
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
-from openai import OpenAI
 from PIL import Image
 
-from isaaclab_arena.assets.register import register_policy
-from isaaclab_arena.inference.backend import INTERNAL_ENDPOINT
+from isaaclab_arena.inference.backend import InferenceBackend, InferenceRequest
 from isaaclab_arena.policy.policy_base import PolicyBase, PolicyCfg
 from isaaclab_arena_vlm_agent_policy.embodiment_adapter.adapter import AgentActionAdapter, VLMObservationAdapter
 
@@ -46,47 +41,15 @@ def encode_image(image: np.ndarray, max_edge: int = 384) -> str:
     return "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
-def _adapter_type(class_path: str, base_type: type) -> type:
-    """Resolve a configured adapter class and check its interface."""
-    assert class_path and "." in class_path, f"Configure a dotted class path for {base_type.__name__}"
-    module_name, class_name = class_path.rsplit(".", 1)
-    adapter_type = getattr(importlib.import_module(module_name), class_name)
-    assert isinstance(adapter_type, type) and issubclass(
-        adapter_type, base_type
-    ), f"{class_path} must inherit {base_type.__name__}"
-    return adapter_type
-
-
 @dataclass
 class VLMAgentPolicyCfg(PolicyCfg):
-    """Configure hosted inference and the observation/action contracts."""
+    """Configure policy prompts, image encoding, and action-validation attempts."""
 
     system_prompt: str = ""
     """Required system message defining the task, units, and response contract."""
 
-    observation_adapter: str = ""
-    """Adapter class path, constructed with image_max_edge unless supplied at runtime."""
-
-    action_adapter: str = ""
-    """Adapter class path, constructed with action_adapter_kwargs unless supplied at runtime."""
-
-    action_adapter_kwargs: dict[str, Any] = field(default_factory=dict)
-    """Constructor arguments for the configured action adapter."""
-
-    model: str = INTERNAL_ENDPOINT.model
-    """Model served by the configured chat-completion endpoint."""
-
-    base_url: str = INTERNAL_ENDPOINT.base_url
-    """OpenAI-compatible endpoint supporting images and JSON-schema responses."""
-
-    api_key_env_var: str = INTERNAL_ENDPOINT.api_key_env_var
-    """Environment variable containing the endpoint credential."""
-
     image_max_edge: int = 384
     """Maximum image width or height sent to the endpoint."""
-
-    timeout_s: float = 180.0
-    """Timeout for an inference request."""
 
     max_attempts: int = 3
     """Maximum response-validation attempts per environment step."""
@@ -96,11 +59,9 @@ class VLMAgentPolicyCfg(PolicyCfg):
             isinstance(self.system_prompt, str) and self.system_prompt.strip()
         ), "Set policy.system_prompt in the experiment"
         assert isinstance(self.image_max_edge, int) and self.image_max_edge > 0
-        assert self.timeout_s > 0
         assert isinstance(self.max_attempts, int) and self.max_attempts >= 1
 
 
-@register_policy
 class VLMAgentPolicy(PolicyBase[VLMAgentPolicyCfg]):
     """Request one action per environment per step using stateless adapters.
 
@@ -108,29 +69,29 @@ class VLMAgentPolicy(PolicyBase[VLMAgentPolicyCfg]):
     The adapters define the command dimensions, units, and native action conversion.
     """
 
-    name = "vlm_agent"
-
     def __init__(
         self,
         config: VLMAgentPolicyCfg,
         *,
-        observation_adapter: VLMObservationAdapter | None = None,
-        action_adapter: AgentActionAdapter | None = None,
+        inference_backend: InferenceBackend,
+        observation_adapter: VLMObservationAdapter,
+        action_adapter: AgentActionAdapter,
     ):
+        """Create a policy with a shared inference backend and stateless adapters.
+
+        Args:
+            config: Prompt, image encoding, and action-validation settings.
+            inference_backend: Caller-owned backend shared with other inference steps.
+                The caller is responsible for closing its client.
+            observation_adapter: Adapter selecting camera images and preparing robot state.
+            action_adapter: Adapter validating responses and converting commands to native actions.
+        """
         super().__init__(config)
-        if observation_adapter is None:
-            observation_adapter = _adapter_type(config.observation_adapter, VLMObservationAdapter)(
-                image_max_edge=config.image_max_edge
-            )
-        if action_adapter is None:
-            action_adapter = _adapter_type(config.action_adapter, AgentActionAdapter)(**config.action_adapter_kwargs)
         assert isinstance(observation_adapter, VLMObservationAdapter)
         assert isinstance(action_adapter, AgentActionAdapter)
         self.observation_adapter = observation_adapter
         self.action_adapter = action_adapter
-        api_key = os.environ.get(config.api_key_env_var)
-        assert api_key, f"Set {config.api_key_env_var} for hosted inference"
-        self._client = OpenAI(base_url=config.base_url, api_key=api_key, timeout=config.timeout_s, max_retries=2)
+        self._inference_backend = inference_backend
         self.task_description = None
 
     @property
@@ -177,34 +138,21 @@ class VLMAgentPolicy(PolicyBase[VLMAgentPolicyCfg]):
             {"role": "user", "content": content},
         ]
         for attempt in range(self.config.max_attempts):
-            response = self._client.chat.completions.create(
-                model=self.config.model,
-                messages=messages,
-                max_completion_tokens=8192,
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "agent_actions",
-                        "strict": True,
-                        "schema": self.action_adapter.response_schema,
-                    },
-                },
+            payload = self._inference_backend.infer(
+                InferenceRequest(
+                    messages=messages,
+                    response_schema=self.action_adapter.response_schema,
+                    schema_name="agent_actions",
+                    retry_label="policy_action",
+                )
             )
-            choice = response.choices[0]
-            raw = choice.message.content
             try:
-                assert choice.finish_reason == "stop", f"Incomplete response: {choice.finish_reason}"
-                assert raw, f"No actions returned; refusal={choice.message.refusal}"
-                command = np.asarray(self.action_adapter.decode_command(json.loads(raw), state), dtype=np.float32)
+                command = np.asarray(self.action_adapter.decode_command(payload, state), dtype=np.float32)
                 assert command.ndim == 1 and command.size > 0, "Expected one command vector"
                 assert np.isfinite(command).all(), "Decoded command must be finite"
                 return command
             except (AssertionError, ValueError, KeyError, TypeError) as exc:
                 if attempt == self.config.max_attempts - 1:
                     raise
-                messages.append({"role": "assistant", "content": raw or ""})
+                messages.append({"role": "assistant", "content": json.dumps(payload)})
                 messages.append({"role": "user", "content": f"Invalid actions: {exc}. Return a corrected prediction."})
-
-    def close(self) -> None:
-        """Release the hosted inference client."""
-        self._client.close()
