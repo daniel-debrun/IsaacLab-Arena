@@ -357,86 +357,6 @@ Read each environment's state and completed-predicate events as follows:
 After an automatic reset, ``env.extras["progress_tracking"]`` still shows the finished episode
 until the next step.
 
-Recurring observations independent of success
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Override ``TaskBase.get_tracked_events()`` to observe named events throughout an
-episode. These observations do not change success, failure termination, or task progress scores.
-Each event is an ordered predicate sequence. It records an occurrence when the final predicate
-completes, then waits for that final condition to clear before resetting its history and counters.
-Events remain active during every subtask, including in sequential composite tasks.
-Tasks configuring tracked events must also define success criteria.
-
-.. code-block:: python
-
-   from isaaclab_arena.progress_tracking.tracked_event_cfg import TrackedEventCfg
-   from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
-
-   def get_tracked_events(self) -> list[TrackedEventCfg]:
-       return [
-           TrackedEventCfg(
-               name="failed_grasp",
-               predicate_sequence=[
-                   hand_open_near_object,
-                   TrueForConsecutiveStepsCfg(closed_without_grasp, required_steps=10),
-               ],
-           ),
-           TrackedEventCfg(
-               name="dropped_object",
-               predicate_sequence=[
-                   TrueForConsecutiveStepsCfg(lifted_and_grasped, required_steps=10),
-                   TrueForConsecutiveStepsCfg(not_grasped_and_resting_outside_bowl, required_steps=10),
-               ],
-           ),
-       ]
-
-Each callable above is a configured predicate returning a Boolean tensor of shape
-``(env.num_envs,)``. The required ``predicate_sequence`` field is a nonempty ordered list;
-use a one-element list for a single-condition event. Separate events advance independently.
-
-Predicates must complete in order, with at most one sequence advance per control step.
-Earlier predicates do not need to remain true when the final predicate completes. To require
-conditions simultaneously, combine them in one predicate, as in
-``not_grasped_and_resting_outside_bowl``. Initial rest does not count as a drop because the
-lift requirement must complete first. Events do not expose any-order sequences or desired-state lists.
-
-History and resets
-^^^^^^^^^^^^^^^^^^
-
-Use the existing ``TrueForConsecutiveStepsCfg`` to require an instantaneous predicate to stay true
-for consecutive control steps. Each requirement gets independent counters, even when the same configuration
-is reused across events or task success criteria. Its counter starts only after its turn in the sequence
-begins. A recorded event waits while its final predicate remains true, so sustained conditions produce
-one occurrence. Once that predicate is false for one observed step, only this event's progress and counters
-reset. Fresh tracking starts on the following step and must satisfy the entire sequence again.
-
-The final predicate continues updating while waiting, including its temporal counter. A false underlying
-condition breaks a consecutive-step requirement immediately. Other events, task-success progress, and
-previously recorded occurrences are unaffected by this event's reset.
-
-Event resets clear tracker-owned history. They do not reset underlying predicate callables or state
-stored in the environment. Supply instantaneous checks and express temporal holds through
-``TrueForConsecutiveStepsCfg``. Custom private history has no event reset lifecycle.
-
-Reading and recording occurrences
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-.. code-block:: python
-
-   progress = env.unwrapped.extras["progress_tracking"]
-   for event in progress["tracked_events"][env_id]:
-       print(event.name, event.step)
-
-The list contains all occurrences in the episode, not just the latest step. Direct consumers may
-also call ``env.unwrapped.progress_tracker.get_tracked_event_occurrences()`` without evaluating predicates.
-Event names from composite subtasks are prefixed with ``subtask_<index>/``. As with task progress, the extras snapshot
-retains the finished episode until the following step.
-
-The existing episode recorder adds ``progress.tracked_event_names``, ``progress.tracked_events``, and
-``progress.control_step_dt`` to JSONL results. Configured names include events with no occurrences.
-The HTML report shows per-event timelines and counts, with links that seek recorded video using
-the episode's control-step duration. Video should use simulation time for playback.
-
 .. _consecutive-step-episode-summary:
 
 Episode consecutive-step summary
@@ -550,3 +470,79 @@ Placement is still required. The two events record when settling and lifting com
 The recording schema uses the same criteria and sequence names as the runtime API. Older
 recordings that use ``objectives``, ``objective``, or ``group`` fields require conversion or
 regeneration before they can be read by the current report tools.
+
+
+Tracked events
+--------------
+
+Tracked events record when something of interest happens during an episode, such as a failed
+grasp or a dropped object. They do not affect task success, termination, or progress scores.
+
+Override ``TaskBase.get_tracked_events()`` to define events. Each event has a name and a nonempty,
+ordered list of predicates. It is recorded when the sequence completes. Use a one-element list
+for a single-condition event, or ``TrueForConsecutiveStepsCfg`` to require a condition to hold
+for consecutive control steps. The checks below are task-defined predicates:
+
+.. code-block:: python
+
+   from isaaclab_arena.progress_tracking.tracked_event_cfg import TrackedEventCfg
+   from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
+
+   def get_tracked_events(self) -> list[TrackedEventCfg]:
+       return [
+           # A single condition.
+           TrackedEventCfg(name="gripper_hit_table", predicate_sequence=[gripper_touching_table]),
+           # The hand opens near the object, then stays closed without a grasp for 10 steps.
+           TrackedEventCfg(
+               name="failed_grasp",
+               predicate_sequence=[
+                   hand_open_near_object,
+                   TrueForConsecutiveStepsCfg(closed_without_grasp, required_steps=10),
+               ],
+           ),
+           # The object is lifted and grasped, then released and comes to rest outside the bowl.
+           TrackedEventCfg(
+               name="dropped_object",
+               predicate_sequence=[
+                   TrueForConsecutiveStepsCfg(lifted_and_grasped, required_steps=10),
+                   TrueForConsecutiveStepsCfg(not_grasped_and_resting_outside_bowl, required_steps=10),
+               ],
+           ),
+       ]
+
+* Predicates complete in order. Earlier predicates do not need to stay true. Initial rest does
+  not count as a dropped object because the lift must happen first.
+* Each event is recorded once while its last predicate stays true. It can be recorded again
+  after that predicate has been false for a step and the whole sequence completes again.
+* To require several conditions at the same time, combine them in one predicate, as in
+  ``not_grasped_and_resting_outside_bowl``.
+* Separate events run independently, including throughout sequential composite tasks. Event names
+  from composite subtasks are prefixed with ``subtask_<index>/``.
+* A task with tracked events must also define success criteria.
+
+For example, ``gripper_hit_table`` records occurrences at steps 3 and 9:
+
+.. code-block:: text
+
+   step:                    1 2 3 4 5 6 7 8 9 10
+   gripper_touching_table:   F F T T T F F F T T
+   recorded:                - - x - - - - - x -
+
+Reading tracked events
+~~~~~~~~~~~~~~~~~~~~~~
+
+During a run, read the current episode's occurrences from ``extras``:
+
+.. code-block:: python
+
+   progress = env.unwrapped.extras["progress_tracking"]
+   for event in progress["tracked_events"][env_id]:
+       print(event.name, event.step)
+
+This list contains all occurrences in the episode. The episode recorder writes their names and
+steps to ``progress.tracked_events`` in each episode's JSONL record. ``progress.tracked_event_names``
+also includes configured events with no occurrences.
+
+The HTML report shows a timeline and count per event. Select an occurrence to seek the recorded
+camera videos when timing is available. Record videos using simulation time for playback to keep
+seeking aligned with event steps.
