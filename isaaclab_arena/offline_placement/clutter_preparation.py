@@ -15,7 +15,7 @@ from isaaclab_arena.offline_placement.clutter_geometry import (
     spawned_rigid_body_has_gravity,
     spawned_rigid_body_is_dynamic,
 )
-from isaaclab_arena.relations.relations import ClutterOn, get_relation
+from isaaclab_arena.relations.relations import ClutterOn, On, get_relation
 from isaaclab_arena.utils.bounding_box import quaternion_to_90_deg_z_quarters
 from isaaclab_arena.utils.pose import Pose
 
@@ -41,9 +41,18 @@ def prepare_clutter_settling(env: ManagerBasedEnv, assets: list[PlaceableAsset])
     assert not reachability_targets, f"Cannot validate reachability after clutter drops: {reachability_targets}"
 
     placement_assets = [asset for asset in assets if asset.get_relations()]
-    assert all(
-        asset.is_anchor or asset in clutter_assets for asset in placement_assets
-    ), "Offline settling requires non-clutter placement to be resolved to fixed anchors first"
+    for asset in placement_assets:
+        if asset.is_anchor or asset in clutter_assets:
+            continue
+        key = asset.get_scene_key()
+        assert key in env.scene.rigid_objects, f"Placed non-clutter asset {key!r} must have a writable rigid root"
+        assert spawned_geometry_is_fixed(env.scene, key), f"Placed non-clutter asset {key!r} must be kinematic"
+        for relation in asset.get_relations():
+            if isinstance(relation, On):
+                # A kinematic asset cannot follow a supporting clutter object when it falls.
+                assert (
+                    get_relation(relation.parent, ClutterOn) is None
+                ), f"Placed non-clutter asset {key!r} cannot be On falling clutter {relation.parent.get_scene_key()!r}"
     # Inspect original assets, before solver collision discovery aggregates their geometry.
     passive_assets = discover_passive_assets(assets)
     uncovered = [

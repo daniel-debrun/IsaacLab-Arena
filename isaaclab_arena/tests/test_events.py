@@ -7,6 +7,7 @@ import torch
 import tqdm
 import traceback
 
+import pytest
 import warp as wp
 
 from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
@@ -63,7 +64,7 @@ def _test_set_object_pose_per_env_event(simulation_app):
     args_cli = get_isaaclab_arena_cli_parser().parse_args([])
     args_cli.num_envs = NUM_ENVS
     env_builder = ArenaEnvBuilder(isaaclab_arena_environment, arena_env_builder_cfg_from_argparse(args_cli))
-    env_cfg, env_kwargs = env_builder.compose_manager_cfg()
+    env_cfg, env_kwargs = env_builder.build_env_cfg()
 
     # Replace the pose reset term:
     # - from: constant per env,
@@ -189,6 +190,104 @@ def _test_object_moves_with_initial_velocity(simulation_app):
         env.close()
 
     return True
+
+
+def _test_pose_writes_skip_kinematic_velocities(simulation_app, backend, path_expression):
+    """Partial pose resets retain articulation/dynamic velocity writes and skip kinematic instances."""
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from isaaclab.assets import BaseArticulation, BaseRigidObject, RigidObjectCfg
+    from isaaclab.managers import SceneEntityCfg
+    from pxr import Usd, UsdGeom, UsdPhysics
+
+    from isaaclab_arena.relations.placement_poses import write_scene_poses_to_sim
+    from isaaclab_arena.terms.events import set_object_pose
+    from isaaclab_arena.utils.pose import Pose
+    from isaaclab_arena.utils.velocity import Velocity
+
+    stage = Usd.Stage.CreateInMemory()
+    env_prim_paths = [f"/World/envs/env_{index}" for index in range(3)]
+    env_regex_ns = "/World/envs/env_[^/]+"
+    for env_id, env_path in enumerate(env_prim_paths):
+        for name in ("prop", "fixed"):
+            UsdGeom.Xform.Define(stage, f"{env_path}/{name}")
+            # Rigid properties belong to the nested body, not the configured asset Xform.
+            body_prim = UsdGeom.Xform.Define(stage, f"{env_path}/{name}/Body").GetPrim()
+            body = UsdPhysics.RigidBodyAPI.Apply(body_prim)
+            body.CreateRigidBodyEnabledAttr(True)
+            body.CreateKinematicEnabledAttr(name == "fixed" or env_id != 1)
+
+    assets = {}
+    for name in ("prop", "fixed"):
+        asset = MagicMock(spec=BaseRigidObject)
+        asset.cfg = RigidObjectCfg(prim_path=f"{path_expression}/{name}")
+        asset.__backend_name__ = backend
+        prim_paths = [f"{path}/{name}/Body" for path in env_prim_paths]
+        if backend == "physx":
+            asset.root_view = SimpleNamespace(prim_paths=prim_paths)
+        else:
+            # Model indices need not match the view's environment order.
+            asset.root_view = SimpleNamespace(
+                articulation_ids=wp.array([[2], [0], [1]], dtype=wp.int32, device="cpu"),
+                model=SimpleNamespace(articulation_label=[prim_paths[1], prim_paths[2], prim_paths[0]]),
+            )
+        assets[name] = asset
+    assets["robot"] = MagicMock(spec=BaseArticulation)
+    scene = MagicMock()
+    scene.stage = stage
+    scene.rigid_objects = {name: assets[name] for name in ("prop", "fixed")}
+    scene.env_regex_ns = env_regex_ns
+    scene.env_prim_paths = env_prim_paths
+    scene.env_origins = torch.tensor([[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [20.0, 0.0, 0.0]])
+    scene.__getitem__.side_effect = assets.__getitem__
+    env = SimpleNamespace(scene=scene, device="cpu")
+    env_ids = torch.tensor([2, 1])
+    pose = Pose(position_xyz=(0.2, 0.3, 0.4), rotation_xyzw=(0.0, 0.0, 0.0, 1.0))
+    pose_rows = pose.to_tensor(device="cpu").repeat(len(env_ids), 1)
+    expected_pose = pose_rows.clone()
+    expected_pose[:, :3] += scene.env_origins[env_ids]
+
+    for pose_writer in ("placement", "reset"):
+        for asset in assets.values():
+            asset.reset_mock()
+        if pose_writer == "placement":
+            write_scene_poses_to_sim(env, env_ids, {name: pose_rows for name in assets})
+        else:
+            for name in assets:
+                set_object_pose(env, env_ids, SceneEntityCfg(name), pose)
+
+        for asset in assets.values():
+            asset.write_root_pose_to_sim.assert_called_once()
+            pose_call = asset.write_root_pose_to_sim.call_args
+            torch.testing.assert_close(pose_call.args[0], expected_pose)
+            torch.testing.assert_close(pose_call.kwargs["env_ids"], env_ids)
+        assets["fixed"].write_root_velocity_to_sim.assert_not_called()
+        assets["prop"].write_root_velocity_to_sim.assert_called_once()
+        prop_call = assets["prop"].write_root_velocity_to_sim.call_args
+        torch.testing.assert_close(prop_call.kwargs["env_ids"], torch.tensor([1]))
+        torch.testing.assert_close(prop_call.args[0], torch.zeros(1, 6))
+        assets["robot"].write_root_velocity_to_sim.assert_called_once()
+        robot_call = assets["robot"].write_root_velocity_to_sim.call_args
+        torch.testing.assert_close(robot_call.kwargs["env_ids"], env_ids)
+        torch.testing.assert_close(robot_call.args[0], torch.zeros(2, 6))
+
+    # Explicit initial velocities still reach selected dynamic instances unchanged.
+    initial_velocity = Velocity(linear_xyz=(1.0, 2.0, 3.0))
+    assets["prop"].reset_mock()
+    set_object_pose(env, env_ids, SceneEntityCfg("prop"), pose, initial_velocity)
+    velocity_call = assets["prop"].write_root_velocity_to_sim.call_args
+    torch.testing.assert_close(velocity_call.kwargs["env_ids"], torch.tensor([1]))
+    torch.testing.assert_close(velocity_call.args[0], initial_velocity.to_tensor(device="cpu").unsqueeze(0))
+    return True
+
+
+@pytest.mark.parametrize("backend", ["physx", "newton"])
+@pytest.mark.parametrize("path_expression", ["/World/envs/env_[^/]+", "/World/envs/env_.*"])
+def test_pose_writes_skip_kinematic_velocities(backend, path_expression):
+    assert run_function_with_persistent_simulation_app(
+        _test_pose_writes_skip_kinematic_velocities, backend=backend, path_expression=path_expression
+    )
 
 
 def test_set_object_post_per_env_event():

@@ -457,7 +457,7 @@ def _test_builder_installs_success_only_for_success_criteria(simulation_app):
             name="progress_success_builder", scene=Scene(), task=task, embodiment=NoEmbodiment()
         )
         builder = ArenaEnvBuilder(description, ArenaEnvBuilderCfg(num_envs=2, solve_relations=False, device="cpu"))
-        env_cfg, _ = builder.compose_manager_cfg()
+        env_cfg, _ = builder.build_env_cfg()
         success_term = getattr(env_cfg.terminations, "success", None)
         configured_timeout_s = task.get_termination_cfg().timeout_s
         if isinstance(task, _ProgressTask):
@@ -558,7 +558,7 @@ def _test_builder_rejects_task_without_unified_termination_config(simulation_app
     builder = ArenaEnvBuilder(description, ArenaEnvBuilderCfg(solve_relations=False, device="cpu"))
     with patch.object(task, "get_termination_cfg", return_value=SimpleNamespace()):
         with pytest.raises(AssertionError, match="TaskTerminationCfg"):
-            builder.compose_manager_cfg()
+            builder.build_env_cfg()
     return True
 
 
@@ -615,7 +615,7 @@ def _test_pick_and_place_uses_typed_success_failure_and_timeout(simulation_app):
         patch.object(task, "get_viewer_cfg", return_value=ViewerCfg()),
         patch.object(task, "get_metrics", return_value=[]),
     ):
-        env_cfg, _ = builder.compose_manager_cfg()
+        env_cfg, _ = builder.build_env_cfg()
     assert env_cfg.terminations.success.func is task_success_from_progress
     criteria_sets = env_cfg.task_progress.success_criteria
     assert len(criteria_sets) == 1

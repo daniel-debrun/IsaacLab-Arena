@@ -48,7 +48,7 @@ def _build_env_cfg(
     env_cfg_override=None,
     default_physics_backend=None,
 ):
-    """Build a real env cfg through ArenaEnvBuilder.compose_manager_cfg with the given preset."""
+    """Build a real env cfg through ArenaEnvBuilder.build_env_cfg with the given preset."""
     from functools import partial
 
     from isaaclab_arena.assets.registries import AssetRegistry
@@ -92,7 +92,7 @@ def _build_env_cfg(
     )
 
     builder = ArenaEnvBuilder(arena_env, ArenaEnvBuilderCfg(num_envs=1, presets=presets))
-    env_cfg, _ = builder.compose_manager_cfg()
+    env_cfg, _ = builder.build_env_cfg()
     return env_cfg
 
 

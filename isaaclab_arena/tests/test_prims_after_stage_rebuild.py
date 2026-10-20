@@ -68,7 +68,7 @@ def _build_droid_env(disable_fabric: bool):
         cli_args.extend(["--disable_fabric", "--device", "cpu"])
     args_cli = get_isaaclab_arena_cli_parser().parse_args(cli_args)
     builder = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli))
-    env_cfg, env_kwargs = builder.compose_manager_cfg()
+    env_cfg, env_kwargs = builder.build_env_cfg()
     # Arena turns this off by default. Without it a reset can return while assets are still streaming,
     # so prims would still be settling into their poses when the transforms are read.
     env_cfg.wait_for_textures = True

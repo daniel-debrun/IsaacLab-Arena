@@ -36,6 +36,11 @@ class SamplerBase(ABC):
     def __init__(self) -> None:
         self._listeners: list[Callable[[Any, torch.Tensor | None], None]] = []
         self._replay_sampler: Callable[[int, torch.Tensor | None], list[Any] | None] | None = None
+        self._generator: torch.Generator | None = None
+
+    def set_generator(self, generator: torch.Generator | None) -> None:
+        """Set the generator for random draws; ``None`` draws from torch's global random state."""
+        self._generator = generator
 
     def set_replay_sampler(
         self,

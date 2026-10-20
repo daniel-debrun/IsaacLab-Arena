@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import warp as wp
-from isaaclab.assets import ArticulationCfg, RigidObjectCfg
+from isaaclab.assets import ArticulationCfg, BaseArticulation, BaseRigidObject, RigidObjectCfg
 from isaaclab.envs import ManagerBasedEnv
 from isaaclab.managers import EventTermCfg, ManagerTermBase, SceneEntityCfg
 from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
@@ -16,7 +16,7 @@ from isaaclab.utils import math as math_utils
 
 from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.utils.pose import Pose
-from isaaclab_arena.utils.usd.helpers import is_enabled_dynamic_rigid_body
+from isaaclab_arena.utils.usd.helpers import is_enabled_dynamic_rigid_body, is_rigid_body
 from isaaclab_arena.utils.usd.prim_tree import exclude_referenced_physics_roots, find_nested_physics_roots
 from isaaclab_arena.utils.velocity import Velocity
 
@@ -280,6 +280,43 @@ class ResetBackgroundPhysics(ManagerTermBase):
             reset.restore(env_ids, env.scene.env_origins)
 
 
+def write_root_velocity_to_sim(
+    env: ManagerBasedEnv,
+    asset: BaseRigidObject | BaseArticulation,
+    velocity: torch.Tensor,
+    env_ids: torch.Tensor,
+) -> None:
+    """Write root velocities for articulations and enabled dynamic rigid instances.
+
+    Args:
+        env: Environment owning the live scene and composed USD stage.
+        asset: Scene rigid object or articulation to update.
+        velocity: World-frame velocities with shape ``(len(env_ids), 6)``.
+        env_ids: Environment indices corresponding to the velocity rows.
+    """
+    if isinstance(asset, BaseRigidObject):
+        # Resolve the same instances and ordering as the velocity write, independent of config regex spelling.
+        view = asset.root_view
+        if asset.__backend_name__ == "physx":
+            view_paths = view.prim_paths
+            prim_paths = [view_paths[env_id] for env_id in env_ids.tolist()]
+        else:
+            assert asset.__backend_name__ == "newton", f"Unsupported rigid backend: {asset.__backend_name__}"
+            articulation_ids = wp.to_torch(view.articulation_ids).flatten()[env_ids].tolist()
+            prim_paths = [view.model.articulation_label[index] for index in articulation_ids]
+        dynamic_rows = []
+        for row, prim_path in enumerate(prim_paths):
+            rigid_prim = env.scene.stage.GetPrimAtPath(prim_path)
+            assert rigid_prim.IsValid() and is_rigid_body(rigid_prim), f"Missing rigid body at '{prim_path}'"
+            if is_enabled_dynamic_rigid_body(rigid_prim):
+                dynamic_rows.append(row)
+        if not dynamic_rows:
+            return
+        velocity = velocity[dynamic_rows]
+        env_ids = env_ids[dynamic_rows]
+    asset.write_root_velocity_to_sim(velocity, env_ids=env_ids)
+
+
 def set_object_pose(
     env: ManagerBasedEnv,
     env_ids: torch.Tensor,
@@ -299,9 +336,9 @@ def set_object_pose(
     asset.write_root_pose_to_sim(pose_t_xyz_q_xyzw, env_ids=env_ids)
     if velocity is not None:
         vel = velocity.to_tensor(device=env.device).unsqueeze(0).expand(num_envs, -1)
-        asset.write_root_velocity_to_sim(vel, env_ids=env_ids)
+        write_root_velocity_to_sim(env, asset, vel, env_ids)
     else:
-        asset.write_root_velocity_to_sim(torch.zeros(num_envs, 6, device=env.device), env_ids=env_ids)
+        write_root_velocity_to_sim(env, asset, torch.zeros(num_envs, 6, device=env.device), env_ids)
 
 
 def reset_cable_to_default(
@@ -369,8 +406,8 @@ def set_object_pose_per_env(
         pose_t_xyz_q_xyzw[0, :3] += env.scene.env_origins[cur_env, :]
         # Set the pose and velocity
         asset.write_root_pose_to_sim(pose_t_xyz_q_xyzw, env_ids=torch.tensor([cur_env], device=env.device))
-        asset.write_root_velocity_to_sim(
-            torch.zeros(1, 6, device=env.device), env_ids=torch.tensor([cur_env], device=env.device)
+        write_root_velocity_to_sim(
+            env, asset, torch.zeros(1, 6, device=env.device), torch.tensor([cur_env], device=env.device)
         )
 
 
@@ -381,7 +418,7 @@ def _write_scene_pose(env: ManagerBasedEnv, scene_name: str, pose: Pose, env_ids
     pose_t_xyz_q_xyzw = pose.to_tensor(device=env.device).repeat(num_envs, 1)
     pose_t_xyz_q_xyzw[:, :3] += env.scene.env_origins[env_ids]
     asset.write_root_pose_to_sim(pose_t_xyz_q_xyzw, env_ids=env_ids)
-    asset.write_root_velocity_to_sim(torch.zeros(num_envs, 6, device=env.device), env_ids=env_ids)
+    write_root_velocity_to_sim(env, asset, torch.zeros(num_envs, 6, device=env.device), env_ids)
 
 
 def reset_placement_asset_pose(

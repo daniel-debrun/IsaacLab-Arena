@@ -52,7 +52,7 @@ def _test_placement_uses_geometry_set_by_build_time_variation(simulation_app):
     )
     # resolve_on_reset=False stores the solved pose per environment on the object. Only the config is composed.
     builder_cfg = ArenaEnvBuilderCfg(num_envs=1, placement_seed=0, resolve_on_reset=False)
-    ArenaEnvBuilder(arena_env, builder_cfg).compose_manager_cfg()
+    ArenaEnvBuilder(arena_env, builder_cfg).build_env_cfg()
 
     sphere_z = sphere.get_initial_pose().poses[0].position_xyz[2]
     expected_z = TABLE_TOP_Z + ON_CLEARANCE_M + TEST_APPLIED_RADIUS

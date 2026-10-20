@@ -74,12 +74,12 @@ def apply_overrides(
 ) -> None:
     """Apply Hydra-style overrides to ``variations`` in-place.
 
-    Composes ``hydra_overrides`` into a typed ``VariationsCfg`` and pushes
+    Builds a typed ``VariationsCfg`` with ``hydra_overrides`` and applies
     each per-variation cfg through ``VariationBase.apply_cfg``.
 
     Args:
         variations: ``{asset_name: [variation, ...]}`` mapping whose cfgs
-            will be replaced by the composed values.
+            will be replaced by the values after applying overrides.
         hydra_overrides: Hydra override strings, dotted-path syntax
             mirroring the schema attribute paths. Example::
 
@@ -89,8 +89,7 @@ def apply_overrides(
                     "cracker_box.color.sampler.high=[1.0,1.0,0.0]",
                 ])
     """
-    # Compose all the config classes from all the variations, and apply the overrides.
-    all_variations_cfg = compose_variations_cfg_and_apply_overrides(variations, hydra_overrides)
+    all_variations_cfg = build_variations_cfg_with_overrides(variations, hydra_overrides)
     if all_variations_cfg is None:
         return
     # Loop over the variations' cfgs and apply the overrides.
@@ -101,23 +100,23 @@ def apply_overrides(
             variation.apply_cfg(variation_cfg)
 
 
-def compose_variations_cfg_and_apply_overrides(
+def build_variations_cfg_with_overrides(
     variations: dict[str, list[VariationBase]],
     hydra_overrides: list[str],
 ) -> Any | None:
-    """Compose the variation Hydra override strings into a typed ``VariationsCfg`` instance.
+    """Return typed variation configuration values after applying Hydra overrides.
 
-    Builds the schema and applies the passed overrides to it, returning the modified dataclass.
+    Builds the schema from copies of the current variation configs without updating the variations.
 
     Args:
         variations: ``{asset_name: [variation, ...]}`` the variations.
         hydra_overrides: Hydra override strings.
 
     Returns:
-        The composed ``VariationsCfg`` instance, including overridden values, or ``None`` when
+        The built ``VariationsCfg`` instance, including overridden values, or ``None`` when
         ``variations`` is empty.
     """
-    variations_cfg_cls = _compose_variation_cfgs(variations)
+    variations_cfg_cls = _build_variations_cfg_type(variations)
     if variations_cfg_cls is None:
         return None
     ConfigStore.instance().store(name="arena_variations_schema", node=variations_cfg_cls)
@@ -132,8 +131,8 @@ def compose_variations_cfg_and_apply_overrides(
     return variations_cfg
 
 
-def _compose_variation_cfgs(variations: dict[str, list[VariationBase]]) -> type | None:
-    """Return the dataclass describing variations configs, or ``None`` if the mapping is empty.
+def _build_variations_cfg_type(variations: dict[str, list[VariationBase]]) -> type | None:
+    """Build a nested variation configuration dataclass type, or return ``None`` for an empty mapping.
 
     The class has one field per asset; each asset field's type is a
     dataclass whose fields are the attached variations' cfgs. Each

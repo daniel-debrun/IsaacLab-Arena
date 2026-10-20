@@ -169,8 +169,14 @@ class ObjectPlacer:
             )
             for relation in obj.get_relations():
                 relation.validate_placement_configuration(obj, object_set)
+            clutter = get_relation(obj, ClutterOn)
+            if clutter is not None and not clutter.parent.is_anchor:
+                assert not self.params.random_yaw_init, (
+                    f"ClutterOn support '{clutter.parent.name}' requires a fixed quarter-turn rotation; "
+                    "disable random_yaw_init"
+                )
             marker = get_relation(obj, RotateAroundSolution)
-            if get_relation(obj, ClutterOn) is not None and marker is not None:
+            if clutter is not None and marker is not None:
                 # Mesh loss and validation use yaw only; tilted release bounds would disagree.
                 has_tilt = marker.roll_rad != 0.0 or marker.pitch_rad != 0.0
                 assert not (has_tilt and object_uses_mesh_collision(obj, self.params.solver_params.collision_mode)), (

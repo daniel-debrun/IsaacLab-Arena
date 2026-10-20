@@ -99,7 +99,7 @@ def test_recorder_records_build_time_sample_for_every_episode():
     record = recorder["asset.recorder_test"]
     assert record.sample_for_episode(0, 0) is None
 
-    variation.configure_at_build_time()
+    variation.configure_at_build_time(seed=0, variation_key="asset.recorder_test")
 
     value = record.sample_for_episode(0, 0)
     # Tensor samples are stored detached on CPU.
@@ -202,7 +202,7 @@ def test_recorder_rebinding_starts_fresh_runtime_records():
     variation.enable()
     recorder = VariationRecorder()
     recorder.attach({"asset": [variation]})
-    variation.configure_at_build_time()
+    variation.configure_at_build_time(seed=0, variation_key="asset.recorder_test")
     build_time_sample = recorder["asset.recorder_test"].sample_for_episode(0, 0).clone()
     recorder.attach_placement_sampler(variation.sampler, serializer=lambda sample: sample.tolist())
 
@@ -248,14 +248,14 @@ def _test_hdr_variation_recorder_captures_chosen_hdr_name(simulation_app):
     scene = Scene(assets=[dome_light])
 
     # Attach the recorder after the cfg is finalized but before the build, mirroring
-    # the order ArenaEnvBuilder.compose_manager_cfg uses.
+    # the order ArenaEnvBuilder.build_env_cfg uses.
     recorder = VariationRecorder()
     recorder.attach(scene.get_asset_variations())
 
     record = recorder["light.hdr_image"]
     assert record.sample_for_episode(0, 0) is None
 
-    variation.configure_at_build_time()
+    variation.configure_at_build_time(seed=0, variation_key="light.hdr_image")
 
     # The HDR draw is build-time (env_ids=None), so it applies to every env/episode.
     value = record.sample_for_episode(0, 0)

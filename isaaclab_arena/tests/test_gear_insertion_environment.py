@@ -21,6 +21,7 @@ CAMERA_NAMES = ("external_camera", "external_camera_2", "wrist_camera")
 def _gear_environment(*, position_randomization_m=None, enable_cameras=False):
     """Build the registered environment with its real assets and deterministic placement seed."""
     import argparse
+    import gymnasium as gym
 
     from isaaclab_arena.assets.registries import EnvironmentRegistry
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
@@ -41,10 +42,10 @@ def _gear_environment(*, position_randomization_m=None, enable_cameras=False):
     args.hdr = None
     arena = build_environment_from_cli(factory_type, args)
     builder = ArenaEnvBuilder(arena, ArenaEnvBuilderCfg(num_envs=2, seed=42, placement_seed=42))
-    cfg, kwargs = builder.compose_manager_cfg()
+    name, cfg, _ = builder.build_registered()
     # No dataset export; the environment still installs its progress-tracking recorder.
     cfg.recorders = {}
-    env = builder.make_registered(cfg, kwargs)
+    env = gym.make(name, cfg=cfg)
     try:
         yield env, arena, args.position_randomization_m
     finally:

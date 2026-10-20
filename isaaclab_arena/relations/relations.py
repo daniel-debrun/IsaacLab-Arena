@@ -14,7 +14,7 @@ from isaaclab.utils.math import euler_xyz_from_quat
 
 from isaaclab_arena.assets.register import agent_ready, register_object_relation
 from isaaclab_arena.assets.registries import ObjectRelationLibraryRegistry
-from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
+from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox, quaternion_to_90_deg_z_quarters
 from isaaclab_arena.utils.pose import PoseRange  # runtime: constructed in to_pose_range_centered_at()
 
 if TYPE_CHECKING:
@@ -233,9 +233,10 @@ class On(Relation):
 
 @register_object_relation
 class ClutterOn(On):
-    """An object above a fixed support, with its footprint inside the release region.
+    """An object above its support, with its footprint inside the release region.
 
     The object's bottom must clear the support surface; contact is not required.
+    The support may be an anchor or positioned jointly through its own relations.
     """
 
     name = "clutter_on"
@@ -255,7 +256,7 @@ class ClutterOn(On):
         """Declare a clutter release.
 
         Args:
-            parent: Fixed support carrying IsAnchor.
+            parent: Support fixed with IsAnchor or positioned through its own relations.
             spread: Fraction of support width and depth available for release, centered on the support.
                 For example, 0.2 restricts each axis to its central 20%; settled objects may use the full support.
             clearance_m: Release clearance above the support in metres.
@@ -295,13 +296,28 @@ class ClutterOn(On):
         return bottom >= minimum_bottom
 
     def validate_placement_configuration(self, subject: PlaceableAsset, objects: set[PlaceableAsset]) -> None:
-        """Require a fixed support and preserve validated release poses."""
-        assert self.parent in objects and self.parent.is_anchor, "ClutterOn requires an IsAnchor support"
+        """Require a participating support and preserve validated release poses."""
+        assert self.parent in objects, "ClutterOn support must participate in placement"
+        assert get_relation(self.parent, ClutterOn) is None, "Nested ClutterOn supports are unsupported"
         assert not subject.is_anchor, "ClutterOn cannot be an anchor"
         assert subject.get_spatial_relations() == [self], "ClutterOn must be the object's only spatial relation"
         assert not any(
             isinstance(r, RandomAroundSolution) for r in subject.get_relations()
         ), "ClutterOn cannot randomize a release after collision validation"
+
+        support = self.parent
+        if not support.is_anchor:
+            assert get_relation(support, FaceTo) is None, f"ClutterOn support '{support.name}' cannot use FaceTo"
+            assert (
+                get_relation(support, RandomAroundSolution) is None
+            ), f"ClutterOn support '{support.name}' cannot randomize after placement validation"
+            rotation = get_relation(support, RotateAroundSolution)
+            if rotation is not None:
+                # Release regions require axis-aligned support bounds.
+                try:
+                    quaternion_to_90_deg_z_quarters(rotation.get_rotation_xyzw())
+                except AssertionError as error:
+                    raise AssertionError(f"ClutterOn support '{support.name}': {error}") from error
 
 
 @agent_ready
