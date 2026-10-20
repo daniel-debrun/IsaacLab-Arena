@@ -190,3 +190,116 @@ def _test_object_friction_in_physics(_simulation_app):
 
 def test_object_friction_in_physics():
     assert run_function_with_persistent_simulation_app(_test_object_friction_in_physics)
+
+
+def _test_object_friction_preserves_usd_materials(_simulation_app, asset_dir, instanceable):
+    from isaaclab.sim.spawners.materials.physics_materials_cfg import UsdPhysicsRigidBodyMaterialCfg
+    from isaaclab.sim.utils import create_new_stage
+    from pxr import PhysxSchema, Usd, UsdGeom, UsdPhysics, UsdShade
+
+    from isaaclab_arena.assets.object import Object
+    from isaaclab_arena.assets.object_type import ObjectType
+    from isaaclab_arena.tests.utils.prim_physics_configs import MassCfg
+    from isaaclab_arena.variations.object_friction_variation import ObjectFrictionVariationCfg
+    from isaaclab_arena.variations.uniform_sampler import UniformSamplerCfg
+
+    geometry_path = str(asset_dir / "geometry.usda")
+    geometry = Usd.Stage.CreateNew(geometry_path)
+    geometry.SetDefaultPrim(UsdGeom.Xform.Define(geometry, "/Geometry").GetPrim())
+    for index in range(2):
+        group = UsdGeom.Xform.Define(geometry, f"/Geometry/part_{index}").GetPrim()
+        collider = UsdGeom.Cube.Define(geometry, f"/Geometry/part_{index}/collider").GetPrim()
+        UsdPhysics.CollisionAPI.Apply(collider)
+        material = UsdShade.Material.Define(geometry, f"/Geometry/material_{index}")
+        physics = UsdPhysics.MaterialAPI.Apply(material.GetPrim())
+        physics.CreateStaticFrictionAttr(0.3)
+        physics.CreateDynamicFrictionAttr(0.2)
+        physics.CreateDensityAttr(500.0 + index * 400.0)
+        physics.CreateRestitutionAttr(0.4 + index * 0.2)
+        physx = PhysxSchema.PhysxMaterialAPI.Apply(material.GetPrim())
+        physx.CreateCompliantContactStiffnessAttr(100.0 + index * 100.0)
+        physx.CreateCompliantContactDampingAttr(10.0 + index * 10.0)
+        physx.CreateFrictionCombineModeAttr("multiply")
+        physx.CreateRestitutionCombineModeAttr("min")
+        # Exercise both inherited and direct material bindings.
+        UsdShade.MaterialBindingAPI.Apply(group if index == 0 else collider).Bind(material, materialPurpose="physics")
+    geometry.GetRootLayer().Save()
+
+    asset_path = str(asset_dir / "object.usda")
+    source = Usd.Stage.CreateNew(asset_path)
+    root = UsdGeom.Xform.Define(source, "/Asset").GetPrim()
+    source.SetDefaultPrim(root)
+    UsdPhysics.RigidBodyAPI.Apply(root)
+    geometry_ref = UsdGeom.Xform.Define(source, "/Asset/Geometry").GetPrim()
+    geometry_ref.GetReferences().AddReference(geometry_path)
+    geometry_ref.SetInstanceable(instanceable)
+    source.GetRootLayer().Save()
+
+    obj = Object(
+        name="object",
+        usd_path=asset_path,
+        object_type=ObjectType.BASE,
+        spawn_cfg_addon={"prim_physics": {".": MassCfg(mass=0.25)}},
+    )
+    original_spawn = obj.object_cfg.spawn
+    variation = obj.get_variation("friction")
+    for friction in (0.6, 0.9):
+        variation.apply_cfg(
+            ObjectFrictionVariationCfg(enabled=True, sampler_cfg=UniformSamplerCfg(low=[friction], high=[friction]))
+        )
+        variation.configure_at_build_time(seed=42, variation_key="object.friction")
+    assert obj.object_cfg.spawn.make_uninstanceable
+    assert not original_spawn.make_uninstanceable
+    stage = create_new_stage()
+    for env_index in range(2):
+        UsdGeom.Xform.Define(stage, f"/World/env_{env_index}")
+    spawn = obj.object_cfg.spawn
+    spawn.func("/World/env_.*/Object", spawn)
+    original_spawn.func("/World/Unvaried", original_spawn)
+    for object_path, expected_friction in (
+        ("/World/env_0/Object", 0.9),
+        ("/World/env_1/Object", 0.9),
+        ("/World/Unvaried", 0.3),
+    ):
+        assert UsdPhysics.MassAPI(stage.GetPrimAtPath(object_path)).GetMassAttr().Get() == pytest.approx(0.25)
+        for index in range(2):
+            collider = stage.GetPrimAtPath(f"{object_path}/Geometry/part_{index}/collider")
+            if expected_friction == 0.9:
+                assert not collider.IsInstanceProxy()
+            material, _ = UsdShade.MaterialBindingAPI(collider).ComputeBoundMaterial("physics")
+            assert str(material.GetPath()).startswith(object_path + "/")
+            physics = UsdPhysics.MaterialAPI(material.GetPrim())
+            assert physics.GetStaticFrictionAttr().Get() == pytest.approx(expected_friction)
+            assert physics.GetDynamicFrictionAttr().Get() == pytest.approx(0.9 if expected_friction == 0.9 else 0.2)
+            assert physics.GetDensityAttr().Get() == pytest.approx(500.0 + index * 400.0)
+            assert physics.GetRestitutionAttr().Get() == pytest.approx(0.4 + index * 0.2)
+            physx = PhysxSchema.PhysxMaterialAPI(material.GetPrim())
+            assert physx.GetCompliantContactStiffnessAttr().Get() == pytest.approx(100.0 + index * 100.0)
+            assert physx.GetCompliantContactDampingAttr().Get() == pytest.approx(10.0 + index * 10.0)
+            assert physx.GetFrictionCombineModeAttr().Get() == "multiply"
+            assert physx.GetRestitutionCombineModeAttr().Get() == "min"
+    for index in range(2):
+        material = geometry.GetPrimAtPath(f"/Geometry/material_{index}")
+        assert UsdPhysics.MaterialAPI(material).GetStaticFrictionAttr().Get() == pytest.approx(0.3)
+
+    # Switching to an explicit spawn material must not retain the previous friction override.
+    obj.object_cfg.spawn.physics_material = UsdPhysicsRigidBodyMaterialCfg(density=600.0, restitution=0.1)
+    variation.set_replay_sampler(lambda count, env_ids: [[1.1]])
+    variation.configure_at_build_time(seed=42, variation_key="object.friction")
+    spawn = obj.object_cfg.spawn
+    spawn.func("/World/Configured", spawn)
+    collider = stage.GetPrimAtPath("/World/Configured/Geometry/part_0/collider")
+    material, _ = UsdShade.MaterialBindingAPI(collider).ComputeBoundMaterial("physics")
+    physics = UsdPhysics.MaterialAPI(material.GetPrim())
+    assert physics.GetStaticFrictionAttr().Get() == pytest.approx(1.1)
+    assert physics.GetDensityAttr().Get() == pytest.approx(600.0)
+    assert physics.GetRestitutionAttr().Get() == pytest.approx(0.1)
+    assert UsdPhysics.MassAPI(stage.GetPrimAtPath("/World/Configured")).GetMassAttr().Get() == pytest.approx(0.25)
+    return True
+
+
+@pytest.mark.parametrize("instanceable", [False, True])
+def test_object_friction_preserves_usd_materials(tmp_path, instanceable):
+    assert run_function_with_persistent_simulation_app(
+        _test_object_friction_preserves_usd_materials, asset_dir=tmp_path, instanceable=instanceable
+    )
