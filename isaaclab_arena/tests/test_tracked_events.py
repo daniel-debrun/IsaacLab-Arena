@@ -545,12 +545,12 @@ def _test_builder_and_composition(_app):
         embodiment=NoEmbodiment(),
     )
     builder = ArenaEnvBuilder(description, ArenaEnvBuilderCfg(solve_relations=False, device="cpu"))
-    cfg, _ = builder.compose_manager_cfg()
+    cfg, _ = builder.build_env_cfg()
     assert cfg.terminations.to_dict() == {}
     assert cfg.task_progress is None
     description.task = ObservingTask()
     with pytest.raises(AssertionError, match="Tracked events require task success criteria"):
-        builder.compose_manager_cfg()
+        builder.build_env_cfg()
 
     class ObservingTaskWithSuccess(ObservingTask):
         def get_termination_cfg(self):
@@ -558,7 +558,7 @@ def _test_builder_and_composition(_app):
 
     task = ObservingTaskWithSuccess()
     description.task = task
-    cfg, _ = builder.compose_manager_cfg()
+    cfg, _ = builder.build_env_cfg()
     assert cfg.task_progress.success_criteria[0].name == "success"
     assert cfg.task_progress.tracked_events[0].name == "observed"
     composite = CompositeTaskBase([task, task], episode_length_s=10, subtasks_are_sequential=True)
