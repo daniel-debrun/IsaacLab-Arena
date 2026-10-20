@@ -238,7 +238,9 @@ The environment's Python code declares the candidates as ``(name, spawn configur
    )
 
 Like every variation, the selection starts disabled, so this object spawns the cracker box until
-the experiment enables the selection. This run enables it and takes each candidate once:
+the experiment enables the selection. An Object declared without an asset, such as
+``Object(name="pickup")``, fails to build until its selection is enabled. This run enables the
+selection and takes each candidate once:
 
 .. code-block:: yaml
 
@@ -250,14 +252,15 @@ the experiment enables the selection. This run enables it and takes each candida
          pickup.asset_selection.asset_names: [cracker_box, sugar_box, mustard_bottle]
 
 The command-line overrides for the same two entries are ``pickup.asset_selection.enabled=true``
-and ``pickup.asset_selection.asset_names=[cracker_box,sugar_box,mustard_bottle]``.
-``Object(name="pickup")`` without an asset needs the selection enabled.
+and ``"pickup.asset_selection.asset_names=[cracker_box,sugar_box,mustard_bottle]"``.
 
 ``asset_names`` lists the candidate names to choose from, in order. Empty means all candidates in
-declaration order, and one name pins that candidate. By default, a build takes name number
-``seed mod n`` of the ``n`` names, counting from zero, where ``seed`` is ``--seed``. The
-Experiment Runner adds the rebuild index to the seed, so ``n`` rebuilds take each name once. With
-``random_choice: true``, each build draws a name at random, and a name can repeat across rebuilds.
+declaration order, and one name pins that candidate. By default, a build takes the name at
+zero-based index ``seed mod n`` of the ``n`` names, where ``seed`` is ``--seed``. The Experiment
+Runner adds the rebuild index to the seed, so ``n`` rebuilds take each name once. This uses the
+seed alone, so in-order selections on two objects with the same number of names change together.
+Use ``random_choice: true`` to vary them independently. With it, each build draws a name at
+random, and a name can repeat across rebuilds.
 
 With the default seed 42, the three rebuilds spawn ``cracker_box``, ``sugar_box`` and
 ``mustard_bottle``. Every episode row records the name, for example
@@ -267,6 +270,6 @@ With the default seed 42, the three rebuilds spawn ``cracker_box``, ``sugar_box`
 Add the selection to a plain ``Object``, not to a library object such as ``Mug``, whose
 methods were written for its declared asset.
 
-The task description does not name the selected asset: ``PickAndPlaceTask`` builds it from the
-object's name when the task is built. For a language-conditioned policy, pin one name per run
-with ``asset_names`` and set ``environment_builder.language_instruction``.
+The task description does not name the selected asset: ``PickAndPlaceTask`` builds its default
+description from the Object's name when the task is built. For a language-conditioned policy, pin
+one name per run with ``asset_names`` and set ``environment_builder.language_instruction``.
