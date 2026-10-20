@@ -12,7 +12,7 @@ from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_wi
 
 def _test_gripper_material_build_and_spawn(_simulation_app, backend):
     from isaaclab.sim.utils import create_new_stage
-    from pxr import PhysxSchema, Usd, UsdGeom, UsdPhysics, UsdShade
+    from pxr import Usd, UsdGeom, UsdPhysics, UsdShade
 
     from isaaclab_arena.embodiments.droid.droid import (
         _DROID_GRIPPER_PAD_COLLIDER_PATHS,
@@ -37,12 +37,11 @@ def _test_gripper_material_build_and_spawn(_simulation_app, backend):
         f"{robot.name}.gripper_material.material_names=[high_friction]",
         f"{robot.name}.gripper_material.presets.high_friction.static_friction=1.4",
         f"{robot.name}.gripper_material.presets.high_friction.dynamic_friction=0.83",
-        f"{robot.name}.gripper_material.friction_combine_mode=multiply",
     ]
     cfg, kwargs = ArenaEnvBuilder(arena_env, builder_cfg, hydra_overrides=overrides).compose_manager_cfg()
     record = kwargs["variation_recorder"][f"{robot.name}.gripper_material"]
     assert record.sample_for_episode(0, 0) == record.sample_for_episode(1, 10) == "high_friction"
-    assert record.cfg.presets["high_friction"].static_friction == 1.4
+    assert record.cfg.presets["high_friction"]["static_friction"] == 1.4
     spawn = cfg.scene.robot.spawn
     assert set(spawn.prim_physics) == set(_DROID_GRIPPER_PAD_COLLIDER_PATHS)
 
@@ -59,7 +58,6 @@ def _test_gripper_material_build_and_spawn(_simulation_app, backend):
             assert physics.GetStaticFrictionAttr().Get() == pytest.approx(1.4)
             assert physics.GetDynamicFrictionAttr().Get() == pytest.approx(0.83)
             assert physics.GetRestitutionAttr().Get() == pytest.approx(0.0)
-            assert PhysxSchema.PhysxMaterialAPI(material.GetPrim()).GetFrictionCombineModeAttr().Get() == "multiply"
 
     # No other collider acquires the pad material, and no source USD is edited.
     source = Usd.Stage.Open(spawn.usd_path)
@@ -99,7 +97,6 @@ def test_gripper_material_build_and_spawn(backend):
 
 
 def _test_gripper_material_replay_and_validation(_simulation_app):
-    from isaaclab_arena.assets.contact_material import ContactMaterialCfg
     from isaaclab_arena.embodiments.droid.droid import (
         _DROID_GRIPPER_PAD_COLLIDER_PATHS,
         DroidAbsoluteJointPositionEmbodiment,
@@ -121,8 +118,8 @@ def _test_gripper_material_replay_and_validation(_simulation_app):
         GripperMaterialVariationCfg(
             enabled=True,
             presets={
-                "pad_a": ContactMaterialCfg(static_friction=0.4, dynamic_friction=0.3),
-                "pad_b": ContactMaterialCfg(static_friction=0.9, dynamic_friction=0.8),
+                "pad_a": dict(static_friction=0.4, dynamic_friction=0.3),
+                "pad_b": dict(static_friction=0.9, dynamic_friction=0.8),
             },
         )
     )
@@ -138,18 +135,19 @@ def _test_gripper_material_replay_and_validation(_simulation_app):
             assert spawn.prim_physics[path].material.static_friction == expected
     assert other_robot.spawn_cfg_addon == {}
     assert "pad_a" not in other_robot.get_variation("gripper_material").cfg.presets
-    assert variation.cfg.presets["pad_a"].static_friction == 0.4
+    assert variation.cfg.presets["pad_a"]["static_friction"] == 0.4
     variation.set_replay_sampler(None)
 
     invalid_configs = [
         GripperMaterialVariationCfg(presets={}),
         GripperMaterialVariationCfg(material_names=["unknown"]),
         GripperMaterialVariationCfg(material_names=["low_friction", "low_friction"]),
-        GripperMaterialVariationCfg(friction_combine_mode="invalid"),
-        GripperMaterialVariationCfg(presets={"invalid": ContactMaterialCfg(static_friction=float("nan"))}),
-        GripperMaterialVariationCfg(presets={"invalid": ContactMaterialCfg(dynamic_friction=-0.1)}),
-        GripperMaterialVariationCfg(presets={"invalid": ContactMaterialCfg(dynamic_friction=1.0)}),
-        GripperMaterialVariationCfg(presets={"invalid": ContactMaterialCfg(restitution=1.1)}),
+        GripperMaterialVariationCfg(presets={"invalid": dict(static_friction=float("nan"), dynamic_friction=0.1)}),
+        GripperMaterialVariationCfg(presets={"invalid": dict(static_friction=0.5, dynamic_friction=-0.1)}),
+        GripperMaterialVariationCfg(presets={"invalid": dict(static_friction=0.5, dynamic_friction=1.0)}),
+        GripperMaterialVariationCfg(
+            presets={"invalid": dict(static_friction=0.5, dynamic_friction=0.1, restitution=1.1)}
+        ),
     ]
     for cfg in invalid_configs:
         variation.apply_cfg(cfg)
@@ -179,18 +177,28 @@ def _test_gripper_material_in_physics(_simulation_app):
 
     import warp as wp
 
+    from isaaclab_arena.assets.object_library import Sphere
     from isaaclab_arena.embodiments.droid.droid import DroidAbsoluteJointPositionEmbodiment
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
     from isaaclab_arena.scene.scene import Scene
+    from isaaclab_arena.utils.pose import Pose
     from isaaclab_arena.variations.gripper_material_variation import GripperMaterialVariationCfg
+    from isaaclab_arena.variations.object_friction_variation import ObjectFrictionVariationCfg
+    from isaaclab_arena.variations.uniform_sampler import UniformSamplerCfg
 
     robot = DroidAbsoluteJointPositionEmbodiment()
     robot.get_variation("gripper_material").apply_cfg(
         GripperMaterialVariationCfg(enabled=True, material_names=["high_friction"])
     )
-    arena_env = IsaacLabArenaEnvironment(name="gripper_material_physics_test", scene=Scene(assets=[]), embodiment=robot)
+    sphere = Sphere(initial_pose=Pose(position_xyz=(2.0, 0.0, 1.0)))
+    sphere.get_variation("friction").apply_cfg(
+        ObjectFrictionVariationCfg(enabled=True, sampler_cfg=UniformSamplerCfg(low=[0.65], high=[0.65]))
+    )
+    arena_env = IsaacLabArenaEnvironment(
+        name="gripper_material_physics_test", scene=Scene(assets=[sphere]), embodiment=robot
+    )
     env = ArenaEnvBuilder(
         arena_env, ArenaEnvBuilderCfg(num_envs=2, solve_relations=False, presets="physx")
     ).make_registered()
@@ -204,11 +212,19 @@ def _test_gripper_material_in_physics(_simulation_app):
         assert torch.all((~pad_materials).any(dim=1))
         torch.testing.assert_close(materials[0], materials[1])
         assert torch.allclose(materials[..., 1][pad_materials], torch.ones_like(materials[..., 1][pad_materials]))
+        object_materials = wp.to_torch(base_env.scene["sphere"].root_view.get_material_properties()).clone()
+        torch.testing.assert_close(object_materials[..., :2], torch.full_like(object_materials[..., :2], 0.65))
         actions = torch.zeros((2, base_env.action_manager.total_action_dim), device=base_env.device)
         for _ in range(3):
             env.step(actions)
         env.reset()
         torch.testing.assert_close(wp.to_torch(base_env.scene["robot"].root_view.get_material_properties()), materials)
+        torch.testing.assert_close(
+            wp.to_torch(base_env.scene["sphere"].root_view.get_material_properties()), object_materials
+        )
+        assert base_env.variation_recorder["sphere.friction"].sample_for_episode(1, base_env.get_episode_index(1))[
+            0
+        ] == pytest.approx(0.65)
         record = base_env.variation_recorder[f"{robot.name}.gripper_material"]
         assert record.sample_for_episode(1, base_env.get_episode_index(1)) == "high_friction"
     finally:
@@ -221,10 +237,11 @@ def test_gripper_material_in_physics():
 
 
 def _test_contact_material_preserves_properties(_simulation_app, inherited_binding):
+    from isaaclab.sim.spawners.materials.physics_materials_cfg import UsdPhysicsRigidBodyMaterialCfg
     from pxr import PhysxSchema, Usd, UsdGeom, UsdPhysics, UsdShade
 
-    from isaaclab_arena.assets.contact_material import ColliderContactMaterialCfg, ContactMaterialCfg
     from isaaclab_arena.assets.physics_spawner import apply_prim_physics
+    from isaaclab_arena.variations.gripper_material_variation import _GripperPadMaterialCfg
 
     stage = Usd.Stage.CreateInMemory()
     root = UsdGeom.Xform.Define(stage, "/Robot").GetPrim()
@@ -236,6 +253,7 @@ def _test_contact_material_preserves_properties(_simulation_app, inherited_bindi
     physx = PhysxSchema.PhysxMaterialAPI.Apply(original.GetPrim())
     physx.CreateCompliantContactStiffnessAttr(250.0)
     physx.CreateRestitutionCombineModeAttr("min")
+    physx.CreateFrictionCombineModeAttr("multiply")
     for name in ("pad", "other"):
         collider = UsdGeom.Cube.Define(stage, f"/Robot/{name}").GetPrim()
         UsdPhysics.CollisionAPI.Apply(collider)
@@ -247,7 +265,11 @@ def _test_contact_material_preserves_properties(_simulation_app, inherited_bindi
 
     apply_prim_physics(
         root,
-        {"pad": ColliderContactMaterialCfg(material=ContactMaterialCfg(static_friction=0.4, dynamic_friction=0.3))},
+        {
+            "pad": _GripperPadMaterialCfg(
+                material=UsdPhysicsRigidBodyMaterialCfg(static_friction=0.4, dynamic_friction=0.3)
+            )
+        },
     )
     pad = stage.GetPrimAtPath("/Robot/pad")
     selected, _ = UsdShade.MaterialBindingAPI(pad).ComputeBoundMaterial("physics")
@@ -257,6 +279,7 @@ def _test_contact_material_preserves_properties(_simulation_app, inherited_bindi
     selected_physx = PhysxSchema.PhysxMaterialAPI(selected.GetPrim())
     assert selected_physx.GetCompliantContactStiffnessAttr().Get() == pytest.approx(250.0)
     assert selected_physx.GetRestitutionCombineModeAttr().Get() == "min"
+    assert selected_physx.GetFrictionCombineModeAttr().Get() == "multiply"
     assert physics.GetStaticFrictionAttr().Get() == pytest.approx(0.9)
     other, _ = UsdShade.MaterialBindingAPI(stage.GetPrimAtPath("/Robot/other")).ComputeBoundMaterial("physics")
     assert other.GetPath() == original.GetPath()
@@ -280,8 +303,8 @@ def test_contact_material_preserves_properties(inherited_binding):
 def _test_contact_material_rejects_shadowed_bindings(_simulation_app):
     from pxr import Usd, UsdGeom, UsdPhysics, UsdShade
 
-    from isaaclab_arena.assets.contact_material import ColliderContactMaterialCfg
     from isaaclab_arena.assets.physics_spawner import apply_prim_physics
+    from isaaclab_arena.variations.gripper_material_variation import _GripperPadMaterialCfg
 
     for collection_binding in (False, True):
         stage = Usd.Stage.CreateInMemory()
@@ -301,7 +324,7 @@ def _test_contact_material_rejects_shadowed_bindings(_simulation_app):
                 material, bindingStrength=UsdShade.Tokens.strongerThanDescendants, materialPurpose="physics"
             )
         with pytest.raises(AssertionError, match="binding"):
-            apply_prim_physics(root, {"valid": ColliderContactMaterialCfg(), "blocked": ColliderContactMaterialCfg()})
+            apply_prim_physics(root, {"valid": _GripperPadMaterialCfg(), "blocked": _GripperPadMaterialCfg()})
         # Validation must fail before even the first material is authored.
         for name in ("valid", "blocked"):
             assert not stage.GetPrimAtPath(f"/Robot/{name}/ArenaContactMaterial")
