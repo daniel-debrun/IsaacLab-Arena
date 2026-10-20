@@ -249,8 +249,8 @@ def _test_asset_selection_rejects_invalid_configuration(simulation_app, case_id)
         "multi_spawner_candidate": (
             lambda: AssetSelectionVariation(Object(name="pickup"), [("several", multi_asset_spawn_cfg)]),
             (
-                "AssetSelectionVariation 'asset_selection' candidate 0: 'several' is a MultiAssetSpawnerCfg; pass one"
-                " spawn configuration"
+                "AssetSelectionVariation 'asset_selection' candidate 0: 'several' has a MultiAssetSpawnerCfg; pass a"
+                " SpawnerCfg for one asset"
             ),
         ),
         "unknown_name_in_override": (override_with_unknown_name, "unknown asset_names"),

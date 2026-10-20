@@ -76,7 +76,9 @@ class AssetSelectionVariation(BuildTimeVariationBase):
         # Filled before super().__init__(), whose apply_cfg call checks asset_names against these names.
         self._spawn_cfgs_by_name: dict[str, SpawnerCfg] = {}
         for candidate_index, candidate in enumerate(asset_candidates):
-            assert_named_spawn_cfg(candidate, owner=f"AssetSelectionVariation '{name}' candidate {candidate_index}")
+            assert_named_spawn_cfg(
+                candidate, argument_label=f"AssetSelectionVariation '{name}' candidate {candidate_index}"
+            )
             candidate_name, spawn_cfg = candidate
             assert candidate_name not in self._spawn_cfgs_by_name, f"Duplicate candidate name '{candidate_name}'."
             self._spawn_cfgs_by_name[candidate_name] = deepcopy(spawn_cfg)
