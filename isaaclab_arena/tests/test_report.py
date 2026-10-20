@@ -62,15 +62,16 @@ def test_unique_slugs_deduplicates_names_with_the_same_safe_form():
     assert slugs == {"my run": "my_run", "my+run": "my_run_2"}
 
 
-def test_recurring_group_report_preserves_occurrences_and_escapes_names(tmp_path):
+def test_tracked_event_report_preserves_occurrences_and_escapes_names(tmp_path):
     _write_run(tmp_path, "observations", num_episodes=1)
     results = tmp_path / "observations" / "episode_results_rebuild0.jsonl"
     record = json.loads(results.read_text().strip())
     record.update(
         episode_length=100,
         progress={
-            "tracked_event_names": ["drop<script>", "never_seen"],
+            "tracked_event_names": ["drop<script>", "first_step", "never_seen"],
             "tracked_events": [
+                {"name": "first_step", "step": 1},
                 {"name": "drop<script>", "step": 20},
                 {"name": "drop<script>", "step": 80},
             ],
@@ -86,8 +87,10 @@ def test_recurring_group_report_preserves_occurrences_and_escapes_names(tmp_path
     assert "drop&lt;script&gt; (2)" in text
     assert "never_seen (0)" in text
     assert "drop<script>" not in text
-    assert 'data-seek-time="0.4"' in text
-    assert 'data-seek-time="1.6"' in text
+    assert 'data-seek-time="0"' in text
+    assert 'data-seek-time="0.38"' in text
+    assert 'data-seek-time="1.58"' in text
+    assert "step 1 (0.020 s)" in text
     assert "step 20 (0.400 s)" in text
     assert "step 80 (1.600 s)" in text
 

@@ -7,8 +7,7 @@
 
 from dataclasses import dataclass
 
-from isaaclab_arena.progress_tracking.completion_criteria import CompletionCriteria
-from isaaclab_arena.progress_tracking.progress_tracking_utils import Predicate
+from isaaclab_arena.progress_tracking.progress_tracking_utils import Predicate, _is_predicate
 
 
 @dataclass
@@ -27,10 +26,15 @@ class TrackedEventCfg:
 
     def __post_init__(self):
         assert isinstance(self.name, str) and self.name.strip(), "Tracked events require a nonempty name."
-        criteria = CompletionCriteria(name=self.name, predicate_sequence=self.predicate_sequence)
-        for sequence in criteria.canonical_predicate_sequences.values():
-            assert not any(
-                isinstance(predicate, type) for predicate, _ in sequence
+        assert (
+            isinstance(self.predicate_sequence, list) and self.predicate_sequence
+        ), "predicate_sequence must be a nonempty list."
+        for predicate in self.predicate_sequence:
+            assert _is_predicate(
+                predicate
+            ), "Each entry must be a predicate; (predicate, score) pairs are not supported."
+            assert not isinstance(
+                predicate, type
             ), "Configure predicate classes with TerminationTermCfg(func=MyPredicate)."
 
 

@@ -192,9 +192,9 @@ class CompletionCriteriaRunner:
         """
 
         criteria_complete = self.is_complete()
-        # Completed predicates may keep updating only in enabled environments.
-        final_condition_active_envs = active_envs if check_final_conditions else torch.zeros_like(active_envs)
-        final_condition_check_mask = criteria_complete & final_condition_active_envs
+        final_condition_check_mask = (
+            criteria_complete if check_final_conditions else torch.zeros_like(criteria_complete)
+        )
         active_envs = active_envs & ~criteria_complete
         if not bool((active_envs | final_condition_check_mask).any().item()):
             return []
@@ -203,8 +203,8 @@ class CompletionCriteriaRunner:
         for sequence_name, predicate_chain in self.predicate_chains.items():
             sequence_final_condition_check_mask = final_condition_check_mask
             if check_final_conditions:
-                sequence_final_condition_check_mask = sequence_final_condition_check_mask | (
-                    self.sequence_complete[sequence_name] & final_condition_active_envs
+                sequence_final_condition_check_mask = (
+                    sequence_final_condition_check_mask | self.sequence_complete[sequence_name]
                 )
             events += self._step_sequence(
                 env,
@@ -551,8 +551,6 @@ class ProgressTracker:
         self,
         env,
         step_index: torch.Tensor | None = None,
-        *,
-        event_active_envs: torch.Tensor | None = None,
     ) -> None:
         """Advance predicate sequences and update task success for one control step.
 
@@ -565,19 +563,8 @@ class ProgressTracker:
         Args:
             env: Environment supplying predicate inputs.
             step_index: Episode control step for each environment.
-            event_active_envs: Boolean mask of environments whose tracked events
-                may advance, or None to advance all events. Does not affect success tracking
-                or step-index validation.
         """
 
-        if event_active_envs is None:
-            event_active_envs = torch.ones(self.num_envs, dtype=torch.bool, device=self.device)
-        else:
-            assert event_active_envs.shape == (
-                self.num_envs,
-            ), "event_active_envs must contain one entry per environment."
-            assert event_active_envs.dtype == torch.bool, "event_active_envs must be a Boolean mask."
-            event_active_envs = event_active_envs.to(device=self.device)
         assert (
             step_index is not None or not self._requires_step_index
         ), "TrueForConsecutiveStepsCfg requires a per-environment step_index."
@@ -614,7 +601,7 @@ class ProgressTracker:
             if self.subtasks_are_sequential:
                 active_envs = active_envs & subtask_was_complete
         self._task_success = self._compute_task_success(env, predicate_results_this_step)
-        self._step_tracked_events(env, step_index, event_active_envs, predicate_results_this_step)
+        self._step_tracked_events(env, step_index, predicate_results_this_step)
         if step_index is not None:
             # The environment increments episode_length_buf in place; keep our own snapshot.
             self._last_processed_step.copy_(step_index)
@@ -623,15 +610,15 @@ class ProgressTracker:
         self,
         env,
         step_index: torch.Tensor | None,
-        active_envs: torch.Tensor,
         predicate_results_this_step: dict[int, tuple[torch.Tensor, torch.Tensor]],
     ) -> None:
         """Record completed event sequences and reset them after their final condition clears."""
+        all_envs = torch.ones(self.num_envs, dtype=torch.bool, device=self.device)
         for runner in self._tracked_event_runners:
             was_complete = runner.is_complete()
-            runner.step(env, step_index, active_envs, predicate_results_this_step, check_final_conditions=True)
+            runner.step(env, step_index, all_envs, predicate_results_this_step, check_final_conditions=True)
             is_complete = runner.is_complete()
-            newly_complete = is_complete & ~was_complete & active_envs
+            newly_complete = is_complete & ~was_complete
             for env_idx in newly_complete.nonzero(as_tuple=False).flatten().tolist():
                 self._tracked_event_occurrences[env_idx].append(
                     TrackedEventOccurrence(env_idx, runner.completion_criteria.name, int(step_index[env_idx].item()))
@@ -639,7 +626,7 @@ class ProgressTracker:
             # Keep evaluating completed sequences so a persistent condition records only
             # once. Reset this runner alone; the full sequence starts on the next step.
             final_condition = runner.final_conditions_met(env, predicate_results_this_step)
-            cleared_env_ids = (is_complete & ~final_condition & active_envs).nonzero(as_tuple=False).flatten()
+            cleared_env_ids = (is_complete & ~final_condition).nonzero(as_tuple=False).flatten()
             if cleared_env_ids.numel() > 0:
                 runner.reset(cleared_env_ids)
 

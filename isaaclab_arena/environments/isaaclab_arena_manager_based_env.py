@@ -150,9 +150,7 @@ class IsaacLabArenaManagerBasedRLEnv(ManagerBasedRLEnv):
     def update_task_progress(self) -> None:
         """Advance configured task progress at most once per control step."""
         if self._progress_tracker is not None and self._task_progress_step != self.common_step_counter:
-            self._progress_tracker.step(
-                self, step_index=self.episode_length_buf, event_active_envs=self.active_episode_mask
-            )
+            self._progress_tracker.step(self, step_index=self.episode_length_buf)
             self._task_progress_step = self.common_step_counter
 
     def get_language_instruction(self) -> str | None:

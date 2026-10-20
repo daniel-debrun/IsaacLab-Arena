@@ -97,14 +97,14 @@ class EpisodeSummary:
 
     @property
     def tracked_event_occurrences(self) -> dict[str, list[int]]:
-        """Read recurring observations, retaining configured groups with zero occurrences."""
+        """Read recurring observations, including configured events with zero occurrences."""
         progress = _progress(self.record)
-        groups = {}
+        occurrences_by_event = {}
         names = progress.get("tracked_event_names", [])
         if isinstance(names, list):
             for name in names:
                 if isinstance(name, str):
-                    groups.setdefault(name, [])
+                    occurrences_by_event.setdefault(name, [])
         events = progress.get("tracked_events", [])
         if isinstance(events, list):
             for event in events:
@@ -113,8 +113,8 @@ class EpisodeSummary:
                 name = event.get("name")
                 step = _as_int(event.get("step"))
                 if isinstance(name, str) and step is not None and step >= 0:
-                    groups.setdefault(name, []).append(step)
-        return groups
+                    occurrences_by_event.setdefault(name, []).append(step)
+        return occurrences_by_event
 
     @property
     def control_step_dt(self) -> float | None:

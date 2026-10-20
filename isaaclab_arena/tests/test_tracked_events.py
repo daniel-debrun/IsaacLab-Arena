@@ -90,10 +90,8 @@ def _test_recurring_events_and_success(_app):
     return True
 
 
-def _test_event_activity_does_not_change_success(_app):
+def _test_events_preserve_subtask_success(_app):
     import torch
-
-    import pytest
 
     from isaaclab_arena.progress_tracking.completion_criteria import CompletionCriteria
     from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
@@ -128,19 +126,15 @@ def _test_event_activity_does_not_change_success(_app):
         env.conditions[:, 0] = step not in (3, 6)
         env.conditions[:, 2] = step not in (3, 7)
         env.episode_length_buf += 1
-        tracking_active = torch.tensor([step < 2, step < 6])
-        tracker.step(env, env.episode_length_buf, event_active_envs=tracking_active)
+        tracker.step(env, env.episode_length_buf)
         baseline.step(env, env.episode_length_buf)
         assert tracker.get_state() == baseline.get_state()
         assert tracker.get_events() == baseline.get_events()
         assert torch.equal(tracker.get_subtask_completion(), baseline.get_subtask_completion())
-        # Success continues to advance and recheck final conditions even when observations pause.
+        # Event completion and resets do not alter subtask history or current final-state checks.
         assert tracker.is_complete().tolist() == [step in (5, 8)] * 2
-    assert _events(tracker, 0) == []
+    assert _events(tracker, 0) == [("observed", 2), ("observed", 5)]
     assert _events(tracker, 1) == [("observed", 2), ("observed", 5)]
-    # Pausing observations must not bypass the existing control-step validation.
-    with pytest.raises(AssertionError, match="exactly one"):
-        tracker.step(env, env.episode_length_buf, event_active_envs=torch.zeros(2, dtype=torch.bool))
     return True
 
 
@@ -326,11 +320,9 @@ def _test_callable_events(_app):
     return True
 
 
-def _test_single_tracker_and_shared_cache(_app):
-    from unittest.mock import patch
-
-    from isaaclab_arena.progress_tracking import progress_tracker
+def _test_events_share_predicate_cache(_app):
     from isaaclab_arena.progress_tracking.completion_criteria import CompletionCriteria
+    from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
     from isaaclab_arena.progress_tracking.tracked_event_cfg import TrackedEventCfg
     from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
 
@@ -343,24 +335,16 @@ def _test_single_tracker_and_shared_cache(_app):
 
     env = _env([[True], [True]])
     held = TrueForConsecutiveStepsCfg(condition, 2)
-    with (
-        patch.object(progress_tracker, "ProgressTracker", wraps=progress_tracker.ProgressTracker) as constructor,
-        patch.object(
-            progress_tracker, "CompletionCriteriaRunner", wraps=progress_tracker.CompletionCriteriaRunner
-        ) as criteria_constructor,
-    ):
-        tracker = progress_tracker.ProgressTracker(
-            [CompletionCriteria("success", [held])],
-            2,
-            "cpu",
-            tracked_events=[
-                TrackedEventCfg("instant", predicate_sequence=[condition]),
-                TrackedEventCfg("held", predicate_sequence=[held]),
-                TrackedEventCfg("ordered", predicate_sequence=[held, held]),
-            ],
-        )
-        assert constructor.call_count == 1, "Events must not construct nested ProgressTrackers."
-        assert criteria_constructor.call_count == 4, "Use one success runner and one runner per event, not per member."
+    tracker = ProgressTracker(
+        [CompletionCriteria("success", [held])],
+        2,
+        "cpu",
+        tracked_events=[
+            TrackedEventCfg("instant", predicate_sequence=[condition]),
+            TrackedEventCfg("held", predicate_sequence=[held]),
+            TrackedEventCfg("ordered", predicate_sequence=[held, held]),
+        ],
+    )
     for step, value in enumerate([True] * 5 + [False, True, True], start=1):
         env.conditions[0, 0] = value
         _step(tracker, env)
@@ -402,44 +386,7 @@ def _test_rearm_requires_fresh_temporal_sequence(_app):
     return True
 
 
-def _test_paused_completed_events(_app):
-    import torch
-
-    from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
-    from isaaclab_arena.progress_tracking.tracked_event_cfg import TrackedEventCfg
-    from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
-
-    env = _env([[True], [True]])
-    tracker = ProgressTracker(
-        _success_criteria(),
-        2,
-        "cpu",
-        tracked_events=[TrackedEventCfg("held", predicate_sequence=[TrueForConsecutiveStepsCfg(_condition, 2)])],
-    )
-    _step(tracker, env)
-    _step(tracker, env)
-    # A completed inactive episode must not observe a clearing condition or lose its streak.
-    env.conditions[0, 0] = False
-    env.episode_length_buf += 1
-    tracker.step(env, env.episode_length_buf, event_active_envs=torch.tensor([False, True]))
-    env.conditions[0, 0] = True
-    _step(tracker, env)
-    _step(tracker, env)
-    _step(tracker, env)
-    assert _events(tracker, 0) == [("held", 2)]
-    assert _events(tracker, 1) == [("held", 2)]
-    # A clearing step observed while active permits a fresh occurrence.
-    env.conditions[0, 0] = False
-    _step(tracker, env)
-    env.conditions[0, 0] = True
-    _step(tracker, env)
-    _step(tracker, env)
-    assert _events(tracker, 0) == [("held", 2), ("held", 9)]
-    assert _events(tracker, 1) == [("held", 2)]
-    return True
-
-
-def _test_finished_episode_events(_app, output_dir):
+def _test_finished_episode_records_preserve_events(_app, output_dir):
     import json
     import torch
 
@@ -494,30 +441,25 @@ def _test_finished_episode_events(_app, output_dir):
         base.episode_recorder_manager.set_output_path(results_path)
         env.reset()
         actions = torch.zeros(env.action_space.shape, device=base.device)
-        finished_events = None
+        first_record = None
         for step in range(1, 8):
             env.step(actions)
+            records = [json.loads(line) for line in results_path.read_text().splitlines()]
             if step == 2:
                 assert base.active_episode_mask.tolist() == [False, True]
-                finished_events = base.progress_tracker.get_tracked_event_occurrences()[0]
+                assert len(records) == 1
+                first_record = records[0]
             if step >= 2:
-                assert base.progress_tracker.get_tracked_event_occurrences()[0] == finished_events
-                assert base.extras["progress_tracking"]["tracked_events"][0] == finished_events
+                assert records[0] == first_record, "Later steps must not alter a finished episode's saved result."
         assert not base.active_episode_mask.any()
-        assert _events(base.progress_tracker, 0) == [("instant", 1), ("held", 2)]
-        assert _events(base.progress_tracker, 1) == [
-            ("instant", 1),
-            ("held", 2),
-            ("cleared", 3),
-            ("ordered", 4),
-        ]
-        records = [json.loads(line) for line in results_path.read_text().splitlines()]
         assert len(records) == 2
+        expected_events = {
+            0: [("instant", 1), ("held", 2)],
+            1: [("instant", 1), ("held", 2), ("cleared", 3), ("ordered", 4)],
+        }
         for record in records:
             events = record["progress"]["tracked_events"]
-            assert [(event["name"], event["step"]) for event in events] == _events(
-                base.progress_tracker, record["env_id"]
-            )
+            assert [(event["name"], event["step"]) for event in events] == expected_events[record["env_id"]]
     finally:
         env.close()
     return True
@@ -554,14 +496,13 @@ def _test_recording_and_validation(_app):
         (_condition,),
         {"invalid": _condition},
         [True],
+        [(_condition, 1.0)],
     ):
         with pytest.raises(AssertionError):
             TrackedEventCfg("invalid", predicate_sequence=invalid)
     for name in ("", "  ", None):
         with pytest.raises(AssertionError, match="nonempty name"):
             TrackedEventCfg(name, predicate_sequence=[_condition])
-    with pytest.raises(TypeError, match="desired_predicate_state"):
-        TrackedEventCfg("invalid", predicate_sequence=[_condition], desired_predicate_state=[False])
     _step(tracker, env)
     with pytest.raises(AssertionError, match="exactly one"):
         tracker.step(env, env.episode_length_buf)
@@ -633,8 +574,8 @@ def test_recurring_events_and_success():
     assert run_function_with_persistent_simulation_app(_test_recurring_events_and_success)
 
 
-def test_event_activity_does_not_change_success():
-    assert run_function_with_persistent_simulation_app(_test_event_activity_does_not_change_success)
+def test_events_preserve_subtask_success():
+    assert run_function_with_persistent_simulation_app(_test_events_preserve_subtask_success)
 
 
 def test_order_and_fresh_history():
@@ -649,16 +590,18 @@ def test_callable_events():
     assert run_function_with_persistent_simulation_app(_test_callable_events)
 
 
-def test_single_tracker_and_shared_cache():
-    assert run_function_with_persistent_simulation_app(_test_single_tracker_and_shared_cache)
+def test_events_share_predicate_cache():
+    assert run_function_with_persistent_simulation_app(_test_events_share_predicate_cache)
 
 
 def test_rearm_requires_fresh_temporal_sequence():
     assert run_function_with_persistent_simulation_app(_test_rearm_requires_fresh_temporal_sequence)
 
 
-def test_finished_episode_events(tmp_path):
-    assert run_function_with_persistent_simulation_app(_test_finished_episode_events, output_dir=tmp_path)
+def test_finished_episode_records_preserve_events(tmp_path):
+    assert run_function_with_persistent_simulation_app(
+        _test_finished_episode_records_preserve_events, output_dir=tmp_path
+    )
 
 
 def test_recording_and_validation():
@@ -671,7 +614,3 @@ def test_builder_and_composition():
 
 def test_demo_failure_sequences():
     assert run_function_with_persistent_simulation_app(_test_demo_failure_sequences)
-
-
-def test_paused_completed_events():
-    assert run_function_with_persistent_simulation_app(_test_paused_completed_events)
