@@ -11,7 +11,7 @@ Deformable objects and cables are only supported for a single backend.
 Backend selection precedence
 ----------------------------
 
-When ``ArenaEnvBuilder`` composes the Isaac Lab configuration in ``compose_manager_cfg``, the selected backend is determined as follows:
+When ``ArenaEnvBuilder`` builds the Isaac Lab configuration in ``build_env_cfg``, the selected backend is determined as follows:
 
 1. **CLI** — ``--presets`` / ``ArenaEnvBuilderCfg.presets`` takes precedence when set.
 2. **Environment default** — ``IsaacLabArenaEnvironment.default_physics_backend`` (defaults to PhysX) is used when no CLI ``--presets`` is provided.
@@ -82,7 +82,7 @@ Scene replication (``replicate_physics``)
 ``ArenaEnvBuilder`` seeds its internal ``InteractiveSceneCfg`` with ``replicate_physics=False``.
 That default favors per-environment physics when scenes differ across clones.
 
-When the **resolved** backend is Newton, ``compose_manager_cfg`` sets ``replicate_physics = True``
+When the **resolved** backend is Newton, ``build_env_cfg`` sets ``replicate_physics = True``
 before ``env_cfg_callback`` runs. ``replicate_physics = False`` is not supported for Newton by
 Isaac Lab and could lead to errors when running with ``num_envs > 1``.
 
@@ -91,7 +91,7 @@ Isaac Lab and could lead to errors when running with ``num_envs > 1``.
 Embodiment backend hooks
 ------------------------
 
-Immediately after resolution, ``compose_manager_cfg`` calls ``embodiment.configure_physics_backend(resolved)`` **before** scene and action configs are combined. That entry point:
+Immediately after resolution, ``build_env_cfg`` calls ``embodiment.configure_physics_backend(resolved)`` **before** scene and action configs are combined. That entry point:
 
 - Runs at most once per embodiment instance (reconfiguration raises an assertion).
 - Delegates to ``EmbodimentBase._configure_physics_backend``, which subclasses override for backend-specific spawn, actuators, actions, and observations.
@@ -103,7 +103,7 @@ PhysX builds keep the default DROID spawn and gripper wiring.
 
 Author new backend-specific robot behavior by overriding ``_configure_physics_backend`` on your embodiment class.
 
-Next step in ``compose_manager_cfg`` (embodiment hooks, then merge):
+Next step in ``build_env_cfg`` (embodiment hooks, then merge):
 
 .. code-block:: python
 
@@ -125,7 +125,7 @@ Asset validation
 Rigid and articulation assets do not inspect ``sim.physics`` by default.
 Backend-sensitive scene assets validate when the environment is registered.
 
-``build_registered()`` finishes ``compose_manager_cfg`` (including ``env_cfg_callback``), validates the scene against ``env_cfg.sim``, registers with Gym, then ``parse_env_cfg`` applies only ``sim.device``, ``scene.num_envs``, and ``sim.use_fabric``.
+``build_registered()`` finishes ``build_env_cfg`` (including ``env_cfg_callback``), validates the scene against ``env_cfg.sim``, registers with Gym, then ``parse_env_cfg`` applies only ``sim.device``, ``scene.num_envs``, and ``sim.use_fabric``.
 
 **Deformables** — each ``DeformableObject`` infers its preset from ``spawner_cfg.deformable_props``:
 
@@ -140,11 +140,11 @@ Library deformables must therefore use the property type that matches the enviro
 
 Rigid bodies and articulations are not checked automatically; pairing them with the wrong backend is still an authoring error, but only deformables and cables get an explicit Arena guard today.
 
-``build_registered`` (after ``compose_manager_cfg`` returns):
+``build_registered`` (after ``build_env_cfg`` returns):
 
 .. code-block:: python
 
-   env_cfg, env_kwargs = self.compose_manager_cfg()
+   env_cfg, env_kwargs = self.build_env_cfg()
    self.arena_env.scene.validate_simulation_cfg(env_cfg.sim)
 
 Per-asset checks, such as ``DeformableObject.validate_simulation_cfg``, verify the asset is compatible with the selected backend.

@@ -55,7 +55,7 @@ to each manager are tabulated below:
 +-------------+-----------------------+-------------------------+----------------------+
 
 
-``ArenaEnvBuilder.compose_manager_cfg()`` first assembles the partial manager contributions
+``ArenaEnvBuilder.build_env_cfg()`` first assembles the partial manager contributions
 from each component into a set of complete managers. Then it merges these complete managers
 into a single ``ManagerBasedRLEnvCfg``.
 

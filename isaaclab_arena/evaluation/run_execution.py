@@ -151,7 +151,7 @@ def _cfg_for_rebuild(cfg: ArenaRunCfg, rebuild_index: int) -> ArenaRunCfg:
 def _build_environment_from_cfg(
     cfg: ArenaRunCfg,
     render_mode: str | None,
-    output_dir: str | Path = "",
+    output_dir: str | Path,
     rebuild_index: int = 0,
 ) -> gym.Env:
     """Compile and instantiate a run's environment.
@@ -162,13 +162,10 @@ def _build_environment_from_cfg(
         output_dir: Directory the run's recorded dataset is exported to.
         rebuild_index: Index of the rebuild this environment serves.
     """
-    # Stamp runtime-derived recorder output options onto a copy of the run's builder cfg so composition in
-    # ArenaEnvBuilder.compose_manager_cfg sees them without mutating the caller's run config.
+    # Copy runtime-derived recorder output options into the builder cfg so
+    # ArenaEnvBuilder.build_env_cfg sees them without mutating the caller's run config.
     run_cfg = deepcopy(cfg)
-    trajectory_recording_enabled = run_cfg.environment_builder.record_trajectories
-    run_cfg.environment_builder.recorder_dataset_export_dir_path = (
-        str(output_dir) if trajectory_recording_enabled else None
-    )
+    run_cfg.environment_builder.recorder_dataset_export_dir_path = str(output_dir)
     run_cfg.environment_builder.recorder_dataset_filename = f"dataset_{cfg.name}_rebuild{rebuild_index}"
     arena_builder = build_arena_builder_from_run_cfg(run_cfg)
     return arena_builder.make_registered(render_mode=render_mode)

@@ -93,7 +93,7 @@ def _test_disabled_light_direction_variation_not_applied(simulation_app):
     light = arena_env.scene.assets[TEST_LIGHT_NAME]
     default_rot = tuple(light.object_cfg.init_state.rot)
     args_cli = get_isaaclab_arena_cli_parser().parse_args(["--num_envs", "1"])
-    ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).compose_manager_cfg()
+    ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).build_env_cfg()
 
     assert tuple(light.object_cfg.init_state.rot) == default_rot, (
         f"Disabled build-time variation must not mutate '{TEST_LIGHT_NAME}.object_cfg.init_state.rot'; "
@@ -109,7 +109,7 @@ def _test_enabled_light_direction_variation_applied(simulation_app):
     arena_env = get_test_environment(enabled=True)
     light = arena_env.scene.assets[TEST_LIGHT_NAME]
     args_cli = get_isaaclab_arena_cli_parser().parse_args(["--num_envs", "1"])
-    env_cfg, _ = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).compose_manager_cfg()
+    env_cfg, _ = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).build_env_cfg()
 
     expected_rot = quat_xyzw_from_azimuth_elevation(TEST_AZIMUTH, TEST_ELEVATION)
     applied_rot = tuple(light.object_cfg.init_state.rot)

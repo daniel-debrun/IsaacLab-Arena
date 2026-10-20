@@ -58,7 +58,7 @@ def _test_hydra_override_applies_build_time_variation(simulation_app):
     )
 
     # Build the environment cfg.
-    builder.compose_manager_cfg()
+    builder.build_env_cfg()
 
     # Check the effect of the override.
     assert sphere.object_cfg.spawn.radius == pytest.approx(TEST_OVERRIDE_RADIUS, abs=1e-6), (
@@ -80,7 +80,7 @@ def _test_hydra_override_enables_runtime_variation_in_events_cfg(simulation_app)
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
 
     # The variation starts disabled; the Hydra override must enable it so the event
-    # term is composed into env_cfg.events.
+    # term is included in env_cfg.events.
     arena_env = get_runtime_test_environment(enabled=False)
     args_cli = get_isaaclab_arena_cli_parser().parse_args(["--num_envs", "1"])
     builder = ArenaEnvBuilder(
@@ -89,8 +89,8 @@ def _test_hydra_override_enables_runtime_variation_in_events_cfg(simulation_app)
         hydra_overrides=[f"{TEST_ASSET_NAME}.test_runtime.enabled=true"],
     )
 
-    # Overrides are applied during composition, so compose first, then check the effect.
-    env_cfg, _ = builder.compose_manager_cfg()
+    # Overrides are applied by build_env_cfg, so build the configuration before checking the effect.
+    env_cfg, _ = builder.build_env_cfg()
 
     assert hasattr(
         env_cfg.events, TEST_EVENT_NAME
@@ -127,7 +127,7 @@ def test_unknown_variation_override_raises_with_available_paths():
 
 def test_asset_name_not_valid_identifier_raises():
     # An asset name that is not a valid Python identifier (e.g. "3-box") is used as a
-    # field name when building the VariationsCfg dataclass. _compose_variation_cfgs asserts
+    # field name when building the VariationsCfg dataclass. _build_variations_cfg_type asserts
     # this up front with a clear message rather than letting make_dataclass raise an opaque
     # error.
     invalid_asset_name = "3-box"
