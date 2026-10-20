@@ -3,260 +3,97 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Batched oriented and axis-aligned bounding-box geometry."""
+"""
+Utilities for computing spatial relationships between objects in a scene.
+This module provides functions for:
+- Computing bounding boxes from USD assets
+- Calculating placement poses based on semantic relationships (e.g., "on_top_of")
+- Supporting randomized placement with specified constraints
+- AxisAlignedBoundingBox and OrientedBoundingBox with always-tensor storage supporting single (N=1) and batched (N>1) modes
+"""
 
 import math
 import torch
+from abc import ABC, abstractmethod
 
 from isaaclab_arena.utils.pose import Pose
 
-Vector3 = tuple[float, float, float] | torch.Tensor
-Quaternion = tuple[float, float, float, float] | torch.Tensor
 
+class BoundingBox(ABC):
+    """Abstract batch of boxes with shared transform and overlap queries.
 
-def _batched_tensor(value: Vector3 | Quaternion, width: int, device: torch.device | None = None) -> torch.Tensor:
-    """Return float32 rows of width components on the requested device."""
-    if isinstance(value, torch.Tensor):
-        assert device is None or value.device == device, "Geometry tensors must share a device."
-        tensor = value.to(dtype=torch.float32)
-    else:
-        tensor = torch.tensor(value, dtype=torch.float32, device=device)
-    assert tensor.ndim in (1, 2) and tensor.shape[-1] == width, f"Expected ({width},) or (N, {width})."
-    return tensor.unsqueeze(0) if tensor.ndim == 1 else tensor
-
-
-def _broadcast_rows(*values: torch.Tensor) -> tuple[torch.Tensor, ...]:
-    """Expand singleton rows to a shared batch size."""
-    count = max(value.shape[0] for value in values)
-    assert count > 0 and all(
-        value.shape[0] in (1, count) for value in values
-    ), "Geometry batches must have equal row counts or a single row."
-    return tuple(value.expand(count, -1) for value in values)
-
-
-def _unit_quaternion(value: torch.Tensor) -> torch.Tensor:
-    """Normalize finite xyzw rows whose norms differ from one by at most 1e-3."""
-    assert torch.isfinite(value).all(), "Box rotations must be finite."
-    norm = torch.linalg.vector_norm(value, dim=-1, keepdim=True)
-    assert torch.allclose(norm, torch.ones_like(norm), atol=1e-3, rtol=0), "Box rotations must be unit quaternions."
-    return value / norm
-
-
-def _axis_aligned_order(rotation: torch.Tensor) -> torch.Tensor | None:
-    """Return local-axis indices for an entirely axis-aligned batch of fixed rotations."""
-    if rotation.requires_grad:
-        return None
-    magnitudes = rotation.abs()
-    nonzero_count = (magnitudes != 0).sum(dim=-1)
-    equal_components = ((magnitudes == 0) | (magnitudes == magnitudes.amax(dim=-1, keepdim=True))).all(dim=-1)
-    # These quaternion patterns are exactly the 24 axis-aligned rotations; no angular tolerance is used.
-    aligned = equal_components & ((nonzero_count == 1) | (nonzero_count == 2) | (nonzero_count == 4))
-    if not aligned.all():
-        return None
-    from isaaclab.utils.math import matrix_from_quat
-
-    return matrix_from_quat(rotation).abs().argmax(dim=-1)
-
-
-class OrientedBoundingBox:
-    """Oriented box geometry with float32 tensors, N rows and singleton broadcasting.
-
-    Centers are expressed in a common containing frame; each quaternion maps box-local
-    axes into that frame. Direct construction copies finite geometry, and its tensor
-    properties return copies. AxisAlignedBoundingBox additionally supports mutable,
-    empty or unbounded intervals. transformed(), get_bounds_along_axis() and SAT
-    queries require finite, nonempty geometry from either class. Fixed axis-aligned
-    batches use three-axis queries; other batches use the full separating-axis test.
+    Boxes live in a containing frame W, such as the world, and B is a box's local frame.
+    Pairwise queries take boxes in the same frame and on the same device, pairing rows N/N
+    or 1/N, and require finite, nonempty geometry.
     """
 
-    def __init__(self, center: Vector3, half_extents: Vector3, rotation_xyzw: Quaternion = (0.0, 0.0, 0.0, 1.0)):
-        """Construct boxes from centers, local half-lengths and xyzw quaternions.
-
-        Args:
-            center: Box centers, shape (3,) or (N, 3).
-            half_extents: Nonnegative lengths along box-local axes, shape (3,) or (N, 3).
-            rotation_xyzw: Box-local to containing-frame rotations, shape (4,) or (N, 4).
-                Norms within 1e-3 of one are normalized to allow rounded input values.
-        """
-        device = None
-        for value in (center, half_extents, rotation_xyzw):
-            if isinstance(value, torch.Tensor):
-                device = value.device
-                break
-        center = _batched_tensor(center, 3, device)
-        half_extents = _batched_tensor(half_extents, 3, device)
-        rotation = _unit_quaternion(_batched_tensor(rotation_xyzw, 4, device))
-        assert torch.isfinite(center).all() and torch.isfinite(half_extents).all(), "Box bounds must be finite."
-        assert (half_extents >= 0).all(), "Box half-extents must be nonnegative."
-        center, half_extents, rotation = _broadcast_rows(center, half_extents, rotation)
-        self._center = center.clone()
-        self._half_extents = half_extents.clone()
-        self._rotation_xyzw = rotation.clone()
-        self._axis_order = _axis_aligned_order(rotation)
-        """Local-axis indices for containing-frame XYZ, shape (N, 3), or None when full SAT is required."""
-
-    def _get_finite_geometry(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Return finite centers, nonnegative half-extents and unit xyzw rotations."""
-        return self._center, self._half_extents, self._rotation_xyzw
-
-    def _get_axis_aligned_half_extents(self, half_extents: torch.Tensor) -> torch.Tensor | None:
-        """Map local half-lengths to containing-frame axes when every rotation is axis-aligned."""
-        if self._axis_order is None:
-            return None
-        return half_extents.gather(-1, self._axis_order)
-
     @property
-    def center(self) -> torch.Tensor:
-        """Centers in the containing frame, shape (N, 3)."""
-        return self._center.clone()
-
-    @property
-    def half_extents(self) -> torch.Tensor:
-        """Half-lengths along box-local axes, shape (N, 3); nonnegative for nonempty boxes."""
-        return self._half_extents.clone()
-
-    @property
-    def rotation_xyzw(self) -> torch.Tensor:
-        """Unit quaternions mapping box-local axes into the containing frame, shape (N, 4)."""
-        return self._rotation_xyzw.clone()
-
-    @property
+    @abstractmethod
     def num_envs(self) -> int:
         """Number of box rows N."""
-        return self._center.shape[0]
 
-    def __getitem__(self, idx: int) -> "OrientedBoundingBox":
+    @abstractmethod
+    def __getitem__(self, idx: int) -> "BoundingBox":
         """Select one row, preserving its leading dimension."""
-        assert 0 <= idx < self.num_envs, f"Index {idx} out of range for {self.num_envs} boxes."
-        return OrientedBoundingBox(self._center[idx], self._half_extents[idx], self._rotation_xyzw[idx])
 
-    def to(self, device: torch.device | str) -> "OrientedBoundingBox":
+    @abstractmethod
+    def to(self, device: torch.device | str) -> "BoundingBox":
         """Return boxes with their tensors on device."""
-        return OrientedBoundingBox(
-            self._center.to(device), self._half_extents.to(device), self._rotation_xyzw.to(device)
-        )
 
-    def translated(self, offset: Vector3) -> "OrientedBoundingBox":
-        """Return boxes translated by offset (3,) or (N, 3) in their containing frame."""
-        center, half_extents, rotation = self._get_finite_geometry()
-        offset = _batched_tensor(offset, 3, center.device)
-        center, half_extents, rotation, offset = _broadcast_rows(center, half_extents, rotation, offset)
-        return OrientedBoundingBox(center + offset, half_extents, rotation)
+    @abstractmethod
+    def translated(self, offset: tuple[float, float, float] | torch.Tensor) -> "BoundingBox":
+        """Return boxes translated by offset (3,) or (N, 3) in W."""
 
-    def transformed(self, t_A_B: Vector3, q_A_B: Quaternion) -> "OrientedBoundingBox":
-        """Map boxes from frame B into frame A, preserving their oriented shape.
+    @abstractmethod
+    def get_corners_at(self, pos: torch.Tensor | None = None) -> torch.Tensor:
+        """Return corners in W (N, 8, 3), optionally translated by pos (3,) or (N, 3)."""
+
+    @abstractmethod
+    def get_axis_aligned_bounds(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return enclosing min/max points in W, each with shape (N, 3)."""
+
+    @abstractmethod
+    def _get_finite_geometry(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Return center_W (N, 3), half-extents (N, 3) and xyzw rotations q_W_B (N, 4) for queries.
+
+        Implementations must return finite centers, nonnegative half-extents and unit
+        quaternions, asserting this when their storage can hold other values.
+        """
+
+    def transformed(
+        self,
+        t_A_W: tuple[float, float, float] | torch.Tensor,
+        q_A_W: tuple[float, float, float, float] | torch.Tensor,
+    ) -> "OrientedBoundingBox":
+        """Map boxes from W into frame A, preserving their oriented shape.
 
         Args:
-            t_A_B: Translation of frame B's origin in A, shape (3,) or (N, 3).
-            q_A_B: Unit xyzw rotation mapping B into A, shape (4,) or (N, 4).
+            t_A_W: Position of W's origin in A, shape (3,) or (N, 3).
+            q_A_W: Unit xyzw rotation mapping W into A, shape (4,) or (N, 4).
 
         Returns:
             OrientedBoundingBox in frame A.
         """
         from isaaclab.utils.math import quat_apply, quat_mul
 
-        center, half_extents, rotation = self._get_finite_geometry()
-        translation = _batched_tensor(t_A_B, 3, center.device)
-        quaternion = _unit_quaternion(_batched_tensor(q_A_B, 4, center.device))
-        center, half_extents, rotation, translation, quaternion = _broadcast_rows(
-            center, half_extents, rotation, translation, quaternion
-        )
-        return OrientedBoundingBox(
-            quat_apply(quaternion, center) + translation, half_extents, quat_mul(quaternion, rotation)
-        )
-
-    def get_corners_at(self, pos: torch.Tensor | None = None) -> torch.Tensor:
-        """Return corners (N, 8, 3), optionally translated by pos (3,) or (N, 3).
-
-        Corner ordering follows the box-local axes, matching AxisAlignedBoundingBox
-        for identity rotation; the first four need not be lowest along the containing frame's Z axis.
-        """
-        from isaaclab.utils.math import matrix_from_quat
-
-        center, half_extents, rotation = self._get_finite_geometry()
-        if pos is not None:
-            offset = _batched_tensor(pos, 3, center.device)
-            center, half_extents, rotation, offset = _broadcast_rows(center, half_extents, rotation, offset)
-            center = center + offset
-        signs = center.new_tensor([
-            [-1, -1, -1],
-            [1, -1, -1],
-            [1, 1, -1],
-            [-1, 1, -1],
-            [-1, -1, 1],
-            [1, -1, 1],
-            [1, 1, 1],
-            [-1, 1, 1],
-        ])
-        local_corners = signs * half_extents.unsqueeze(1)
-        return local_corners @ matrix_from_quat(rotation).transpose(1, 2) + center.unsqueeze(1)
-
-    def get_bounds_along_axis(self, axis: Vector3) -> tuple[torch.Tensor, torch.Tensor]:
-        """Return lower/upper projections (N,) onto axis, normalized internally.
-
-        Args:
-            axis: Nonzero direction in the containing frame, shape (3,) or (N, 3).
-        """
-        from isaaclab.utils.math import matrix_from_quat
-
-        center, half_extents, rotation = self._get_finite_geometry()
-        axis = _batched_tensor(axis, 3, center.device)
-        center, half_extents, rotation, axis = _broadcast_rows(center, half_extents, rotation, axis)
-        norm = torch.linalg.vector_norm(axis, dim=-1, keepdim=True)
-        assert (
-            torch.isfinite(axis).all() and torch.isfinite(norm).all() and (norm > 0).all()
-        ), "Projection axes must have finite, nonzero norms."
-        axis = axis / norm
-        box_axes = matrix_from_quat(rotation).transpose(1, 2)
-        radius = (half_extents * torch.einsum("nij,nj->ni", box_axes, axis).abs()).sum(dim=-1)
-        midpoint = (center * axis).sum(dim=-1)
-        return midpoint - radius, midpoint + radius
-
-    def get_axis_aligned_bounds(self) -> tuple[torch.Tensor, torch.Tensor]:
-        """Return enclosing containing-frame min/max points, each with shape (N, 3)."""
-        from isaaclab.utils.math import matrix_from_quat
-
-        center, half_extents, rotation = self._get_finite_geometry()
-        radius = (matrix_from_quat(rotation).abs() @ half_extents.unsqueeze(-1)).squeeze(-1)
-        return center - radius, center + radius
+        center_W, half_extents, q_W_B = self._get_finite_geometry()
+        t_A_W = _batched_tensor(t_A_W, 3, center_W.device)
+        q_A_W = _unit_quaternion(_batched_tensor(q_A_W, 4, center_W.device))
+        center_W, half_extents, q_W_B, t_A_W, q_A_W = _broadcast_rows(center_W, half_extents, q_W_B, t_A_W, q_A_W)
+        center_A = quat_apply(q_A_W, center_W) + t_A_W
+        q_A_B = quat_mul(q_A_W, q_W_B)
+        return OrientedBoundingBox(center_A, half_extents, q_A_B)
 
     def to_aabb(self) -> "AxisAlignedBoundingBox":
-        """Return the enclosing AxisAlignedBoundingBox in the same frame."""
+        """Return the enclosing AxisAlignedBoundingBox in W."""
         return AxisAlignedBoundingBox(*self.get_axis_aligned_bounds())
 
-    def _sat_depths(self, other: "OrientedBoundingBox", margin: float) -> tuple[torch.Tensor, torch.Tensor]:
-        """Return projected depths and axis norms (N, K), using K=3 for aligned pairs, else 15."""
-        from isaaclab.utils.math import matrix_from_quat
-
-        assert math.isfinite(margin) and margin >= 0, "Margin must be finite and nonnegative."
-        center_a, extent_a, rotation_a = self._get_finite_geometry()
-        center_b, extent_b, rotation_b = other._get_finite_geometry()
-        assert center_a.device == center_b.device, "Bounding boxes must share a device."
-        center_a, extent_a, rotation_a, center_b, extent_b, rotation_b = _broadcast_rows(
-            center_a, extent_a, rotation_a, center_b, extent_b, rotation_b
-        )
-        aligned_extent_a = self._get_axis_aligned_half_extents(extent_a)
-        aligned_extent_b = other._get_axis_aligned_half_extents(extent_b)
-        if aligned_extent_a is not None and aligned_extent_b is not None:
-            depths = aligned_extent_a + aligned_extent_b + margin - (center_b - center_a).abs()
-            return depths, torch.ones_like(depths)
-        axes_a = matrix_from_quat(rotation_a).transpose(1, 2)
-        axes_b = matrix_from_quat(rotation_b).transpose(1, 2)
-        cross_axes = torch.linalg.cross(axes_a.unsqueeze(2), axes_b.unsqueeze(1), dim=-1).flatten(1, 2)
-        axes = torch.cat((axes_a, axes_b, cross_axes), dim=1)
-        norms = torch.linalg.vector_norm(axes, dim=-1)
-        radius_a = (torch.einsum("nkd,njd->nkj", axes, axes_a).abs() * extent_a.unsqueeze(1)).sum(dim=-1)
-        radius_b = (torch.einsum("nkd,njd->nkj", axes, axes_b).abs() * extent_b.unsqueeze(1)).sum(dim=-1)
-        distance = torch.einsum("nkd,nd->nk", axes, center_b - center_a).abs()
-        return radius_a + radius_b + margin * norms - distance, norms
-
-    def overlaps(self, other: "OrientedBoundingBox", margin: float = 0.0) -> torch.Tensor:
+    def overlaps(self, other: "BoundingBox", margin: float = 0.0) -> torch.Tensor:
         """Return strict SAT overlap or projected-clearance violation, shape (N,).
 
         At zero margin, touching on a separating axis is not overlap. Exactly parallel
         edge pairs contribute no axis; small nonzero cross axes remain in the test.
-        Float32 roundoff can change the verdict at touching or margin boundaries,
-        including after converting min/max AABB bounds to center and half-extents.
+        Float32 roundoff can change the verdict at touching or margin boundaries.
 
         Args:
             other: Finite boxes in the same frame and device; rows pair N/N or 1/N.
@@ -266,34 +103,193 @@ class OrientedBoundingBox:
         depths, norms = self._sat_depths(other, margin)
         return ((depths > 0) | (norms == 0)).all(dim=-1)
 
-    def penetration_depth(self, other: "OrientedBoundingBox", margin: float = 0.0) -> torch.Tensor:
-        """Return minimum normalized SAT depth clamped at zero, shape (N,).
+    def projected_overlap_volume(self, other: "BoundingBox", margin: float = 0.0) -> torch.Tensor:
+        """Return a differentiable overlap penalty in cubed length units, shape (N,).
 
-        At zero margin this measures translation to separate overlapping boxes at
-        fixed orientation. A positive margin measures projected-clearance violation,
-        not Euclidean distance. Neither is intersection volume. Gradients are
-        piecewise-defined, with no special escape direction for concentric boxes.
+        It is the smaller interval-overlap volume along either box's face axes: the intersection volume
+        for axis-aligned pairs. It is zero when a face axis separates the boxes or this box has a zero-size
+        dimension, and can stay positive for tilted boxes separated only by an edge-cross-edge axis.
 
         Args:
             other: Finite boxes in the same frame and device; rows pair N/N or 1/N.
-            margin: Nonnegative projected-axis clearance added before clamping,
-                in input length units.
+            margin: Finite nonnegative length added to other's projected radii.
+                Positive margins make the penalty asymmetric.
         """
-        depths, norms = self._sat_depths(other, margin)
-        valid = norms > 0
-        normalized = depths / torch.where(valid, norms, torch.ones_like(norms))
-        normalized = torch.where(valid, normalized, torch.full_like(normalized, torch.inf))
-        return normalized.amin(dim=-1).clamp_min(0)
+        from isaaclab.utils.math import matrix_from_quat
+
+        _assert_valid_margin(margin)
+        # Here A and B are the local frames of this box and other.
+        center_a_W, half_extents_a, q_W_A, center_b_W, half_extents_b, q_W_B = self._get_paired_geometry(other)
+        return _oriented_projected_overlap_volume(
+            center_a_W,
+            half_extents_a,
+            matrix_from_quat(q_W_A),
+            center_b_W,
+            half_extents_b,
+            matrix_from_quat(q_W_B),
+            margin,
+        )
+
+    def _get_paired_geometry(self, other: "BoundingBox") -> tuple[torch.Tensor, ...]:
+        """Return both boxes' finite geometry on a shared device, broadcast to shared rows.
+
+        Returns:
+            center_a_W, half_extents_a, q_W_A, center_b_W, half_extents_b, q_W_B, where A and B
+            are the local frames of this box and other.
+        """
+        center_a_W, half_extents_a, q_W_A = self._get_finite_geometry()
+        center_b_W, half_extents_b, q_W_B = other._get_finite_geometry()
+        assert center_a_W.device == center_b_W.device, "Bounding boxes must share a device."
+        return _broadcast_rows(center_a_W, half_extents_a, q_W_A, center_b_W, half_extents_b, q_W_B)
+
+    def _sat_depths(self, other: "BoundingBox", margin: float) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return projected depths and axis norms (N, 15) over the separating-axis candidates."""
+        from isaaclab.utils.math import matrix_from_quat
+
+        _assert_valid_margin(margin)
+        center_a_W, half_extents_a, q_W_A, center_b_W, half_extents_b, q_W_B = self._get_paired_geometry(other)
+        # Here A and B are the local frames of this box and other. Rows are each box's local axes in W.
+        axes_a_W = matrix_from_quat(q_W_A).transpose(1, 2)
+        axes_b_W = matrix_from_quat(q_W_B).transpose(1, 2)
+        cross_axes_W = torch.linalg.cross(axes_a_W.unsqueeze(2), axes_b_W.unsqueeze(1), dim=-1).flatten(1, 2)
+        candidate_axes_W = torch.cat((axes_a_W, axes_b_W, cross_axes_W), dim=1)
+        norms = torch.linalg.vector_norm(candidate_axes_W, dim=-1)
+        # Absolute dot products of each candidate axis with each box's unit local axes, shape (N, 15, 3).
+        alignment_a = torch.einsum("nkd,njd->nkj", candidate_axes_W, axes_a_W).abs()
+        alignment_b = torch.einsum("nkd,njd->nkj", candidate_axes_W, axes_b_W).abs()
+        radius_a = (alignment_a * half_extents_a.unsqueeze(1)).sum(dim=-1)
+        radius_b = (alignment_b * half_extents_b.unsqueeze(1)).sum(dim=-1)
+        distance = torch.einsum("nkd,nd->nk", candidate_axes_W, center_b_W - center_a_W).abs()
+        return radius_a + radius_b + margin * norms - distance, norms
 
 
-class AxisAlignedBoundingBox(OrientedBoundingBox):
-    """Axis-aligned bounds in a caller-chosen containing frame.
+class OrientedBoundingBox(BoundingBox):
+    """Finite boxes defined by a center, local half-extents and a rotation.
 
-    Stores min/max coordinates as (N, 3) float32 tensors where N is the number of environments.
-    Point properties have shape (N, 3), scalar tensors (N,), and rotation_xyzw (N, 4).
-    Constructor accepts tuples, 1D tensors, or (N, 3) tensors. Min/max properties
-    expose mutable storage. Empty and unbounded intervals remain supported for range
-    operations; inherited transforms, projections and SAT require finite, nonempty bounds.
+    The rotation q_W_B maps directions in the box frame B into the containing frame W, for example
+
+        x_axis_W = q_W_B * x_axis_B
+
+    Every box is finite and nonempty; zero-size dimensions are allowed. Inputs of shape (3,) or (4,)
+    become single rows, stored as (N, 3) and (N, 4) float32 tensors and broadcast against N.
+    Construction copies the inputs, and tensor properties return copies.
+    """
+
+    def __init__(
+        self,
+        center_W: tuple[float, float, float] | torch.Tensor,
+        half_extents: tuple[float, float, float] | torch.Tensor,
+        rotation_W_B_xyzw: tuple[float, float, float, float] | torch.Tensor = (0.0, 0.0, 0.0, 1.0),
+    ):
+        """Construct boxes from centers, local half-lengths and xyzw quaternions.
+
+        Args:
+            center_W: Box centers in W, shape (3,) or (N, 3).
+            half_extents: Nonnegative lengths along box-local axes, shape (3,) or (N, 3).
+            rotation_W_B_xyzw: Rotations q_W_B mapping box-local axes into W, shape (4,) or (N, 4).
+                Norms within 1e-3 of one are normalized to allow rounded input values.
+        """
+        device = _get_device_from_maybe_tensors(center_W, half_extents, rotation_W_B_xyzw)
+        center_W = _batched_tensor(center_W, 3, device)
+        half_extents = _batched_tensor(half_extents, 3, device)
+        q_W_B = _unit_quaternion(_batched_tensor(rotation_W_B_xyzw, 4, device))
+        assert torch.isfinite(center_W).all() and torch.isfinite(half_extents).all(), "Box bounds must be finite."
+        assert (half_extents >= 0).all(), "Box half-extents must be nonnegative."
+        center_W, half_extents, q_W_B = _broadcast_rows(center_W, half_extents, q_W_B)
+        self._center_W = center_W.clone()
+        self._half_extents = half_extents.clone()
+        self._rotation_W_B_xyzw = q_W_B.clone()
+
+    @property
+    def center_W(self) -> torch.Tensor:
+        """Centers in W, shape (N, 3)."""
+        return self._center_W.clone()
+
+    @property
+    def half_extents(self) -> torch.Tensor:
+        """Nonnegative half-lengths along box-local axes, shape (N, 3)."""
+        return self._half_extents.clone()
+
+    @property
+    def rotation_W_B_xyzw(self) -> torch.Tensor:
+        """Unit quaternions q_W_B mapping box-local axes into W, shape (N, 4)."""
+        return self._rotation_W_B_xyzw.clone()
+
+    @property
+    def num_envs(self) -> int:
+        """Number of box rows N."""
+        return self._center_W.shape[0]
+
+    def __getitem__(self, idx: int) -> "OrientedBoundingBox":
+        """Select one row as a copy, preserving its leading dimension."""
+        assert 0 <= idx < self.num_envs, f"Index {idx} out of range for {self.num_envs} boxes."
+        return OrientedBoundingBox(self._center_W[idx], self._half_extents[idx], self._rotation_W_B_xyzw[idx])
+
+    def to(self, device: torch.device | str) -> "OrientedBoundingBox":
+        """Return boxes with their tensors on device."""
+        return OrientedBoundingBox(
+            self._center_W.to(device), self._half_extents.to(device), self._rotation_W_B_xyzw.to(device)
+        )
+
+    def translated(self, offset: tuple[float, float, float] | torch.Tensor) -> "OrientedBoundingBox":
+        """Return boxes translated by offset (3,) or (N, 3) in W."""
+        center_W, half_extents, q_W_B = self._get_finite_geometry()
+        offset_W = _batched_tensor(offset, 3, center_W.device)
+        center_W, half_extents, q_W_B, offset_W = _broadcast_rows(center_W, half_extents, q_W_B, offset_W)
+        return OrientedBoundingBox(center_W + offset_W, half_extents, q_W_B)
+
+    def get_corners_at(self, pos: torch.Tensor | None = None) -> torch.Tensor:
+        """Return corners in W (N, 8, 3), optionally translated by pos (3,) or (N, 3).
+
+        The first four corners lie on the box's local -Z face and the last four on its
+        +Z face, each in counterclockwise order about local +Z. The first four need not
+        be lowest along W's Z axis.
+        """
+        from isaaclab.utils.math import matrix_from_quat
+
+        center_W, half_extents, q_W_B = self._get_finite_geometry()
+        if pos is not None:
+            offset_W = _batched_tensor(pos, 3, center_W.device)
+            center_W, half_extents, q_W_B, offset_W = _broadcast_rows(center_W, half_extents, q_W_B, offset_W)
+            center_W = center_W + offset_W
+        signs = center_W.new_tensor([
+            [-1, -1, -1],
+            [1, -1, -1],
+            [1, 1, -1],
+            [-1, 1, -1],
+            [-1, -1, 1],
+            [1, -1, 1],
+            [1, 1, 1],
+            [-1, 1, 1],
+        ])
+        corners_B = signs * half_extents.unsqueeze(1)
+        R_W_B = matrix_from_quat(q_W_B)
+        corners_W = corners_B @ R_W_B.transpose(1, 2) + center_W.unsqueeze(1)
+        return corners_W
+
+    def get_axis_aligned_bounds(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return enclosing min/max points in W, each with shape (N, 3)."""
+        from isaaclab.utils.math import matrix_from_quat
+
+        center_W, half_extents, q_W_B = self._get_finite_geometry()
+        R_W_B = matrix_from_quat(q_W_B)
+        radius_W = (R_W_B.abs() @ half_extents.unsqueeze(-1)).squeeze(-1)
+        return center_W - radius_W, center_W + radius_W
+
+    def _get_finite_geometry(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Return the stored geometry, which construction already asserted is finite."""
+        return self._center_W, self._half_extents, self._rotation_W_B_xyzw
+
+
+class AxisAlignedBoundingBox(BoundingBox):
+    """Axis-aligned bounding box storing local extents. Use get_corners_at(pos) for world-space corners.
+
+    Stores min/max extents as (N, 3) float32 tensors where N is the number of environments.
+    All properties consistently return tensors: (N, 3) for point values, (N,) for scalars.
+    Constructor accepts tuples, 1D tensors, or (N, 3) tensors.
+
+    Min/max properties expose mutable storage. Empty and unbounded intervals are supported for range
+    operations and AABB-pair overlaps(); other BoundingBox queries require finite, nonempty bounds.
     """
 
     def __init__(
@@ -357,34 +353,37 @@ class AxisAlignedBoundingBox(OrientedBoundingBox):
         """Returns the center point of the bounding box. Shape (N, 3)."""
         return (self._min_point + self._max_point) * 0.5
 
-    @property
-    def half_extents(self) -> torch.Tensor:
-        """Half of each interval's signed length, shape (N, 3); negative for empty axes."""
-        return self.size * 0.5
-
-    @property
-    def rotation_xyzw(self) -> torch.Tensor:
-        """Identity box-local to containing-frame rotations, shape (N, 4)."""
-        return self._min_point.new_tensor((0.0, 0.0, 0.0, 1.0)).repeat(self.num_envs, 1)
-
     def _get_finite_geometry(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Derive finite geometry from the current mutable bounds."""
-        center, half_extents = self.center, self.half_extents
-        assert torch.isfinite(center).all() and torch.isfinite(half_extents).all(), "Box bounds must be finite."
-        assert (half_extents >= 0).all(), "Box bounds must be nonempty."
-        return center, half_extents, self.rotation_xyzw
+        """Derive geometry from the current bounds, asserting they are finite and nonempty."""
+        min_point, max_point = self._get_finite_bounds()
+        center_W = (min_point + max_point) * 0.5
+        half_extents = (max_point - min_point) * 0.5
+        q_W_B = center_W.new_tensor((0.0, 0.0, 0.0, 1.0)).repeat(self.num_envs, 1)
+        return center_W, half_extents, q_W_B
 
-    def _get_axis_aligned_half_extents(self, half_extents: torch.Tensor) -> torch.Tensor:
-        """Keep the half-lengths derived from current axis-aligned bounds."""
-        return half_extents
+    def _get_finite_bounds(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return the current min/max points (N, 3), asserting they are finite and nonempty."""
+        assert (
+            torch.isfinite(self._min_point).all() and torch.isfinite(self._max_point).all()
+        ), "Box bounds must be finite."
+        assert (self._min_point <= self._max_point).all(), "Box bounds must be nonempty."
+        return self._min_point, self._max_point
+
+    def _get_paired_bounds(self, other: "AxisAlignedBoundingBox") -> tuple[torch.Tensor, ...]:
+        """Return both boxes' finite min/max points on a shared device, broadcast to shared rows."""
+        min_a, max_a = self._get_finite_bounds()
+        min_b, max_b = other._get_finite_bounds()
+        assert min_a.device == min_b.device, "Bounding boxes must share a device."
+        return _broadcast_rows(min_a, max_a, min_b, max_b)
 
     def get_axis_aligned_bounds(self) -> tuple[torch.Tensor, torch.Tensor]:
         """Copy min/max points (N, 3), preserving empty and unbounded intervals."""
         return self._min_point.clone(), self._max_point.clone()
 
     def to_obb(self) -> OrientedBoundingBox:
-        """Copy finite, nonempty bounds to identity-oriented boxes in the same frame."""
-        return OrientedBoundingBox(self.center, self.half_extents)
+        """Convert finite, nonempty bounds to identity-oriented boxes in the same frame."""
+        center_W, half_extents, _ = self._get_finite_geometry()
+        return OrientedBoundingBox(center_W, half_extents)
 
     @property
     def top_surface_z(self) -> torch.Tensor:
@@ -397,11 +396,11 @@ class AxisAlignedBoundingBox(OrientedBoundingBox):
         return self._min_point[:, 2]
 
     def get_corners_at(self, pos: torch.Tensor | None = None) -> torch.Tensor:
-        """Return eight corners, optionally offset by pos.
+        """Get 8 corners of this bounding box, optionally offset by position.
 
         Args:
-            pos: Offset added to each corner, shape (3,) or (N, 3), such as the bounds'
-                origin in a parent frame with parallel axes. None leaves coordinates unchanged.
+            pos: If provided, world position (x, y, z) to offset corners by.
+                 If None, returns corners in local/object frame.
 
         Returns:
             Tensor of shape (N, 8, 3) with corners ordered: bottom 4, then top 4.
@@ -501,19 +500,17 @@ class AxisAlignedBoundingBox(OrientedBoundingBox):
         safe_volume = torch.where(volume > 0, volume, torch.ones_like(volume))
         return (intersection_volume / safe_volume).clamp(0, 1)
 
-    def overlaps(self, other: OrientedBoundingBox, margin: float = 0.0) -> torch.Tensor:
-        """Check overlap in 3D, using SAT when the other box is oriented.
-
-        Mixed AABB/OBB queries require both boxes to have finite, nonempty bounds.
+    def overlaps(self, other: BoundingBox, margin: float = 0.0) -> torch.Tensor:
+        """Check if this AABB overlaps other boxes in 3D, using SAT when other is oriented.
 
         Args:
-            other: Box in the same frame and on the same device.
-            margin: Required separation along the tested axes, in input length units.
-                Mixed AABB/OBB queries use nonnegative SAT clearance, not Euclidean distance,
-                and have float32 uncertainty at touching or margin boundaries.
+            other: The other bounding box to test against, in the same frame and on the same device.
+            margin: Minimum required separation in meters. A positive value
+                rejects placements where the gap is smaller than margin. Against an oriented box,
+                margin must be nonnegative and float32 roundoff can flip touching verdicts.
 
         Returns:
-            Bool tensor of shape (N,) for strict projected overlap or clearance violation.
+            Bool tensor of shape (N,). True where volumes overlap (or are closer than margin).
         """
         if not isinstance(other, AxisAlignedBoundingBox):
             return super().overlaps(other, margin)
@@ -525,6 +522,23 @@ class AxisAlignedBoundingBox(OrientedBoundingBox):
             & (self._max_point[:, 2] + margin > other._min_point[:, 2])
             & (other._max_point[:, 2] + margin > self._min_point[:, 2])
         )
+
+    def projected_overlap_volume(self, other: BoundingBox, margin: float = 0.0) -> torch.Tensor:
+        """Return the overlap penalty, read from min/max bounds when other is also axis-aligned.
+
+        Reading the bounds directly keeps touching AABB pairs at exactly zero.
+
+        Args:
+            other: Finite, nonempty boxes in the same frame and device; rows pair N/N or 1/N.
+            margin: Finite nonnegative length added to both sides of other's bounds.
+        """
+        if not isinstance(other, AxisAlignedBoundingBox):
+            return super().projected_overlap_volume(other, margin)
+        _assert_valid_margin(margin)
+        min_a, max_a, min_b, max_b = self._get_paired_bounds(other)
+        upper = torch.minimum(max_a, max_b + margin)
+        lower = torch.maximum(min_a, min_b - margin)
+        return torch.relu(upper - lower).prod(dim=-1)
 
     def rotated_90_around_z(self, quarters: int) -> "AxisAlignedBoundingBox":
         """Rotate AABB by quarters * 90° around Z axis.
@@ -736,3 +750,97 @@ def get_random_pose_within_bounding_box(bbox: AxisAlignedBoundingBox, seed: int 
     pose = Pose(position_xyz=tuple(random_position.tolist()), rotation_xyzw=(0.0, 0.0, 0.0, 1.0))
 
     return pose
+
+
+def _get_device_from_maybe_tensors(*values: object) -> torch.device | None:
+    """Return the device shared by the tensor values, or None when none is a tensor."""
+    devices = {value.device for value in values if isinstance(value, torch.Tensor)}
+    assert len(devices) <= 1, "Geometry tensors must share a device."
+    return devices.pop() if devices else None
+
+
+def _assert_valid_margin(margin: float) -> None:
+    """Assert that a clearance margin is finite and nonnegative."""
+    assert math.isfinite(margin) and margin >= 0, "Margin must be finite and nonnegative."
+
+
+def _batched_tensor(
+    value: tuple[float, ...] | torch.Tensor, width: int, device: torch.device | None = None
+) -> torch.Tensor:
+    """Return float32 rows of width components on the requested device."""
+    if isinstance(value, torch.Tensor):
+        assert device is None or value.device == device, "Geometry tensors must share a device."
+        tensor = value.to(dtype=torch.float32)
+    else:
+        tensor = torch.tensor(value, dtype=torch.float32, device=device)
+    assert tensor.ndim in (1, 2) and tensor.shape[-1] == width, f"Expected ({width},) or (N, {width})."
+    return tensor.unsqueeze(0) if tensor.ndim == 1 else tensor
+
+
+def _broadcast_rows(*values: torch.Tensor) -> tuple[torch.Tensor, ...]:
+    """Expand singleton rows to a shared batch size."""
+    count = max(value.shape[0] for value in values)
+    assert count > 0 and all(
+        value.shape[0] in (1, count) for value in values
+    ), "Geometry batches must have equal row counts or a single row."
+    return tuple(value.expand(count, -1) for value in values)
+
+
+def _unit_quaternion(value: torch.Tensor) -> torch.Tensor:
+    """Normalize finite xyzw rows whose norms differ from one by at most 1e-3."""
+    assert torch.isfinite(value).all(), "Box rotations must be finite."
+    norm = torch.linalg.vector_norm(value, dim=-1, keepdim=True)
+    assert torch.allclose(norm, torch.ones_like(norm), atol=1e-3, rtol=0), "Box rotations must be unit quaternions."
+    return value / norm
+
+
+def _interval_overlap_volume(
+    radius_a: torch.Tensor, radius_b: torch.Tensor, offset: torch.Tensor, margin: float
+) -> torch.Tensor:
+    """Multiply interval intersections on three axes, inflating the second interval by margin.
+
+    Args:
+        radius_a: First intervals' half-lengths, centered at zero, shape (..., 3).
+        radius_b: Second intervals' half-lengths, shape (..., 3).
+        offset: Second intervals' centers relative to the first, shape (..., 3).
+        margin: Length added to both ends of the second intervals.
+    """
+    upper = torch.minimum(radius_a, offset + radius_b + margin)
+    lower = torch.maximum(-radius_a, offset - radius_b - margin)
+    return torch.relu(upper - lower).prod(dim=-1)
+
+
+def _oriented_projected_overlap_volume(
+    center_a_W: torch.Tensor,
+    half_extents_a: torch.Tensor,
+    R_W_A: torch.Tensor,
+    center_b_W: torch.Tensor,
+    half_extents_b: torch.Tensor,
+    R_W_B: torch.Tensor,
+    margin: float,
+) -> torch.Tensor:
+    """Return the smaller of the interval-overlap volumes along box A's and box B's face axes.
+
+    Args:
+        center_a_W: Box A centers in W, shape (N, 3).
+        half_extents_a: Box A local half-lengths, shape (N, 3).
+        R_W_A: Rotations mapping box A's local frame A into W, shape (N, 3, 3).
+        center_b_W: Box B centers in W, shape (N, 3).
+        half_extents_b: Box B local half-lengths, shape (N, 3).
+        R_W_B: Rotations mapping box B's local frame B into W, shape (N, 3, 3).
+        margin: Length added to box B's projected radius on every face axis.
+    """
+    R_A_W = R_W_A.transpose(-1, -2)
+    R_A_B = R_A_W @ R_W_B
+    R_B_A = R_A_B.transpose(-1, -2)
+    abs_R_A_B = R_A_B.abs()
+    # Projected radii of each box along the other box's face axes.
+    radius_b_A = (abs_R_A_B * half_extents_b.unsqueeze(-2)).sum(dim=-1)
+    radius_a_B = (abs_R_A_B * half_extents_a.unsqueeze(-1)).sum(dim=-2)
+    # Offset from A's center to B's center, expressed in A and then in B.
+    offset_W = center_b_W - center_a_W
+    offset_A = (R_A_W @ offset_W.unsqueeze(-1)).squeeze(-1)
+    offset_B = (R_B_A @ offset_A.unsqueeze(-1)).squeeze(-1)
+    volume_A = _interval_overlap_volume(half_extents_a, radius_b_A, offset_A, margin)
+    volume_B = _interval_overlap_volume(radius_a_B, half_extents_b, offset_B, margin)
+    return torch.minimum(volume_A, volume_B)
