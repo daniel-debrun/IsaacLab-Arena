@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # CI entrypoint for the GR00T e2e smoke test. It has two explicit modes:
 #
-# - bootstrap: runs inside the prebuilt gr00t image from the baked
+# - boot-up: runs inside the prebuilt gr00t image from the baked
 #   /workspace/ci_gr00t_train_and_serve.sh copy. It waits for GitHub Actions to
 #   mount and checkout the Arena repo, then execs this script from the mounted
 #   repo so CI can pick up script changes without rebuilding the image first.
-# - serve: runs from the mounted repo copy after bootstrap. It post-trains the
+# - serve: runs from the mounted repo copy after server boot-up. It post-trains the
 #   base GR00T model on the tiny CI dataset, then starts the remote policy
 #   server from the resulting checkpoint.
 set -euxo pipefail
@@ -13,65 +13,31 @@ set -euxo pipefail
 CI_GR00T_ENTRYPOINT_MODE="${CI_GR00T_ENTRYPOINT_MODE:-serve}"
 ARENA_WORKSPACE="${ARENA_WORKSPACE:-/arena_workspace}"
 REPO_ENTRYPOINT="${ARENA_WORKSPACE}/isaaclab_arena_gr00t/docker/ci_gr00t_train_and_serve.sh"
-BOOTSTRAP_TIMEOUT_SECONDS="${BOOTSTRAP_TIMEOUT_SECONDS:-600}"
+SERVER_BOOTUP_TIMEOUT_SECONDS="${SERVER_BOOTUP_TIMEOUT_SECONDS:-${BOOTSTRAP_TIMEOUT_SECONDS:-600}}"
 
-if [ "${CI_GR00T_ENTRYPOINT_MODE}" = "bootstrap" ]; then
-  echo "[bootstrap] waiting for ${REPO_ENTRYPOINT} (timeout ${BOOTSTRAP_TIMEOUT_SECONDS}s)..."
-  deadline=$(( $(date +%s) + BOOTSTRAP_TIMEOUT_SECONDS ))
+# Accept the legacy mode baked into existing CI images.
+if [[ "${CI_GR00T_ENTRYPOINT_MODE}" = "boot-up" || "${CI_GR00T_ENTRYPOINT_MODE}" = "bootstrap" ]]; then
+  echo "[server boot-up] waiting for ${REPO_ENTRYPOINT} (timeout ${SERVER_BOOTUP_TIMEOUT_SECONDS}s)..."
+  deadline=$(( $(date +%s) + SERVER_BOOTUP_TIMEOUT_SECONDS ))
   # Looping until the repo's entrypoint is found
   while [ ! -f "${REPO_ENTRYPOINT}" ]; do
     if [ "$(date +%s)" -ge "${deadline}" ]; then
-      echo "[bootstrap] timed out waiting for ${REPO_ENTRYPOINT}"
-      echo "[bootstrap] contents of ${ARENA_WORKSPACE}:"
+      echo "[server boot-up] timed out waiting for ${REPO_ENTRYPOINT}"
+      echo "[server boot-up] contents of ${ARENA_WORKSPACE}:"
       ls -la "${ARENA_WORKSPACE}" || true
       exit 1
     fi
     sleep 5
   done
 
-  # Switch to serve mode from bootstrap mode.
-  echo "[bootstrap] found ${REPO_ENTRYPOINT}, switching to serve mode"
-  # The image bakes CI_GR00T_ENTRYPOINT_MODE=bootstrap so the sidecar can wait
-  # for the mounted checkout. Override it for the repo copy; otherwise the repo
-  # script would inherit bootstrap mode and exec itself instead of starting the
-  # server.
+  echo "[server boot-up] found ${REPO_ENTRYPOINT}, switching to serve mode"
+  # Override boot-up mode so the repo copy starts the server instead of execing itself.
   exec env CI_GR00T_ENTRYPOINT_MODE=serve bash "${REPO_ENTRYPOINT}" "$@"
 fi
 
 if [ "${CI_GR00T_ENTRYPOINT_MODE}" != "serve" ]; then
-  echo "Unsupported CI_GR00T_ENTRYPOINT_MODE=${CI_GR00T_ENTRYPOINT_MODE}. Expected 'bootstrap' or 'serve'." >&2
+  echo "Unsupported CI_GR00T_ENTRYPOINT_MODE=${CI_GR00T_ENTRYPOINT_MODE}. Expected 'boot-up' or 'serve'." >&2
   exit 1
-fi
-
-# Check the compiler in this container, where GR00T builds FlashAttention.
-# nvidia-smi's CUDA version describes driver support, not the installed toolkit.
-# Publish the result before waiting for data so the client can skip its E2E steps.
-if [ -n "${GR00T_CI_COMPATIBILITY_FILE:-}" ]; then
-  gr00t_ci_enabled=true
-  gr00t_ci_reason="GR00T E2E enabled: no Blackwell GPU detected."
-  gpu_capabilities="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader)"
-  # Blackwell includes data-center (10.x), Thor (11.x), and RTX/Spark (12.x) GPUs.
-  if grep -Eq '^[[:space:]]*(10|11|12)\.' <<< "${gpu_capabilities}"; then
-    cuda_home="${CUDA_HOME:-${CUDA_PATH:-}}"
-    if [ -n "${cuda_home}" ]; then
-      cuda_compiler="${cuda_home}/bin/nvcc"
-    else
-      cuda_compiler="$(command -v nvcc || echo /usr/local/cuda/bin/nvcc)"
-    fi
-    cuda_version="$("${cuda_compiler}" --version 2>/dev/null | sed -n 's/.*release \([0-9]*\.[0-9]*\),.*/\1/p' || true)"
-    if [ "${cuda_version}" = "12.8" ]; then
-      gr00t_ci_reason="GR00T E2E enabled: Blackwell with CUDA toolkit 12.8."
-    else
-      gr00t_ci_enabled=false
-      gr00t_ci_reason="Skipping GR00T E2E: Blackwell requires CUDA toolkit 12.8; found ${cuda_version:-unknown}."
-    fi
-  fi
-  echo "${gr00t_ci_reason}"
-  printf '%s\n' "${gr00t_ci_enabled}" "${gr00t_ci_reason}" > "${GR00T_CI_COMPATIBILITY_FILE}.tmp"
-  mv "${GR00T_CI_COMPATIBILITY_FILE}.tmp" "${GR00T_CI_COMPATIBILITY_FILE}"
-  if [ "${gr00t_ci_enabled}" = false ]; then
-    exit 0
-  fi
 fi
 
 MODELS_DIR="${MODELS_DIR:-/workspace/pretrained_ckpts}"

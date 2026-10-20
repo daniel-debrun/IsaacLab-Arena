@@ -360,7 +360,7 @@ jobs:
       GR00T_REMOTE_HOST: gr00t
       GR00T_REMOTE_PORT: "5555"
       GR00T_REMOTE_E2E_TIMEOUT: "900"
-      GR00T_CI_COMPATIBILITY_FILE: ${{ github.workspace }}/.gr00t-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      GR00T_CI_SERVER_WORKSPACE: ${{ github.workspace }}/.gr00t-ci-${{ github.run_id }}-${{ github.run_attempt }}.workspace
 
     container:
       image: ${{ needs.build_and_push_image.outputs.image }}
@@ -372,8 +372,7 @@ jobs:
       gr00t:
         image: nvcr.io/nvidian/gr00t1_6_arena_ci:latest
         env:
-          GR00T_CI_COMPATIBILITY_FILE: /arena_workspace/.gr00t-ci-${{ github.run_id }}-${{ github.run_attempt }}
-          # Bootstrap must wait for this attempt's checkout, not a stale workspace.
+          # Server boot-up waits until this attempt's GPU check passes.
           ARENA_WORKSPACE: /arena_workspace/.gr00t-ci-${{ github.run_id }}-${{ github.run_attempt }}.workspace
         credentials:
           username: $oauthtoken
@@ -400,28 +399,19 @@ jobs:
         id: gr00t_cuda
         shell: bash
         run: |
-          # Release the sidecar bootstrap only after checkout has completed.
-          ln -s . "${GR00T_CI_COMPATIBILITY_FILE}.workspace"
-          # The sidecar checks its own toolkit and publishes an atomic result.
-          # A per-attempt filename prevents reuse of a previous CI run's result.
-          deadline=$((SECONDS + 120))
-          until [ -f "${GR00T_CI_COMPATIBILITY_FILE}" ]; do
-            if [ "${SECONDS}" -ge "${deadline}" ]; then
-              echo "::error::GR00T sidecar did not report CUDA compatibility."
-              exit 1
-            fi
-            sleep 2
-          done
-          enabled="$(head -n 1 "${GR00T_CI_COMPATIBILITY_FILE}")"
-          reason="$(tail -n +2 "${GR00T_CI_COMPATIBILITY_FILE}")"
-          case "${enabled}" in
-            true|false) ;;
-            *) echo "::error::Invalid GR00T CUDA compatibility result."; exit 1 ;;
-          esac
-          echo "enabled=${enabled}" >> "${GITHUB_OUTPUT}"
-          echo "${reason}" >> "${GITHUB_STEP_SUMMARY}"
-          if [ "${enabled}" = false ]; then
+          gpu_capabilities="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader)"
+          # This runner policy uses the driver-reported CUDA version, not nvcc.
+          cuda_version="$(nvidia-smi | sed -n 's/.*CUDA Version: \([0-9.]*\).*/\1/p')"
+          # Blackwell GPUs have compute capability 10.x, 11.x, or 12.x.
+          if grep -Eq '^[[:space:]]*(10|11|12)\.' <<< "${gpu_capabilities}" && [ "${cuda_version}" != "12.8" ]; then
+            reason="Skipping GR00T E2E: Blackwell runner reports CUDA ${cuda_version:-unknown}; CI requires 12.8."
+            echo "enabled=false" >> "${GITHUB_OUTPUT}"
+            echo "${reason}" >> "${GITHUB_STEP_SUMMARY}"
             echo "::notice::${reason}"
+          else
+            echo "enabled=true" >> "${GITHUB_OUTPUT}"
+            # Allow server boot-up only on supported runners.
+            ln -s . "${GR00T_CI_SERVER_WORKSPACE}"
           fi
 
       - name: Git LFS
@@ -441,7 +431,7 @@ jobs:
         if: steps.gr00t_cuda.outputs.enabled == 'true'
         uses: ./.github/actions/setup-isaac-sim-kit-cache
 
-      # The GR00T sidecar post-trains a tiny checkpoint before loading it. Its
+      # The GR00T server post-trains a tiny checkpoint before loading it. Its
       # entrypoint waits for the LFS-backed dataset media fetched above before
       # starting training.
       # Poll the ZMQ endpoint because the socket can bind before the model is ready.
