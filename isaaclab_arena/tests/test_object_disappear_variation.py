@@ -55,7 +55,7 @@ def _test_disabled_disappear_variation_not_in_events_cfg(simulation_app):
 
     arena_env = get_test_environment(enabled=False, probability=1.0)
     args_cli = get_isaaclab_arena_cli_parser().parse_args(["--num_envs", "1"])
-    env_cfg, _ = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).compose_manager_cfg()
+    env_cfg, _ = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).build_env_cfg()
 
     assert not hasattr(env_cfg.events, "sphere_disappear"), (
         "Disabled variation must not add 'sphere_disappear' to env_cfg.events; "

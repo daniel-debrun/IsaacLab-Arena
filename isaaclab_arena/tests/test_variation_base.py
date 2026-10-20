@@ -17,8 +17,13 @@ from isaaclab.managers import EventTermCfg, SceneEntityCfg
 from isaaclab.utils.configclass import configclass
 
 from isaaclab_arena.assets.asset import Asset
+from isaaclab_arena.variations.bernoulli_sampler import BernoulliSampler
 from isaaclab_arena.variations.uniform_sampler import UniformSampler, UniformSamplerCfg
-from isaaclab_arena.variations.variation_base import RunTimeVariationBase, VariationBaseCfg
+from isaaclab_arena.variations.variation_base import (
+    RunTimeVariationBase,
+    VariationBaseCfg,
+    get_enabled_variations_by_key,
+)
 
 
 def _noop_event(env, env_ids, asset_cfg):  # noqa: ARG001
@@ -169,6 +174,45 @@ def test_apply_cfg_with_only_sampler_change_rebuilds_sampler_in_place():
     assert (samples >= -2.0).all() and (samples <= -1.0).all()
 
 
+def test_seed_and_variation_key_draw_fixed_values():
+    # Literal values: a seed that repeats only within one process would pass the other seeding tests.
+    variation = _CustomVariation()
+    variation.configure_at_build_time(seed=7, variation_key=f"asset.{_CUSTOM_VARIATION_NAME}")
+
+    torch.testing.assert_close(
+        variation.sampler.sample(num_samples=2),
+        torch.tensor([[0.48389196, 0.55527800], [0.86311626, 0.97608626]]),
+    )
+
+
+def test_apply_cfg_keeps_generator():
+    variation_key = f"asset.{_CUSTOM_VARIATION_NAME}"
+    reference_variation = _CustomVariation()
+    reference_variation.configure_at_build_time(seed=7, variation_key=variation_key)
+    variation = _CustomVariation()
+    variation.configure_at_build_time(seed=7, variation_key=variation_key)
+
+    variation.apply_cfg(_CustomVariationCfg())
+
+    torch.testing.assert_close(
+        variation.sampler.sample(num_samples=4), reference_variation.sampler.sample(num_samples=4)
+    )
+
+
+def test_bernoulli_sampler_draws_from_its_generator():
+    # No build-time variation uses BernoulliSampler, so the build-time seeding tests do not reach it.
+    generator = torch.Generator().manual_seed(7)
+    sampler = BernoulliSampler(probability=0.5)
+    sampler.set_generator(generator)
+    global_random_state = torch.get_rng_state()
+
+    first_draws = sampler.sample(num_samples=16)
+    generator.manual_seed(7)
+
+    assert sampler.sample(num_samples=16) == first_draws
+    assert torch.equal(torch.get_rng_state(), global_random_state)
+
+
 def test_build_event_cfg_uses_configured_asset_name():
     variation = _CustomVariation(_CustomVariationCfg(asset_name="cube"))
 
@@ -201,3 +245,19 @@ def test_two_variations_of_same_kind_coexist_when_given_distinct_names():
     assert asset.get_variation(variation_a.name) is variation_a
     assert asset.get_variation(variation_b.name) is variation_b
     assert set(asset.variations) == {variation_a.name, variation_b.name}
+
+
+def test_get_enabled_variations_by_key_skips_disabled_variations():
+    enabled_variation = _CustomVariation(_CustomVariationCfg(enabled=True), name="enabled")
+    disabled_variation = _CustomVariation(name="disabled")
+
+    variations_by_key = get_enabled_variations_by_key({"cube": [enabled_variation, disabled_variation]})
+
+    assert variations_by_key == {"cube.enabled": enabled_variation}
+
+
+def test_get_enabled_variations_by_key_asserts_on_duplicate_key():
+    variation = _CustomVariation(_CustomVariationCfg(enabled=True))
+
+    with pytest.raises(AssertionError, match="Duplicate enabled variation key"):
+        get_enabled_variations_by_key({"cube": [variation, variation]})

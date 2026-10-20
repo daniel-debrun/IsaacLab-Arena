@@ -140,7 +140,7 @@ def create_recorder_env(
         isaaclab_arena_environment,
         ArenaEnvBuilderCfg(num_envs=NUM_ENVS, language_instruction=LANGUAGE_INSTRUCTION),
     )
-    env_cfg, env_kwargs = env_builder.compose_manager_cfg()
+    env_cfg, env_kwargs = env_builder.build_env_cfg()
 
     # Env 0 starts in the drawer and is lifted during rollout; env 1 lands outside.
     pose_list = [

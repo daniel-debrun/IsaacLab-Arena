@@ -82,19 +82,28 @@ Most environments can be described with a small set of relations:
    bounding box. For L-shaped, hollow, or concave supports, anchor an
    ``ObjectReference`` that identifies the valid support surface.
 
-   During initial sampling, the default initializer follows the object's ``On``
-   chain and uses the nearest ``IsAnchor`` ancestor's bounds as a proxy. If the
-   chain has no anchor or loops, it falls back to the first anchor collected by
-   ``ObjectPlacer``. This affects only the starting pose; final solving and
-   validation use each relation's actual parent.
+   The default ``ON_TREE`` initializer samples parents before their children,
+   using each parent's sampled pose and bounds. This sets the starting poses;
+   the solver then optimizes the complete layout jointly.
 
 .. _clutter-on-relation:
 
 ``ClutterOn(parent)``
-   Defines a **release pose** above an ``IsAnchor`` support, before physics.
-   ``ObjectPlacer`` samples a central release region and raises objects above
-   overlapping footprints. The support must be upright, with a fixed yaw that
-   is a multiple of 90 degrees.
+   Defines a **release pose** above a support, before physics. The support can
+   be fixed with ``IsAnchor`` or placed through its own relations, such as
+   ``tray On(table)`` with ``tools ClutterOn(tray)``.
+
+   The solver optimizes the support and clutter positions together using the
+   relation and collision losses. An anchored support remains fixed.
+   ``ObjectPlacer`` initializes clutter inside a central release region and
+   above overlapping footprints. The release region follows the support as
+   the solver moves it.
+
+   Clutter footprints may overlap in XY during initialization; overlapping
+   objects start at separated heights. The height-processing order is shuffled
+   per candidate, so asset order does not always put the same object underneath
+   the others. Setting ``placement_seed`` makes this order reproducible with the
+   same placement configuration.
 
    .. list-table::
       :header-rows: 1
@@ -124,28 +133,37 @@ Most environments can be described with a small set of relations:
         - Sample world-Z yaw in addition to ``RotateAroundSolution``. This setting
           controls clutter independently of ``ObjectPlacerParams.random_yaw_init``.
 
-   ``ClutterOn`` must be the object's only spatial relation and cannot use
-   ``RandomAroundSolution``. ``RotateAroundSolution`` sets its base rotation;
-   random yaw preserves that rotation's tilt. Both ``bbox`` and ``mesh`` collision
-   modes support yaw-only clutter. Roll or pitch requires ``collision_mode="bbox"``
-   on the object, whose bounds enclose the full rotation.
+   Restrictions:
+
+   * ``ClutterOn`` must be the object's only spatial relation and cannot use
+     ``RandomAroundSolution``. ``RotateAroundSolution`` sets its base rotation;
+     random yaw preserves that rotation's tilt.
+   * Both ``bbox`` and ``mesh`` collision modes support yaw-only clutter.
+     Roll or pitch requires ``collision_mode="bbox"`` on the object.
+   * The support must participate in placement and cannot itself use ``ClutterOn``.
+     It must remain upright with a fixed yaw that is a multiple of 90 degrees.
+     For a non-anchor support, disable ``random_yaw_init`` and do not use
+     ``FaceTo`` or ``RandomAroundSolution`` on the support.
+   * For recording, non-clutter objects with placement relations must be fixed
+     anchors or kinematic rigid bodies.
 
    The ``clutter_on_relation`` check enforces the release footprint and minimum
-   height without requiring contact or an upper height limit. It allows
-   1 micrometre of numerical slack on ``clearance_m``, but never penetration below
-   the support top. ``on_relation_z_tolerance_m`` does not apply to clutter.
+   height without requiring contact or an upper height limit.
    With explicit ``enabled_checks`` or ``required_checks``, include
    ``clutter_on_relation`` for clutter and ``on_relation`` for ordinary ``On``
-   objects. Both checks are enabled by default.
+   objects. Both checks are enabled by default. The standard
+   :doc:`validation <validation>` and :doc:`pooling <pooled_placement>` rules apply.
+   Disable ``ObjectPlacerParams.allow_best_loss_fallbacks`` to reject invalid
+   pooled layouts; direct ``ObjectPlacer.place()`` callers must check each
+   result's ``success``.
 
    A **settled pose** is the final pose after the configured physics interval.
    An **accepted layout** passes the required pre-physics and enabled, applicable
-   :ref:`post-physics checks <recording-post-physics-checks>` for the complete
-   candidate. Settled objects may use the full support footprint, beyond the
-   smaller release region. Release validation alone does not certify the final pile.
-   For pooled placement, disable ``ObjectPlacerParams.allow_best_loss_fallbacks``
-   to reject invalid layouts. Direct ``ObjectPlacer.place()`` callers must check
-   each result's ``success`` before using it.
+   :ref:`post-physics checks <recording-post-physics-checks>`. Settled objects may
+   use the full support footprint, beyond the smaller release region. Release
+   checks do not certify the final pile or prevent collisions during falling.
+   Try the :ref:`movable-bowl example <movable-bowl-clutter>` in the shared
+   :doc:`../offline_placement/clutter` recording and replay workflow.
 
 .. _next-to-relation:
 
@@ -180,7 +198,8 @@ Most environments can be described with a small set of relations:
    between optional minimum and maximum values.
    ``PositionLimitsCylindrical`` constrains the XY distance from a chosen
    center using a minimum radius, maximum radius, or both; it does not
-   constrain Z.
+   constrain Z. Both relations contribute solver losses; no built-in validator
+   certifies these bounds.
 
 ``FaceTo(target)``
    Rotates an object around world Z so that its local +X heading points toward

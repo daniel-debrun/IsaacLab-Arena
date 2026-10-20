@@ -66,10 +66,30 @@ class _FakeEnvironment:
         self.close_count += 1
 
 
-def test_assert_interactive_runner_args_accepts_one_physx_kit_environment():
+@pytest.mark.parametrize("presets", [None, PhysicsBackend.PHYSX])
+def test_assert_interactive_runner_args_accepts_one_physx_kit_environment(presets):
     from isaaclab_arena.scripts import environment_runner
 
-    environment_runner._assert_interactive_runner_args(_interactive_runner_args())
+    environment_runner._assert_interactive_runner_args(_interactive_runner_args(presets=presets))
+
+
+@pytest.mark.parametrize("device_args", [[], ["--device", "cuda:0"]])
+def test_main_rejects_newton_before_launching_kit(device_args, monkeypatch):
+    from isaaclab_arena.scripts import environment_runner
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["environment_runner.py", "pick_and_place_maple_table", "--presets", "newton", *device_args],
+    )
+
+    def reject_kit_launch(args):
+        pytest.fail("Kit must not launch when the requested physics backend is unsupported")
+
+    monkeypatch.setattr(environment_runner, "SimulationAppContext", reject_kit_launch)
+
+    with pytest.raises(AssertionError, match="requires PhysX.*--presets physx"):
+        environment_runner.main()
 
 
 @pytest.mark.parametrize(
@@ -109,8 +129,8 @@ def test_create_interactive_environment_rejects_newton_backend(presets, env_defa
         def resolved_physics_backend(self) -> PhysicsBackend:
             return self.cfg.presets if self.cfg.presets is not None else self.arena_env.default_physics_backend
 
-        def compose_manager_cfg(self):
-            raise AssertionError("compose_manager_cfg should not run when Newton is rejected")
+        def build_env_cfg(self):
+            raise AssertionError("build_env_cfg should not run when Newton is rejected")
 
     monkeypatch.setattr(
         environment_runner,
@@ -277,7 +297,7 @@ def test_main_closes_the_environment_when_the_run_loop_fails(monkeypatch):
         def resolved_physics_backend(self) -> PhysicsBackend:
             return self.cfg.presets if self.cfg.presets is not None else self.arena_env.default_physics_backend
 
-        def compose_manager_cfg(self):
+        def build_env_cfg(self):
             return env_cfg, {"example_kwarg": "value"}
 
         def make_registered(self, received_env_cfg, received_env_kwargs):

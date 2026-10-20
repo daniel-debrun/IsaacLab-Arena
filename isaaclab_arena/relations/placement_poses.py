@@ -68,7 +68,7 @@ def write_scene_poses_to_sim(
     env_ids: torch.Tensor,
     poses: dict[str, torch.Tensor],
 ) -> None:
-    """Apply environment-local root poses and zero velocities."""
+    """Apply environment-local root poses and zero velocities where the rigid-body mode permits."""
     for name, pose in poses.items():
         assert pose.shape == (len(env_ids), 7), f"Root poses for '{name}' must have shape (N, 7)"
     env_origins = env.scene.env_origins[env_ids]
@@ -78,4 +78,9 @@ def write_scene_poses_to_sim(
         T_W_O[:, :3] += env_origins
         scene_asset = env.scene[name]
         scene_asset.write_root_pose_to_sim(T_W_O, env_ids=env_ids)
-        scene_asset.write_root_velocity_to_sim(zero_velocity, env_ids=env_ids)
+        if name in env.scene.rigid_objects:
+            from isaaclab_arena.terms.events import write_root_velocity_to_sim
+
+            write_root_velocity_to_sim(env, scene_asset, zero_velocity, env_ids)
+        else:
+            scene_asset.write_root_velocity_to_sim(zero_velocity, env_ids=env_ids)

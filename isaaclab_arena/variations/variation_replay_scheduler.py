@@ -24,8 +24,13 @@ class VariationReplayScheduler:
     def __init__(self, variation_record: RebuildVariationRecord) -> None:
         assert variation_record.num_recorded_episodes > 0, "Rebuild variation record must list at least one episode"
         self._variation_record = variation_record
-        self._next_occurrence_index = 0
         self._source_record_index_by_env: dict[int, int] = {}
+        self.reset()
+
+    def reset(self) -> None:
+        """Start a new environment run at the first source record with no active assignments."""
+        self._next_occurrence_index = 0
+        self._source_record_index_by_env.clear()
 
     @property
     def variation_record(self) -> RebuildVariationRecord:

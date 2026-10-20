@@ -6,9 +6,12 @@
 from __future__ import annotations
 
 import torch
+import weakref
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
+
+from isaaclab_arena.variations.variation_base import get_enabled_variations_by_key
 
 if TYPE_CHECKING:
     from isaaclab_arena.variations.sampler_base import SamplerBase
@@ -69,6 +72,10 @@ class VariationRecord:
             return self._samples_by_env_episode[key]
         return self._build_time_sample
 
+    def clear_runtime_samples(self) -> None:
+        """Discard per-episode samples while retaining the build-time draw."""
+        self._samples_by_env_episode.clear()
+
     def release_episode(self, env_id: int, episode_idx: int) -> None:
         """Release the run-time sample retained for a finished episode."""
         self._samples_by_env_episode.pop(EnvEpisodeKey(env_id, episode_idx), None)
@@ -81,12 +88,16 @@ class VariationRecorder:
         # Records are keyed by: "{asset_name}.{variation_name}"
         self.records: dict[str, VariationRecord] = {}
         self.placement_record: VariationRecord | None = None
-        # Bound after env construction; supplies the episode index for per-env run-time draws.
+        # Non-owning reference: registered sampler callbacks must not keep a simulation alive.
         self._env: Any = None
 
     def bind_env(self, env: Any) -> None:
-        """Bind the env so run-time draws can be attributed to its current episode index."""
-        self._env = env
+        """Start recording for a new env, retaining build-time draws and clearing prior runtime samples."""
+        for record in self.records.values():
+            record.clear_runtime_samples()
+        if self.placement_record is not None:
+            self.placement_record.clear_runtime_samples()
+        self._env = weakref.proxy(env)
 
     def __getitem__(self, key: str) -> VariationRecord:
         """Return the record stored under "{asset_name}.{variation_name}"."""
@@ -105,20 +116,15 @@ class VariationRecorder:
 
     def attach(self, variations: dict[str, list[VariationBase]]) -> None:
         """Attach every enabled variation in ``variations`` under "{asset_name}.{variation_name}"."""
-        for asset_name, asset_variations in variations.items():
-            for variation in asset_variations:
-                if not variation.enabled:
-                    continue
-                variation_key = f"{asset_name}.{variation.name}"
-                assert (
-                    variation_key not in self.records
-                ), f"VariationRecorder: asset_name '{variation_key}' is already attached."
+        for variation_key, variation in get_enabled_variations_by_key(variations).items():
+            assert (
+                variation_key not in self.records
+            ), f"VariationRecorder: variation '{variation_key}' is already attached."
 
-                # Create a record for the variation
-                record = VariationRecord(name=variation_key, cfg=variation.cfg)
-                self.records[variation_key] = record
+            record = VariationRecord(name=variation_key, cfg=variation.cfg)
+            self.records[variation_key] = record
 
-                variation.add_sample_listener(self._make_listener(record))
+            variation.add_sample_listener(self._make_listener(record))
 
     def attach_placement_sampler(
         self,

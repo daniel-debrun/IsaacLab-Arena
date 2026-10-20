@@ -33,8 +33,10 @@ an environment resets during policy rollouts. Arena calls these *build-time* and
      - Camera extrinsics, camera intrinsics
 
 This distinction matters when planning an evaluation. To collect several values of a
-build-time variation, the environment must be rebuilt several times. A run-time variation can
-produce a new value on each reset without rebuilding the scene.
+build-time variation, the environment must be rebuilt with different seeds; the Experiment
+Runner gives each rebuild its own seed. A run-time variation can produce a new value on each
+reset without rebuilding the scene. Both kinds draw their values from the variation's own
+generator, seeded from ``--seed`` (see :doc:`../environment/env_builder`).
 
 .. _discovering-available-variations:
 
@@ -119,6 +121,13 @@ extrinsics jitter range to ±10 mm per axis.
 
 To see the available variations and control parameters for a specific environment,
 see :ref:`discovering-available-variations`.
+
+With Isaac Lab's ``record_demos.py`` and Arena's ``environment_registration_callback``,
+append the same variation overrides to the recording command, for example
+``rubiks_cube_hot3d_robolab.mass.enabled=true`` for ``pick_and_place_maple_table``.
+Arena consumes its variation overrides and returns the remaining arguments to the Isaac Lab script.
+See :doc:`Teleoperation Data Collection <../../example_workflows/static_manipulation/step_2_teleoperation>`
+for recording setup and the full command using the callback.
 
 
 Configuring variations in an experiment config

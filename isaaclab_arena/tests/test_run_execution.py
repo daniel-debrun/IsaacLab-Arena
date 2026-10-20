@@ -371,30 +371,11 @@ def test_execute_experiment_stops_on_failure_by_default(monkeypatch, tmp_path):
     assert attempted == ["failing"]
 
 
-def test_build_environment_names_the_dataset_per_rebuild(monkeypatch):
+@pytest.mark.parametrize("record_trajectories", [False, True])
+def test_build_environment_exports_recorder_dataset_to_the_run_directory(monkeypatch, tmp_path, record_trajectories):
     builder = _ArenaEnvBuilder(_RecorderManagerCfg())
     captured = {}
-
-    def capture_builder(cfg):
-        captured["environment_builder"] = cfg.environment_builder
-        return builder
-
-    monkeypatch.setattr(run_execution, "build_arena_builder_from_run_cfg", capture_builder)
-
-    run_execution._build_environment_from_cfg(_run(name="pick"), render_mode="rgb_array", rebuild_index=2)
-
-    # Every rebuild recreates the dataset file, so the index has to distinguish them.
-    assert captured["environment_builder"].recorder_dataset_filename == "dataset_pick_rebuild2"
-    # Trajectory recording is off, so the builder keeps the environment's own export directory.
-    assert captured["environment_builder"].record_trajectories is False
-    assert captured["environment_builder"].recorder_dataset_export_dir_path is None
-    assert builder.made_with.render_mode == "rgb_array"
-
-
-def test_build_environment_exports_configured_trajectories_to_the_run_directory(monkeypatch, tmp_path):
-    builder = _ArenaEnvBuilder(_RecorderManagerCfg())
-    captured = {}
-    run = _run(name="pick", environment_builder=ArenaEnvBuilderCfg(record_trajectories=True))
+    run = _run(name="pick", environment_builder=ArenaEnvBuilderCfg(record_trajectories=record_trajectories))
 
     def capture_builder(cfg):
         captured["environment_builder"] = cfg.environment_builder
@@ -404,23 +385,24 @@ def test_build_environment_exports_configured_trajectories_to_the_run_directory(
 
     run_execution._build_environment_from_cfg(
         run,
-        render_mode=None,
+        render_mode="rgb_array",
         output_dir=tmp_path,
-        rebuild_index=1,
+        rebuild_index=2,
     )
 
-    assert captured["environment_builder"].record_trajectories is True
+    assert captured["environment_builder"].record_trajectories is record_trajectories
     assert captured["environment_builder"].recorder_dataset_export_dir_path == str(tmp_path)
-    assert captured["environment_builder"].recorder_dataset_filename == "dataset_pick_rebuild1"
+    assert captured["environment_builder"].recorder_dataset_filename == "dataset_pick_rebuild2"
     assert run.environment_builder.recorder_dataset_export_dir_path is None
     assert run.environment_builder.recorder_dataset_filename is None
+    assert builder.made_with.render_mode == "rgb_array"
 
 
-def test_build_environment_tolerates_an_environment_without_recorders(monkeypatch):
+def test_build_environment_tolerates_an_environment_without_recorders(monkeypatch, tmp_path):
     builder = _builder(monkeypatch, None)
     run = _run(environment_builder=ArenaEnvBuilderCfg(record_trajectories=True))
 
-    env = run_execution._build_environment_from_cfg(run, render_mode=None)
+    env = run_execution._build_environment_from_cfg(run, render_mode=None, output_dir=tmp_path)
 
     assert env is not None
     assert builder.made_with.render_mode is None

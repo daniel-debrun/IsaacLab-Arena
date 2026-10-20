@@ -69,7 +69,7 @@ from isaaclab_arena.utils.multiprocess import get_local_rank
 from isaaclab_arena.utils.physics_backend import PhysicsBackend
 from isaaclab_arena.variations import variations_hydra, variations_printing
 from isaaclab_arena.variations.recorded_variation_replay import configure_recorded_variation_replay
-from isaaclab_arena.variations.variation_base import RunTimeVariationBase, VariationBase
+from isaaclab_arena.variations.variation_base import RunTimeVariationBase, VariationBase, get_enabled_variations_by_key
 from isaaclab_arena.variations.variation_recorder import VariationRecorder
 from isaaclab_arena.variations.variation_replay_scheduler import VariationReplayScheduler
 
@@ -96,7 +96,7 @@ def _configure_arena_visualizer_defaults(env_cfg: IsaacLabArenaManagerBasedRLEnv
 
 
 class ArenaEnvBuilder:
-    """Compose IsaacLab Arena → IsaacLab configs"""
+    """Build Isaac Lab configurations and registered environments from an Arena environment."""
 
     def __init__(
         self,
@@ -192,8 +192,8 @@ class ArenaEnvBuilder:
         variations: dict[str, list[VariationBase]] = self.get_all_variations()
         return variations_printing.get_variations_catalogue_as_string(variations, hydra_overrides=self.hydra_overrides)
 
-    def _compose_variations_event_cfg(self) -> Any | None:
-        """Build a configclass with one :class:`EventTermCfg` per enabled run-time variation.
+    def _build_variation_events_cfg(self) -> Any | None:
+        """Build a configclass with one EventTermCfg per enabled run-time variation.
 
         Returns ``None`` when no run-time variation is enabled.
         """
@@ -224,11 +224,8 @@ class ArenaEnvBuilder:
         These mutate asset configs in place (e.g. a dome light's spawner
         texture), so this must run before ``scene_cfg`` is materialised.
         """
-        for asset_variations in self.get_all_variations().values():
-            for variation in asset_variations:
-                if not variation.enabled:
-                    continue
-                variation.configure_at_build_time()
+        for variation_key, variation in get_enabled_variations_by_key(self.get_all_variations()).items():
+            variation.configure_at_build_time(seed=self.cfg.seed, variation_key=variation_key)
 
     def _modify_recorder_cfg_dataset_filename(self, recorder_cfg: RecorderManagerBaseCfg) -> RecorderManagerBaseCfg:
         """Modify the recorder dataset filename to include the timestamp and rank."""
@@ -238,7 +235,7 @@ class ArenaEnvBuilder:
         )
         return recorder_cfg
 
-    def _compose_metrics_cfg(self, metrics: list[MetricBase] | None) -> object | None:
+    def _build_metrics_cfg(self, metrics: list[MetricBase] | None) -> object | None:
         """Build a configclass container with one ``MetricTermCfg`` field per metric."""
         if not metrics:
             return None
@@ -269,10 +266,10 @@ class ArenaEnvBuilder:
         termination_fields = [(name, TerminationTermCfg, term) for name, term in termination_terms.items()]
         return make_configclass("TerminationsCfg", termination_fields)()
 
-    def _compose_episode_recorders_cfg(self, extra_terms: dict[str, EpisodeRecorderTermCfg] | None = None) -> object:
+    def _build_episode_recorders_cfg(self, extra_terms: dict[str, EpisodeRecorderTermCfg] | None = None) -> object:
         """Build a configclass container with one EpisodeRecorderTermCfg field per episode recorder term.
 
-        Note that this function automatically adds the core, variations, and progress terms. The
+        Includes the built-in core, placement, variations, and progress terms. The
         progress term records nothing for tasks that define no completion criteria.
         """
         fields = [
@@ -291,13 +288,14 @@ class ArenaEnvBuilder:
             fields.append((name, EpisodeRecorderTermCfg, term_cfg))
         return make_configclass("EpisodeRecorderManagerCfg", fields)()
 
-    def compose_manager_cfg(self) -> tuple[IsaacLabArenaManagerBasedRLEnvCfg, dict[str, Any]]:
-        """Return the base ManagerBased cfg and the env kwargs (no registration).
+    def build_env_cfg(self) -> tuple[IsaacLabArenaManagerBasedRLEnvCfg, dict[str, Any]]:
+        """Build the environment configuration and constructor arguments without registering it.
 
-        env_kwargs carries arguments to be forwarded to gym.make for construction of the IsaacLabArenaManagerBasedRLEnv.
+        Applies variation overrides and build-time variations, prepares relation placement,
+        and combines scene, embodiment, and task settings. Updates the components of ``arena_env`` in place.
 
         Returns:
-            An (env_cfg, env_kwargs) tuple.
+            An (env_cfg, env_kwargs) tuple, with constructor arguments to forward to gym.make.
         """
         # Apply Hydra variation overrides. Needs to happen before build-time variations are applied.
         variations = self.get_all_variations()
@@ -310,22 +308,24 @@ class ArenaEnvBuilder:
                 self.cfg.recorded_variation_samples_path,
                 variations,
             )
-        # Placement needs its source selected before scene config captures construction poses.
-        placement_sampler = self._prepare_relation_placement(variation_replay_scheduler)
 
         # Attach the variation recorder before any sampling, so it observes both build-time samples
         # (drawn just below) and run-time samples (drawn during simulation).
         variation_recorder = VariationRecorder()
         variation_recorder.attach(variations)
+
+        # Apply build-time variations before self.arena_env.scene.get_scene_cfg() copies each object's object_cfg
+        # into scene_cfg below. They can change object geometry, so relation placement runs after them.
+        self._apply_build_time_variations()
+
+        # Placement needs its source selected before scene config captures construction poses.
+        placement_sampler = self._prepare_relation_placement(variation_replay_scheduler)
         # A RigidObjectSet's selected member identity is absent from pose-only samples, so skip unreplayable records.
         if placement_sampler is not None and supports_recorded_placement(self.arena_env.get_placement_assets()):
             variation_recorder.attach_placement_sampler(
                 placement_sampler,
                 serialize_placement_samples,
             )
-
-        # Apply build-time variations now, before scene_cfg is materialised.
-        self._apply_build_time_variations()
 
         resolved_physics_backend = self.resolved_physics_backend
 
@@ -354,7 +354,7 @@ class ArenaEnvBuilder:
                 [(PLACEMENT_RESET_EVENT_NAME, EventTermCfg, make_placement_event(placement_sampler))],
             )
             placement_event_cfg = PlacementEventCfg()
-        variations_event_cfg = self._compose_variations_event_cfg()
+        variations_event_cfg = self._build_variation_events_cfg()
         task_termination_cfg = task.get_termination_cfg()
         assert isinstance(
             task_termination_cfg, TaskTerminationCfg
@@ -410,7 +410,7 @@ class ArenaEnvBuilder:
             elif isinstance(device_cfg, DeviceCfg):
                 teleop_devices_cfg = DevicesCfg(devices={self.arena_env.teleop_device.name: device_cfg})
         metrics = task.get_metrics()
-        metrics_cfg = self._compose_metrics_cfg(metrics)
+        metrics_cfg = self._build_metrics_cfg(metrics)
         metrics_recorder_manager_cfg = metrics_to_recorder_manager_cfg(metrics)
         # Base has to be specified explicitly to avoid type errors and not lose inheritance.
         recorder_manager_cfg = combine_configclass_instances(
@@ -448,7 +448,7 @@ class ArenaEnvBuilder:
             task.get_commands_cfg(),
         )
 
-        episode_recorders_cfg = self._compose_episode_recorders_cfg(self.arena_env.episode_recorder_terms)
+        episode_recorders_cfg = self._build_episode_recorders_cfg(self.arena_env.episode_recorder_terms)
 
         viewer_cfg = task.get_viewer_cfg()
 
@@ -568,6 +568,9 @@ class ArenaEnvBuilder:
 
         The default operation is to call with no arguments, in which case the env_cfg is built from the
         Arena description passed to the builder at construction.
+        The registered constructor supplies env_kwargs even when the caller only passes cfg to gym.make.
+        A registration shares samplers across constructions; close its current env before making another.
+        Each construction starts fresh runtime recording and restarts recorded replay.
 
         Args:
             env_cfg: The optional environment cfg to use.
@@ -580,22 +583,22 @@ class ArenaEnvBuilder:
         apply_arena_global_settings()
         name = self.arena_env.name
         if env_cfg is None:
-            env_cfg, env_kwargs = self.compose_manager_cfg()
+            env_cfg, env_kwargs = self.build_env_cfg()
         elif env_kwargs is None:
             env_kwargs = {}
         _configure_arena_visualizer_defaults(env_cfg)
         self.arena_env.scene.validate_simulation_cfg(env_cfg.sim)
         entry_point = self.get_entry_point()
-        # Register the environment with the Gym registry.
-        # NOTE(alexmillane, 2026-08-05): Do not spread env_kwargs into the registry kwargs. env_kwargs carries the
-        # VariationRecorder, whose bind_env() holds a reference to the constructed env
-        # (and thus its SimulationContext/PhysX GPU buffers). The Gym registry is process-global
-        # and never cleared, so pinning it there retains every registered env's GPU memory until
-        # process exit — an unbounded leak across a persistent SimulationApp.
-        # TODO(alexmillane, 2026-08-05): Fix this issue and remove this note.
-        # TODO(qianl, 2026-10-12): Restore Isaac Lab interoperability without retaining these runtime objects in
-        # the Gym registry. Relation placement and enabled run-time variations currently fail because their
-        # VariationRecorder is not forwarded to and bound by Isaac Lab's later gym.make() call.
+        # The registered factory retains runtime objects for Gym-only callers.
+        # VariationRecorder holds the env weakly, so the recorder does not keep a closed simulation alive.
+
+        def create_env(**kwargs):
+            # Sampler callbacks capture these objects, so preserve their identity across Gym's kwargs deepcopy.
+            env_type = (
+                gym.envs.registration.load_env_creator(entry_point) if isinstance(entry_point, str) else entry_point
+            )
+            return env_type(**(env_kwargs | kwargs))
+
         kwargs = {
             "env_cfg_entry_point": env_cfg,
         }
@@ -605,7 +608,7 @@ class ArenaEnvBuilder:
             kwargs[self.arena_env.rl_framework_entry_point] = self.arena_env.rl_policy_cfg
         gym.register(
             id=name,
-            entry_point=entry_point,
+            entry_point=create_env,
             kwargs=kwargs,
             disable_env_checker=True,
         )
@@ -658,6 +661,6 @@ class ArenaEnvBuilder:
         Returns:
             A tuple containing the environment and the environment configuration.
         """
-        name, cfg, env_kwargs = self.build_registered(env_cfg, env_kwargs)
-        env = gym.make(name, cfg=cfg, render_mode=render_mode, **env_kwargs)
+        name, cfg, _ = self.build_registered(env_cfg, env_kwargs)
+        env = gym.make(name, cfg=cfg, render_mode=render_mode)
         return env, cfg

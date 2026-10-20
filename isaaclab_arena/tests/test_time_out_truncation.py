@@ -32,7 +32,7 @@ def _test_builder_timeout_is_truncation(simulation_app, timeout_s):
 
     description = IsaacLabArenaEnvironment(name="timeout_truncation", scene=Scene(), task=TimeoutOnlyTask())
     builder = ArenaEnvBuilder(description, ArenaEnvBuilderCfg(num_envs=3, solve_relations=False, device="cpu"))
-    env_cfg, _ = builder.compose_manager_cfg()
+    env_cfg, _ = builder.build_env_cfg()
     if timeout_s is None:
         assert "time_out" not in env_cfg.terminations.to_dict()
     else:

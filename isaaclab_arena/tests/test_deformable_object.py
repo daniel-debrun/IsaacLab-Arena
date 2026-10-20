@@ -301,7 +301,7 @@ def _test_deformable_reset_and_initial_pose(simulation_app) -> bool:
         arena_env,
         ArenaEnvBuilderCfg(num_envs=2, presets=physics_backend, solve_relations=False),
     )
-    env_cfg, env_kwargs = builder.compose_manager_cfg()
+    env_cfg, env_kwargs = builder.build_env_cfg()
     assert isinstance(env_cfg.scene.soft_cube, DeformableObjectCfg)
     env = builder.make_registered(env_cfg, env_kwargs)
     env.reset()
@@ -375,7 +375,7 @@ def _test_deformable_placement_is_not_immediate_task_success(simulation_app) -> 
         arena_env,
         ArenaEnvBuilderCfg(num_envs=1, presets="physx", solve_relations=False),
     )
-    env_cfg, env_kwargs = builder.compose_manager_cfg()
+    env_cfg, env_kwargs = builder.build_env_cfg()
     env = builder.make_registered(env_cfg, env_kwargs)
 
     try:

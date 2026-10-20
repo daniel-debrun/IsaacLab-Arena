@@ -135,7 +135,7 @@ def run_sim_preview(
             f"solving spatial relations ({builder_cfg.num_envs} envs, {pool_layouts} layout pool)…",
         )
         t_relations = time.monotonic()
-        env_cfg, env_kwargs = builder.compose_manager_cfg()
+        env_cfg, env_kwargs = builder.build_env_cfg()
         _preview_log(started_at, f"relation solver finished ({time.monotonic() - t_relations:.1f}s)")
 
         _preview_log(started_at, "spawning sim scene (gym.make)…")

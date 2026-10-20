@@ -46,7 +46,7 @@ def _test_disabled_light_color_temperature_variation_not_applied(simulation_app)
         default_enabled = light.object_cfg.spawn.enable_color_temperature
         default_temperature = light.object_cfg.spawn.color_temperature
         args_cli = get_isaaclab_arena_cli_parser().parse_args(["--num_envs", "1"])
-        ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).compose_manager_cfg()
+        ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).build_env_cfg()
 
         assert light.object_cfg.spawn.enable_color_temperature == default_enabled, (
             f"Disabled build-time variation must not toggle '{light_name}.object_cfg.spawn.enable_color_temperature'; "
@@ -67,7 +67,7 @@ def _test_enabled_light_color_temperature_variation_applied(simulation_app):
         light = build_test_light(light_name, TEST_COLOR_TEMPERATURE, enabled=True)
         arena_env = get_test_environment(light)
         args_cli = get_isaaclab_arena_cli_parser().parse_args(["--num_envs", "1"])
-        env_cfg, _ = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).compose_manager_cfg()
+        env_cfg, _ = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).build_env_cfg()
 
         assert (
             light.object_cfg.spawn.enable_color_temperature

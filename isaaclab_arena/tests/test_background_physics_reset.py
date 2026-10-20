@@ -167,7 +167,7 @@ def _test_background_physics_discovery_and_reset(
         arena_env = IsaacLabArenaEnvironment(name="background_physics_reset", scene=scene)
         args = get_isaaclab_arena_cli_parser().parse_args(["--num_envs", "2", *cli_options])
         builder = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args))
-        env_cfg, _ = builder.compose_manager_cfg()
+        env_cfg, _ = builder.build_env_cfg()
         reset_paths = scene.get_background_physics_paths()["background"]
         assert len(reset_paths) == (4 if include_joint_network else 2)
         assert list(vars(env_cfg.events))[0] == "reset_background_physics"
@@ -316,7 +316,7 @@ def _test_maple_table_pose_restored_on_reset(_) -> bool:
     arena_env = IsaacLabArenaEnvironment(name="maple_table_background_reset", scene=scene)
     args = get_isaaclab_arena_cli_parser().parse_args(["--num_envs", "1"])
     builder = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args))
-    env_cfg, _ = builder.compose_manager_cfg()
+    env_cfg, _ = builder.build_env_cfg()
 
     table_path = "{ENV_REGEX_NS}/maple_table_robolab/table"
     assert scene.get_background_physics_paths()[background.name][table_path] == ObjectType.RIGID
