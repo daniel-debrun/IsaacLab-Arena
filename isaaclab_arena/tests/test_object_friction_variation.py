@@ -303,3 +303,98 @@ def test_object_friction_preserves_usd_materials(tmp_path, instanceable):
     assert run_function_with_persistent_simulation_app(
         _test_object_friction_preserves_usd_materials, asset_dir=tmp_path, instanceable=instanceable
     )
+
+
+def _test_object_friction_binding_precedence(_simulation_app, asset_path, binding_kind, configured_material):
+    from isaaclab.sim.spawners.materials.physics_materials_cfg import UsdPhysicsRigidBodyMaterialCfg
+    from isaaclab.sim.utils import create_new_stage
+    from pxr import Usd, UsdGeom, UsdPhysics, UsdShade
+
+    from isaaclab_arena.assets.object import Object
+    from isaaclab_arena.assets.object_type import ObjectType
+    from isaaclab_arena.variations.object_friction_variation import ObjectFrictionVariationCfg
+    from isaaclab_arena.variations.uniform_sampler import UniformSamplerCfg
+
+    source = Usd.Stage.CreateNew(str(asset_path))
+    source.SetDefaultPrim(UsdGeom.Xform.Define(source, "/Asset").GetPrim())
+    original = UsdShade.Material.Define(source, "/Asset/Original")
+    physics = UsdPhysics.MaterialAPI.Apply(original.GetPrim())
+    physics.CreateStaticFrictionAttr(0.3)
+    physics.CreateDynamicFrictionAttr(0.2)
+    for name in ("free", "blocked"):
+        UsdGeom.Xform.Define(source, f"/Asset/{name}")
+        collider = UsdGeom.Cube.Define(source, f"/Asset/{name}/collider").GetPrim()
+        UsdPhysics.CollisionAPI.Apply(collider)
+    parent = source.GetPrimAtPath("/Asset/blocked")
+    blocked = source.GetPrimAtPath("/Asset/blocked/collider")
+    if binding_kind in ("local_collection", "ancestor_collection"):
+        owner = blocked if binding_kind == "local_collection" else parent
+        collection = Usd.CollectionAPI.Apply(owner, "contacts")
+        collection.CreateIncludesRel().SetTargets([blocked.GetPath()])
+        UsdShade.MaterialBindingAPI.Apply(owner).Bind(
+            collection, original, bindingStrength=UsdShade.Tokens.strongerThanDescendants, materialPurpose="physics"
+        )
+    else:
+        strength = (
+            UsdShade.Tokens.weakerThanDescendants
+            if binding_kind == "weak_physics"
+            else UsdShade.Tokens.strongerThanDescendants
+        )
+        purpose = "" if binding_kind == "strong_all_purpose" else "physics"
+        UsdShade.MaterialBindingAPI.Apply(parent).Bind(original, bindingStrength=strength, materialPurpose=purpose)
+    source.GetRootLayer().Save()
+    addon = {}
+    if configured_material:
+        addon["physics_material"] = UsdPhysicsRigidBodyMaterialCfg(restitution=0.4)
+    obj = Object(name="object", usd_path=str(asset_path), object_type=ObjectType.BASE, spawn_cfg_addon=addon)
+    variation = obj.get_variation("friction")
+    variation.apply_cfg(ObjectFrictionVariationCfg(enabled=True, sampler_cfg=UniformSamplerCfg(low=[0.9], high=[0.9])))
+    variation.configure_at_build_time(seed=42, variation_key="object.friction")
+    stage = create_new_stage()
+    for env_index in range(2):
+        UsdGeom.Xform.Define(stage, f"/World/env_{env_index}")
+    spawn = obj.object_cfg.spawn
+    if binding_kind in ("strong_physics", "local_collection", "ancestor_collection"):
+        with pytest.raises(AssertionError, match="Cannot vary friction") as error:
+            spawn.func("/World/env_.*/Object", spawn)
+        assert "/World/env_0/Object/blocked/collider" in str(error.value)
+        assert "material:binding:" in str(error.value)
+        if binding_kind == "local_collection":
+            assert "Remove the conflicting physics collection binding" in str(error.value)
+        else:
+            assert "weakerThanDescendants" in str(error.value)
+        # Reject before authoring any collider-local friction override or cloning the object.
+        for name in ("free", "blocked"):
+            assert not stage.GetPrimAtPath(f"/World/env_0/Object/{name}/collider/ArenaFrictionMaterial")
+        assert not stage.GetPrimAtPath("/World/env_1/Object")
+    else:
+        spawn.func("/World/env_.*/Object", spawn)
+        for env_index in range(2):
+            for name in ("free", "blocked"):
+                collider = stage.GetPrimAtPath(f"/World/env_{env_index}/Object/{name}/collider")
+                material, _ = UsdShade.MaterialBindingAPI(collider).ComputeBoundMaterial("physics")
+                physics = UsdPhysics.MaterialAPI(material.GetPrim())
+                assert physics.GetStaticFrictionAttr().Get() == pytest.approx(0.9)
+                assert physics.GetDynamicFrictionAttr().Get() == pytest.approx(0.9)
+    assert UsdPhysics.MaterialAPI(original.GetPrim()).GetStaticFrictionAttr().Get() == pytest.approx(0.3)
+    return True
+
+
+@pytest.mark.parametrize(
+    "binding_kind",
+    [
+        "strong_physics",
+        "local_collection",
+        "ancestor_collection",
+        "weak_physics",
+        "strong_all_purpose",
+    ],
+)
+@pytest.mark.parametrize("configured_material", [False, True])
+def test_object_friction_binding_precedence(tmp_path, binding_kind, configured_material):
+    assert run_function_with_persistent_simulation_app(
+        _test_object_friction_binding_precedence,
+        asset_path=tmp_path / "object.usda",
+        binding_kind=binding_kind,
+        configured_material=configured_material,
+    )
