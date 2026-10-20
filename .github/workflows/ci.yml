@@ -315,6 +315,11 @@ jobs:
           /isaac-sim/python.sh -m pytest -sv --durations=0 -m "with_cameras and not with_subprocess and not with_newton" \
             isaaclab_arena/tests/
 
+      - name: Run VLM agent policy tests
+        run: |
+          /isaac-sim/python.sh -m pytest -sv --durations=0 \
+            isaaclab_arena_vlm_agent/tests/
+
       - name: Run GR00T policy client & data tests (lightweight gr00t deps only)
         run: |
           /isaac-sim/python.sh -m pytest -sv --durations=0 -m gr00t_policy \

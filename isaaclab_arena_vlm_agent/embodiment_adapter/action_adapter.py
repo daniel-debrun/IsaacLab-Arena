@@ -8,16 +8,35 @@
 import numpy as np
 import torch
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Generic, Literal
 
 from pydantic import BaseModel
 
-
-class InvalidAgentResponse(ValueError):
-    """An adapter rejected model output and requests a corrected response."""
+from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import PolicyStateT
 
 
-class AgentActionAdapter(ABC):
+@dataclass(frozen=True)
+class AgentResponseErrorDetails:
+    """Describe a rejected model response with a stable code and correction message."""
+
+    code: Literal["invalid_schema", "invalid_command"]
+    message: str
+
+
+class InvalidAgentResponseError(ValueError):
+    """A model response was rejected and may be corrected on another inference attempt."""
+
+    def __init__(self, message: str, *, code: Literal["invalid_schema", "invalid_command"] = "invalid_command"):
+        super().__init__(message)
+        self.details = AgentResponseErrorDetails(code=code, message=message)
+
+
+class AgentActionAdapter(ABC, Generic[PolicyStateT]):
     """Validate model responses and convert commands into robot actions."""
+
+    state_model: type[PolicyStateT]
+    """Concrete measured-state model required for decoding responses into actions."""
 
     response_model: type[BaseModel]
     """Response model used to generate the requested schema and validate model output."""
@@ -31,96 +50,36 @@ class AgentActionAdapter(ABC):
         """
 
     @abstractmethod
-    def decode_command(self, response: BaseModel, proprioception: dict) -> np.ndarray:
+    def decode_command(self, response: BaseModel, policy_state: PolicyStateT) -> np.ndarray:
         """Decode a validated response into commands with adapter-defined dimensions and units.
 
-        Use InvalidAgentResponse to request a correction for robot-specific constraints.
+        Use InvalidAgentResponseError to request a correction for robot-specific constraints.
 
         Args:
             response: Model output validated against response_model.
-            proprioception: State sent with this inference request.
+            policy_state: Typed state sent with this inference request.
 
         Returns:
-            A nonempty, finite one-dimensional command array.
+            A nonempty, finite array shaped (horizon, action_dim), executed in order.
+            A single-step response has horizon 1; targets must be decoded into action rows.
         """
 
     def is_command_valid(self, command: np.ndarray) -> bool:
-        """Return whether a decoded command is a nonempty, finite vector.
+        """Return whether decoded actions form a nonempty, finite (horizon, action_dim) array.
 
         Args:
             command: Decoded command to validate before execution.
         """
-        return bool(command.ndim == 1 and command.size > 0 and np.isfinite(command).all())
+        return bool(command.ndim == 2 and command.shape[0] > 0 and command.shape[1] > 0 and np.isfinite(command).all())
 
     def command_to_action(self, env, command: np.ndarray) -> torch.Tensor:
         """Convert a command into one native action on the environment device.
 
         Args:
             env: Arena environment, optionally gym-wrapped.
-            command: Validated command for one environment.
+            command: One validated action row for one environment.
 
         Returns:
             One-dimensional float32 action tensor; override for other action conventions.
         """
         return torch.as_tensor(command, dtype=torch.float32, device=env.unwrapped.device)
-
-
-class ChunkActionAdapter(AgentActionAdapter):
-    """Decode fixed-length command sequences for AgentCommandedChunkPolicy.
-
-    Implement decode_command to return (chunk_size, command_dim) and response_model
-    to describe that response. command_to_action converts one row at a time.
-    """
-
-    def __init__(self, chunk_size: int):
-        assert type(chunk_size) is int and chunk_size > 0, "chunk_size must be a positive integer"
-        self.chunk_size = chunk_size
-
-    def is_command_valid(self, command: np.ndarray) -> bool:
-        """Return whether a decoded chunk has the required shape and finite values.
-
-        Args:
-            command: Decoded array shaped (chunk_size, command_dim).
-        """
-        return bool(
-            command.ndim == 2
-            and command.shape[0] == self.chunk_size
-            and command.shape[1] > 0
-            and np.isfinite(command).all()
-        )
-
-
-class GoalActionAdapter(AgentActionAdapter):
-    """Decode goals and provide closed-loop commands for AgentCommandedGoalPolicy.
-
-    Goals are finite vectors with adapter-defined dimensions and units. A new goal
-    is requested when goal_reached returns True or max_steps commands have executed.
-    """
-
-    def __init__(self, max_steps: int):
-        assert type(max_steps) is int and max_steps > 0, "max_steps must be a positive integer"
-        self.max_steps = max_steps
-
-    @abstractmethod
-    def goal_reached(self, goal: np.ndarray, proprioception: dict) -> bool:
-        """Check goal completion against the current measured state.
-
-        Args:
-            goal: Validated goal for one environment.
-            proprioception: Current state from the observation adapter.
-
-        Returns:
-            Whether to request a new goal before the next action.
-        """
-
-    @abstractmethod
-    def compute_command(self, goal: np.ndarray, proprioception: dict) -> np.ndarray:
-        """Compute one command toward the goal using current measured state.
-
-        Args:
-            goal: Validated goal for one environment.
-            proprioception: Current state from the observation adapter.
-
-        Returns:
-            A finite command vector for command_to_action.
-        """
