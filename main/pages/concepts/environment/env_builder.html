@@ -676,7 +676,7 @@ option.</p>
 <h2>Seeds during compilation<a class="headerlink" href="#seeds-during-compilation" title="Link to this heading">#</a></h2>
 <p>Environment compilation and rollout use more than one random stream, so locking
 a single global seed is not enough when you need layouts, object-set picks, or
-run-time variation draws to be reproducible independently.</p>
+variation values to be reproducible independently.</p>
 <section id="what-it-is">
 <h3>What it is<a class="headerlink" href="#what-it-is" title="Link to this heading">#</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">ArenaEnvBuilder</span></code> exposes two seeds. They are independent — locking one does
@@ -699,8 +699,8 @@ not fix the other.</p>
 <tr class="row-even"><td><p>Environment seed</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">--seed</span></code> / <code class="docutils literal notranslate"><span class="pre">ArenaEnvBuilderCfg.seed</span></code></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">42</span></code></p></td>
-<td><p>Simulation RNG after the Isaac Lab env is created: reset noise and
-<a class="reference internal" href="../variations/variations.html"><span class="doc">run-time variation</span></a> draws.</p></td>
+<td><p>Build-time and run-time <a class="reference internal" href="../variations/variations.html"><span class="doc">variation</span></a>
+values, and the simulation RNG (for example reset noise).</p></td>
 </tr>
 <tr class="row-odd"><td><p>Placement seed</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">--placement_seed</span></code> / <code class="docutils literal notranslate"><span class="pre">ArenaEnvBuilderCfg.placement_seed</span></code></p></td>
@@ -712,9 +712,13 @@ assignment. With <code class="docutils literal notranslate"><span class="pre">No
 </tbody>
 </table>
 </div>
-<p>There is no variation seed. Run-time variations follow <code class="docutils literal notranslate"><span class="pre">--seed</span></code>; build-time
-variations are drawn once at compile time and are not locked by either seed.
-See <a class="reference internal" href="../variations/variations.html"><span class="doc">Variations</span></a> and
+<p>There is no separate variation seed: each variation draws from its own
+generator, seeded from <code class="docutils literal notranslate"><span class="pre">--seed</span></code> and the variation’s
+<code class="docutils literal notranslate"><span class="pre">&lt;asset_name&gt;.&lt;variation_name&gt;</span></code> key. Run-time variations hand out their
+values in episode-start order, so the k-th episode to start gets the same
+values for any <code class="docutils literal notranslate"><span class="pre">num_envs</span></code>. Which environment runs it still depends on
+<code class="docutils literal notranslate"><span class="pre">num_envs</span></code> and on when environments reset. See
+<a class="reference internal" href="../variations/variations.html"><span class="doc">Variations</span></a> and
 <a class="reference internal" href="../object_placement/pooled_placement.html"><span class="doc">Pooled Placement</span></a>.</p>
 </section>
 <section id="how-to-set-it">
@@ -730,7 +734,7 @@ See <a class="reference internal" href="../variations/variations.html"><span cla
 </pre></div>
 </div>
 <ul class="simple">
-<li><p>Set <code class="docutils literal notranslate"><span class="pre">--seed</span></code> to fix simulation and run-time variation draws.</p></li>
+<li><p>Set <code class="docutils literal notranslate"><span class="pre">--seed</span></code> to fix variation values and simulation draws.</p></li>
 <li><p>Set <code class="docutils literal notranslate"><span class="pre">--placement_seed</span></code> to fix layouts and random object-set picks.</p></li>
 <li><p>Omit <code class="docutils literal notranslate"><span class="pre">--placement_seed</span></code> when placement should vary across runs.</p></li>
 </ul>

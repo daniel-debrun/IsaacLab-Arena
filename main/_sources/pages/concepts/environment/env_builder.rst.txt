@@ -70,7 +70,7 @@ Seeds during compilation
 
 Environment compilation and rollout use more than one random stream, so locking
 a single global seed is not enough when you need layouts, object-set picks, or
-run-time variation draws to be reproducible independently.
+variation values to be reproducible independently.
 
 What it is
 ~~~~~~~~~~
@@ -89,8 +89,8 @@ not fix the other.
    * - Environment seed
      - ``--seed`` / ``ArenaEnvBuilderCfg.seed``
      - ``42``
-     - Simulation RNG after the Isaac Lab env is created: reset noise and
-       :doc:`run-time variation <../variations/variations>` draws.
+     - Build-time and run-time :doc:`variation <../variations/variations>`
+       values, and the simulation RNG (for example reset noise).
    * - Placement seed
      - ``--placement_seed`` / ``ArenaEnvBuilderCfg.placement_seed``
      - ``None`` (unlocked)
@@ -98,9 +98,13 @@ not fix the other.
        :doc:`RigidObjectSet <../scene/concept_rigid_object_set>` member
        assignment. With ``None``, placement stays non-reproducible across runs.
 
-There is no variation seed. Run-time variations follow ``--seed``; build-time
-variations are drawn once at compile time and are not locked by either seed.
-See :doc:`../variations/variations` and
+There is no separate variation seed: each variation draws from its own
+generator, seeded from ``--seed`` and the variation's
+``<asset_name>.<variation_name>`` key. Run-time variations hand out their
+values in episode-start order, so the k-th episode to start gets the same
+values for any ``num_envs``. Which environment runs it still depends on
+``num_envs`` and on when environments reset. See
+:doc:`../variations/variations` and
 :doc:`../object_placement/pooled_placement`.
 
 How to set it
@@ -118,7 +122,7 @@ Pass the seed you want to lock on the runner CLI (or set the matching field on
      --num_steps 100 \
      pick_and_place_maple_table
 
-- Set ``--seed`` to fix simulation and run-time variation draws.
+- Set ``--seed`` to fix variation values and simulation draws.
 - Set ``--placement_seed`` to fix layouts and random object-set picks.
 - Omit ``--placement_seed`` when placement should vary across runs.
 
