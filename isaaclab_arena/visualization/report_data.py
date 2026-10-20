@@ -428,20 +428,20 @@ class _ScannedJob:
     issues: list[DataIssue]
 
 
-def normalize_run_status(status: object) -> str:
-    """Normalize a string or enum-like run status to a lowercase string."""
+def run_status_to_lowercase_string(status: object) -> str:
+    """Return a run status string or enum value as a lowercase string."""
     value = getattr(status, "value", status)
     return str(value).lower()
 
 
 def is_failed_execution(execution: RunExecutionReport) -> bool:
     """Return whether a run execution record describes a failed run."""
-    return normalize_run_status(execution.status) == FAILED_STATUS
+    return run_status_to_lowercase_string(execution.status) == FAILED_STATUS
 
 
 def is_completed_execution(execution: RunExecutionReport) -> bool:
     """Return whether a run execution record describes a completed run."""
-    return normalize_run_status(execution.status) == COMPLETED_STATUS
+    return run_status_to_lowercase_string(execution.status) == COMPLETED_STATUS
 
 
 def _base_predicate_name(predicate_name: object) -> str:

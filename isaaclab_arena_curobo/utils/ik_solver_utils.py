@@ -118,7 +118,7 @@ def solve_ik_feasibility(
     """Batched IK feasibility of all ``target_poses`` against a cuRobo IK solver, as a single ``solve_batch`` for one layout.
 
     Args:
-        solver: The ``CuroboIKSolver`` that owns the cuRobo solver and supplies device/pose plumbing.
+        solver: The ``CuroboIKSolver`` providing tensor device conversion and cuRobo pose construction.
         target_poses: ``(b, 4, 4)`` end-effector goal transforms in the robot base frame.
         seed_config: Optional joint seed tensor.
         position_threshold: Max position error (m) to count as feasible.
@@ -191,7 +191,7 @@ def robot_collision_spheres(solver: CuroboIKSolver, joint_positions: torch.Tenso
     """Forward-kinematics the robot's collision spheres at each given joint configuration. Curobo collision-checks use these spheres.
 
     Args:
-        solver: The ``CuroboIKSolver`` that owns the cuRobo solver and supplies device plumbing.
+        solver: The ``CuroboIKSolver`` providing kinematics and tensor device conversion.
         joint_positions: shape of (b, dof), b:number of poses, dof:number of joints.
 
     Returns:

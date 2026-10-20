@@ -262,7 +262,7 @@ class SpatialRelationSpec(BaseModel):
     @field_validator("reference", mode="before")
     @classmethod
     def _none_if_empty_reference(cls, value: Any) -> Any:
-        """Normalize an empty optional reference to None before arity validation."""
+        """Convert a blank reference string to None before arity validation."""
         if isinstance(value, str) and not value.strip():
             return None
         return value
@@ -276,17 +276,19 @@ class SpatialRelationSpec(BaseModel):
             assert self.reference is None, f"Relation kind '{self.kind}' must not define relation.reference"
         else:
             assert self.reference is not None, f"Relation kind '{self.kind}' requires relation.reference"
-        self.params = _normalize_relation_params(self.params)
+        self.params = _convert_relation_pose_params_to_float_tuples(self.params)
         return self
 
 
-def _normalize_relation_params(params: dict[str, Any]) -> dict[str, Any]:
-    normalized = dict(params)
-    if "position_xyz" in normalized:
-        normalized["position_xyz"] = _convert_to_float_tuple(normalized["position_xyz"], 3, "position_xyz")
-    if "rotation_xyzw" in normalized:
-        normalized["rotation_xyzw"] = _convert_to_float_tuple(normalized["rotation_xyzw"], 4, "rotation_xyzw")
-    return normalized
+def _convert_relation_pose_params_to_float_tuples(params: dict[str, Any]) -> dict[str, Any]:
+    converted_params = dict(params)
+    if "position_xyz" in converted_params:
+        converted_params["position_xyz"] = _convert_to_float_tuple(converted_params["position_xyz"], 3, "position_xyz")
+    if "rotation_xyzw" in converted_params:
+        converted_params["rotation_xyzw"] = _convert_to_float_tuple(
+            converted_params["rotation_xyzw"], 4, "rotation_xyzw"
+        )
+    return converted_params
 
 
 def _convert_to_float_tuple(value: Any, length: int, field_name: str) -> tuple[float, ...]:
