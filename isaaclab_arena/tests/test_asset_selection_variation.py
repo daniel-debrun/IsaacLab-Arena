@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for AssetSelectionVariation, through ArenaEnvBuilder.compose_manager_cfg()."""
+"""Tests for AssetSelectionVariation, through ArenaEnvBuilder.build_env_cfg()."""
 
 import json
 
@@ -96,7 +96,7 @@ def compose_pick_and_place_with_selection(
         resolve_on_reset=False,
         recorded_variation_samples_path=recorded_variation_samples_path,
     )
-    env_cfg, env_kwargs = ArenaEnvBuilder(arena_env, builder_cfg, hydra_overrides=hydra_overrides).compose_manager_cfg()
+    env_cfg, env_kwargs = ArenaEnvBuilder(arena_env, builder_cfg, hydra_overrides=hydra_overrides).build_env_cfg()
     return pickup, env_cfg, env_kwargs
 
 
@@ -225,7 +225,7 @@ def _test_asset_selection_rejects_invalid_configuration(simulation_app, case_id)
         pickup.add_variation(AssetSelectionVariation(pickup, [candidate], cfg=AssetSelectionVariationCfg(enabled=True)))
         pickup.bounding_box = AxisAlignedBoundingBox(min_point=(0.0, 0.0, 0.0), max_point=(0.1, 0.1, 0.1))
         arena_env = IsaacLabArenaEnvironment(name="bounding_box_override", scene=Scene(assets=[pickup]))
-        ArenaEnvBuilder(arena_env, ArenaEnvBuilderCfg(num_envs=1)).compose_manager_cfg()
+        ArenaEnvBuilder(arena_env, ArenaEnvBuilderCfg(num_envs=1)).build_env_cfg()
 
     def add_second_selection():
         pickup = Object(name="pickup")
@@ -293,7 +293,7 @@ def _test_placement_replay_needs_recorded_asset_selection(simulation_app, tmp_pa
     builder_cfg = ArenaEnvBuilderCfg(num_envs=1, recorded_variation_samples_path=str(layouts_path))
 
     with pytest.raises(AssertionError, match=r"no 'pickup\.asset_selection' value"):
-        ArenaEnvBuilder(arena_env, builder_cfg).compose_manager_cfg()
+        ArenaEnvBuilder(arena_env, builder_cfg).build_env_cfg()
     return True
 
 
