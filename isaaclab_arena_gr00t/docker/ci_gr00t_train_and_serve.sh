@@ -43,6 +43,37 @@ if [ "${CI_GR00T_ENTRYPOINT_MODE}" != "serve" ]; then
   exit 1
 fi
 
+# Check the compiler in this container, where GR00T builds FlashAttention.
+# nvidia-smi's CUDA version describes driver support, not the installed toolkit.
+# Publish the result before waiting for data so the client can skip its E2E steps.
+if [ -n "${GR00T_CI_COMPATIBILITY_FILE:-}" ]; then
+  gr00t_ci_enabled=true
+  gr00t_ci_reason="GR00T E2E enabled: no Blackwell GPU detected."
+  gpu_capabilities="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader)"
+  # Blackwell includes data-center (10.x), Thor (11.x), and RTX/Spark (12.x) GPUs.
+  if grep -Eq '^[[:space:]]*(10|11|12)\.' <<< "${gpu_capabilities}"; then
+    cuda_home="${CUDA_HOME:-${CUDA_PATH:-}}"
+    if [ -n "${cuda_home}" ]; then
+      cuda_compiler="${cuda_home}/bin/nvcc"
+    else
+      cuda_compiler="$(command -v nvcc || echo /usr/local/cuda/bin/nvcc)"
+    fi
+    cuda_version="$("${cuda_compiler}" --version 2>/dev/null | sed -n 's/.*release \([0-9]*\.[0-9]*\),.*/\1/p' || true)"
+    if [ "${cuda_version}" = "12.8" ]; then
+      gr00t_ci_reason="GR00T E2E enabled: Blackwell with CUDA toolkit 12.8."
+    else
+      gr00t_ci_enabled=false
+      gr00t_ci_reason="Skipping GR00T E2E: Blackwell requires CUDA toolkit 12.8; found ${cuda_version:-unknown}."
+    fi
+  fi
+  echo "${gr00t_ci_reason}"
+  printf '%s\n' "${gr00t_ci_enabled}" "${gr00t_ci_reason}" > "${GR00T_CI_COMPATIBILITY_FILE}.tmp"
+  mv "${GR00T_CI_COMPATIBILITY_FILE}.tmp" "${GR00T_CI_COMPATIBILITY_FILE}"
+  if [ "${gr00t_ci_enabled}" = false ]; then
+    exit 0
+  fi
+fi
+
 MODELS_DIR="${MODELS_DIR:-/workspace/pretrained_ckpts}"
 BASE_MODEL_PATH="${BASE_MODEL_PATH:-${MODELS_DIR}/GR00T-N1.6-3B}"
 DATASET_PATH="${DATASET_PATH:-${ARENA_WORKSPACE}/isaaclab_arena_gr00t/tests/test_data/test_g1_locomanip_lerobot}"
