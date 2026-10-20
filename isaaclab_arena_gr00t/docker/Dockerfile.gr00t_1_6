@@ -57,8 +57,8 @@ RUN /usr/local/bin/hf download \
 RUN echo "alias hf='/usr/local/bin/hf'" >> /etc/bash.bashrc
 
 
-# GR00T server boot-up. The baked copy waits for the mounted checkout and
+# GR00T server bootstrap. The baked copy waits for the mounted checkout and
 # then executes the repo copy.
 COPY isaaclab_arena_gr00t/docker/ci_gr00t_train_and_serve.sh /workspace/ci_gr00t_train_and_serve.sh
 RUN chmod +x /workspace/ci_gr00t_train_and_serve.sh
-ENV CI_GR00T_ENTRYPOINT_MODE=boot-up
+ENV CI_GR00T_ENTRYPOINT_MODE=bootstrap

@@ -372,7 +372,7 @@ jobs:
       gr00t:
         image: nvcr.io/nvidian/gr00t1_6_arena_ci:latest
         env:
-          # Server boot-up waits until this attempt's GPU check passes.
+          # Server bootstrap waits until this attempt's GPU check passes.
           ARENA_WORKSPACE: /arena_workspace/.gr00t-ci-${{ github.run_id }}-${{ github.run_attempt }}.workspace
         credentials:
           username: $oauthtoken
@@ -410,7 +410,7 @@ jobs:
             echo "::notice::${reason}"
           else
             echo "enabled=true" >> "${GITHUB_OUTPUT}"
-            # Allow server boot-up only on supported runners.
+            # Allow server bootstrap only on supported runners.
             ln -s . "${GR00T_CI_SERVER_WORKSPACE}"
           fi
 
