@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import numpy as np
 import torch
+from abc import abstractmethod
 from collections import deque
 from dataclasses import asdict, dataclass
 
@@ -17,7 +18,12 @@ from pydantic import ValidationError
 
 from isaaclab_arena.inference.backend import InferenceBackend, InferenceRequest, build_strict_schema
 from isaaclab_arena.policy.policy_base import PolicyBase, PolicyCfg
-from isaaclab_arena_vlm_agent.embodiment_adapter.action_adapter import AgentActionAdapter, InvalidAgentResponseError
+from isaaclab_arena_vlm_agent.embodiment_adapter.action_adapter import (
+    AgentActionAdapter,
+    ChunkActionAdapter,
+    GoalActionAdapter,
+    InvalidAgentResponseError,
+)
 from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import (
     CAMERA_OBSERVATION_GROUP,
     PolicyState,
@@ -27,7 +33,7 @@ from isaaclab_arena_vlm_agent.image import image_to_jpeg_data_url
 
 
 @dataclass
-class VLMAgentPolicyCfg(PolicyCfg):
+class VLMPolicyCfg(PolicyCfg):
     """Configure policy prompts, image encoding, and action-validation attempts."""
 
     system_prompt: str = ""
@@ -52,16 +58,15 @@ class VLMAgentPolicyCfg(PolicyCfg):
         assert isinstance(self.max_attempts, int) and self.max_attempts >= 1
 
 
-class VLMAgentPolicy(PolicyBase[VLMAgentPolicyCfg]):
-    """Execute decoded action chunks, requesting new actions when each environment's queue empties.
+class VLMPolicy(PolicyBase[VLMPolicyCfg]):
+    """Share VLM request preparation and response validation across execution strategies.
 
     Each request contains only the current images, robot state, and task description.
-    Adapters return (horizon, action_dim) arrays; horizon 1 gives one inference per step.
     """
 
     def __init__(
         self,
-        config: VLMAgentPolicyCfg,
+        config: VLMPolicyCfg,
         *,
         inference_backend: InferenceBackend,
         observation_adapter: VLMObservationAdapter,
@@ -89,10 +94,9 @@ class VLMAgentPolicy(PolicyBase[VLMAgentPolicyCfg]):
         self._response_schema = build_strict_schema(action_adapter.response_model)
         self._inference_backend = inference_backend
         self.task_description = None
-        self._chunks: dict[int, deque] = {}
 
     def get_action(self, env, observation) -> torch.Tensor:
-        """Return a batch of native actions, using current observations when queues are empty.
+        """Return a batch of native actions using the policy execution strategy.
 
         Args:
             env: Arena environment, optionally gym-wrapped.
@@ -120,12 +124,9 @@ class VLMAgentPolicy(PolicyBase[VLMAgentPolicyCfg]):
             actions.append(action.to(device=env.unwrapped.device))
         return torch.stack(actions)
 
+    @abstractmethod
     def _get_command(self, env, observation, env_id: int, state: PolicyState) -> np.ndarray:
-        """Consume one action row, inferring a new chunk only when the queue is empty."""
-        if not self._chunks.get(env_id):
-            chunk = self._infer(self._request_content(env, observation, env_id, state), state)
-            self._chunks[env_id] = deque(chunk)
-        return self._chunks[env_id].popleft()
+        """Return one command using the current observation and any pending prediction."""
 
     def _request_content(self, env, observation, env_id: int, state: PolicyState) -> list[dict]:
         """Prepare current state and images for a new inference request."""
@@ -175,9 +176,7 @@ class VLMAgentPolicy(PolicyBase[VLMAgentPolicyCfg]):
                     # Adapter implementation errors must propagate without asking the model to fix them.
                     if self.action_adapter.is_command_valid(command):
                         return command
-                    rejection = InvalidAgentResponseError(
-                        "Expected a nonempty, finite (horizon, action_dim) array with the adapter's required shape"
-                    )
+                    rejection = InvalidAgentResponseError("Expected finite commands with the adapter's required shape")
             messages.append({"role": "assistant", "content": json.dumps(payload)})
             messages.append({
                 "role": "user",
@@ -186,10 +185,106 @@ class VLMAgentPolicy(PolicyBase[VLMAgentPolicyCfg]):
         assert rejection is not None, "Expected a rejection after exhausting response-validation attempts"
         raise rejection
 
+
+class VLMStepPolicy(VLMPolicy):
+    """Predict one action per environment from fresh observations on every step."""
+
+    def __init__(
+        self,
+        config: VLMPolicyCfg,
+        *,
+        inference_backend: InferenceBackend,
+        observation_adapter: VLMObservationAdapter,
+        action_adapter: AgentActionAdapter,
+    ):
+        assert not isinstance(action_adapter, (ChunkActionAdapter, GoalActionAdapter)), "Expected a single-step adapter"
+        super().__init__(
+            config,
+            inference_backend=inference_backend,
+            observation_adapter=observation_adapter,
+            action_adapter=action_adapter,
+        )
+
+    def _get_command(self, env, observation, env_id: int, state: PolicyState) -> np.ndarray:
+        return self._infer(self._request_content(env, observation, env_id, state), state)
+
+
+class VLMChunkPolicy(VLMPolicy):
+    """Execute a validated command chunk before requesting another from current observations."""
+
+    def __init__(
+        self,
+        config: VLMPolicyCfg,
+        *,
+        inference_backend: InferenceBackend,
+        observation_adapter: VLMObservationAdapter,
+        action_adapter: ChunkActionAdapter,
+    ):
+        assert isinstance(action_adapter, ChunkActionAdapter)
+        super().__init__(
+            config,
+            inference_backend=inference_backend,
+            observation_adapter=observation_adapter,
+            action_adapter=action_adapter,
+        )
+        self._chunks: dict[int, deque] = {}
+
+    def _get_command(self, env, observation, env_id: int, state: PolicyState) -> np.ndarray:
+        if not self._chunks.get(env_id):
+            chunk = self._infer(self._request_content(env, observation, env_id, state), state)
+            self._chunks[env_id] = deque(chunk)
+        return self._chunks[env_id].popleft()
+
     def reset(self, env_ids: torch.Tensor | None = None) -> None:
-        """Discard pending actions for selected environments, or all environments."""
+        """Discard pending commands for selected environments, or all environments."""
         if env_ids is None:
             self._chunks.clear()
         else:
             for env_id in env_ids.reshape(-1).tolist():
                 self._chunks.pop(env_id, None)
+
+
+class VLMGoalPolicy(VLMPolicy):
+    """Use adapter-defined feedback to execute a goal until completion or its step limit."""
+
+    def __init__(
+        self,
+        config: VLMPolicyCfg,
+        *,
+        inference_backend: InferenceBackend,
+        observation_adapter: VLMObservationAdapter,
+        action_adapter: GoalActionAdapter,
+    ):
+        assert isinstance(action_adapter, GoalActionAdapter)
+        super().__init__(
+            config,
+            inference_backend=inference_backend,
+            observation_adapter=observation_adapter,
+            action_adapter=action_adapter,
+        )
+        self._goals: dict[int, tuple[np.ndarray, int]] = {}
+
+    def _get_command(self, env, observation, env_id: int, state: PolicyState) -> np.ndarray:
+        pending = self._goals.get(env_id)
+        if (
+            pending is None
+            or pending[1] >= self.action_adapter.max_steps
+            or self.action_adapter.goal_reached(pending[0], state)
+        ):
+            goal = self._infer(self._request_content(env, observation, env_id, state), state)
+            executed = 0
+        else:
+            goal, executed = pending
+        command = np.asarray(self.action_adapter.compute_command(goal, state), dtype=np.float32)
+        if command.ndim != 1 or command.size == 0 or not np.isfinite(command).all():
+            raise ValueError("Expected a finite goal command")
+        self._goals[env_id] = (goal, executed + 1)
+        return command
+
+    def reset(self, env_ids: torch.Tensor | None = None) -> None:
+        """Discard pending goals for selected environments, or all environments."""
+        if env_ids is None:
+            self._goals.clear()
+        else:
+            for env_id in env_ids.reshape(-1).tolist():
+                self._goals.pop(env_id, None)

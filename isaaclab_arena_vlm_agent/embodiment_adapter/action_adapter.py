@@ -60,17 +60,16 @@ class AgentActionAdapter(ABC, Generic[PolicyStateT]):
             policy_state: Typed state sent with this inference request.
 
         Returns:
-            A nonempty, finite array shaped (horizon, action_dim), executed in order.
-            A single-step response has horizon 1; targets must be decoded into action rows.
+            A nonempty, finite command vector, or a chunk as defined by the adapter.
         """
 
     def is_command_valid(self, command: np.ndarray) -> bool:
-        """Return whether decoded actions form a nonempty, finite (horizon, action_dim) array.
+        """Return whether a decoded command is a nonempty, finite vector.
 
         Args:
             command: Decoded command to validate before execution.
         """
-        return bool(command.ndim == 2 and command.shape[0] > 0 and command.shape[1] > 0 and np.isfinite(command).all())
+        return bool(command.ndim == 1 and command.size > 0 and np.isfinite(command).all())
 
     def command_to_action(self, env, command: np.ndarray) -> torch.Tensor:
         """Convert a command into one native action on the environment device.
@@ -83,3 +82,64 @@ class AgentActionAdapter(ABC, Generic[PolicyStateT]):
             One-dimensional float32 action tensor; override for other action conventions.
         """
         return torch.as_tensor(command, dtype=torch.float32, device=env.unwrapped.device)
+
+
+class ChunkActionAdapter(AgentActionAdapter[PolicyStateT]):
+    """Decode fixed-length command sequences for VLMChunkPolicy.
+
+    Implement decode_command to return (chunk_size, command_dim) and response_model
+    to describe that response. command_to_action converts one row at a time.
+    """
+
+    def __init__(self, chunk_size: int):
+        assert type(chunk_size) is int and chunk_size > 0, "chunk_size must be a positive integer"
+        self.chunk_size = chunk_size
+
+    def is_command_valid(self, command: np.ndarray) -> bool:
+        """Return whether a decoded chunk has the required shape and finite values.
+
+        Args:
+            command: Decoded array shaped (chunk_size, command_dim).
+        """
+        return bool(
+            command.ndim == 2
+            and command.shape[0] == self.chunk_size
+            and command.shape[1] > 0
+            and np.isfinite(command).all()
+        )
+
+
+class GoalActionAdapter(AgentActionAdapter[PolicyStateT]):
+    """Decode goals and provide closed-loop commands for VLMGoalPolicy.
+
+    Goals are finite vectors with adapter-defined dimensions and units. A new goal
+    is requested when goal_reached returns True or max_steps commands have executed.
+    """
+
+    def __init__(self, max_steps: int):
+        assert type(max_steps) is int and max_steps > 0, "max_steps must be a positive integer"
+        self.max_steps = max_steps
+
+    @abstractmethod
+    def goal_reached(self, goal: np.ndarray, policy_state: PolicyStateT) -> bool:
+        """Check goal completion against the current measured state.
+
+        Args:
+            goal: Validated goal for one environment.
+            policy_state: Current state from the observation adapter.
+
+        Returns:
+            Whether to request a new goal before the next action.
+        """
+
+    @abstractmethod
+    def compute_command(self, goal: np.ndarray, policy_state: PolicyStateT) -> np.ndarray:
+        """Compute one command toward the goal using current measured state.
+
+        Args:
+            goal: Validated goal for one environment.
+            policy_state: Current state from the observation adapter.
+
+        Returns:
+            A finite command vector for command_to_action.
+        """

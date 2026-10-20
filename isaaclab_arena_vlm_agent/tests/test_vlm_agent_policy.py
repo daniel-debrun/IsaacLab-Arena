@@ -22,13 +22,18 @@ from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
 from isaaclab_arena.inference.backend import InferenceBackend, build_strict_schema
-from isaaclab_arena_vlm_agent.embodiment_adapter.action_adapter import AgentActionAdapter, InvalidAgentResponseError
+from isaaclab_arena_vlm_agent.embodiment_adapter.action_adapter import (
+    AgentActionAdapter,
+    ChunkActionAdapter,
+    GoalActionAdapter,
+    InvalidAgentResponseError,
+)
 from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import (
     CAMERA_OBSERVATION_GROUP,
     PolicyState,
     VLMObservationAdapter,
 )
-from isaaclab_arena_vlm_agent.policy.vlm_agent_policy import VLMAgentPolicy, VLMAgentPolicyCfg
+from isaaclab_arena_vlm_agent.policy.vlm_agent_policy import VLMChunkPolicy, VLMGoalPolicy, VLMPolicyCfg, VLMStepPolicy
 
 
 class JointPositionState(PolicyState):
@@ -76,7 +81,7 @@ class ActionAdapter(AgentActionAdapter[JointPositionState]):
         target = np.asarray(response.target, dtype=np.float32)
         if target.shape != (len(policy_state.joint_positions),):
             raise InvalidAgentResponseError("Wrong command dimensions")
-        return (target - np.asarray(policy_state.joint_positions))[None]
+        return target - np.asarray(policy_state.joint_positions)
 
     def command_to_action(self, env, command):
         return super().command_to_action(env, command * self.scale)
@@ -101,12 +106,12 @@ def backend(monkeypatch):
 
 
 def make_policy(backend, **kwargs):
-    config = VLMAgentPolicyCfg(
+    config = VLMPolicyCfg(
         system_prompt="Return the joint targets using the supplied schema.",
         image_max_width_or_height=8,
         **kwargs,
     )
-    policy = VLMAgentPolicy(
+    policy = VLMStepPolicy(
         config,
         inference_backend=backend,
         observation_adapter=ObservationAdapter(),
@@ -136,11 +141,11 @@ def test_policy_uses_adapter_actions_for_each_environment(backend, action_dim):
         return response(json.dumps({"target": (np.asarray(state["joint_positions"]) + 0.5).tolist()}))
 
     client.chat.completions.create.side_effect = create
-    config = VLMAgentPolicyCfg(
+    config = VLMPolicyCfg(
         system_prompt="Use this robot's joint units.",
         image_max_width_or_height=8,
     )
-    policy = VLMAgentPolicy(
+    policy = VLMStepPolicy(
         config,
         inference_backend=backend,
         observation_adapter=ObservationAdapter(),
@@ -241,12 +246,17 @@ def test_environment_validation_precedes_inference(backend):
 @pytest.mark.parametrize("prompt", ["", " \n\t", None])
 def test_missing_prompt_is_rejected(prompt):
     with pytest.raises(AssertionError, match="policy.system_prompt"):
-        VLMAgentPolicyCfg(system_prompt=prompt)
+        VLMPolicyCfg(system_prompt=prompt)
 
 
-class JointChunkAdapter(ActionAdapter):
+class JointChunkAdapter(ChunkActionAdapter[JointPositionState]):
+    state_model = JointPositionState
+
+    def is_robot_action_space_supported(self, env):
+        return env.unwrapped.action_dim > 0
+
     def __init__(self, chunk_size: int):
-        super().__init__()
+        super().__init__(chunk_size)
         self.response_model = create_model(
             "JointChunkResponse",
             __config__=ConfigDict(extra="forbid", strict=True),
@@ -259,24 +269,30 @@ class JointChunkAdapter(ActionAdapter):
         return np.asarray(response.actions, dtype=np.float32)
 
 
-class JointGoalAdapter(ActionAdapter):
-    """Plan a chunk of equal joint increments toward a target from the current measured position."""
+class JointGoalAdapter(GoalActionAdapter[JointPositionState]):
+    state_model = JointPositionState
+    response_model = JointTargetResponse
 
-    def __init__(self, max_step: float = 0.25):
-        super().__init__()
-        self.max_step = max_step
+    def is_robot_action_space_supported(self, env):
+        return env.unwrapped.action_dim > 0
 
     def decode_command(self, response, policy_state: JointPositionState):
-        remaining = super().decode_command(response, policy_state)
-        if not np.isfinite(remaining).all():
-            raise InvalidAgentResponseError("Expected finite joint targets")
-        num_steps = max(1, int(np.ceil(np.abs(remaining).max() / self.max_step)))
-        return np.repeat(remaining / num_steps, num_steps, axis=0).astype(np.float32)
+        target = np.asarray(response.target, dtype=np.float32)
+        if target.shape != (len(policy_state.joint_positions),):
+            raise InvalidAgentResponseError("Wrong goal dimensions")
+        return target
+
+    def goal_reached(self, goal, policy_state: JointPositionState):
+        return np.allclose(goal, policy_state.joint_positions)
+
+    def compute_command(self, goal, policy_state: JointPositionState):
+        return np.clip(goal - np.asarray(policy_state.joint_positions), -0.25, 0.25)
 
 
 def make_multi_step_policy(backend, adapter):
-    policy = VLMAgentPolicy(
-        VLMAgentPolicyCfg(system_prompt="Control these joints.", max_attempts=1),
+    policy_type = VLMChunkPolicy if isinstance(adapter, ChunkActionAdapter) else VLMGoalPolicy
+    policy = policy_type(
+        VLMPolicyCfg(system_prompt="Control these joints.", max_attempts=1),
         inference_backend=backend,
         observation_adapter=ObservationAdapter(),
         action_adapter=adapter,
@@ -344,33 +360,45 @@ def test_whole_chunk_is_validated_before_execution(backend, commands):
 
 
 @pytest.mark.parametrize("action_dim", [2, 5])
-def test_goal_adapter_plans_per_environment_horizons_from_measured_state(backend, action_dim):
+def test_goals_use_measured_feedback_step_limit_and_partial_reset(backend, action_dim):
     calls = []
 
     def create(**kwargs):
         calls.append(copy.deepcopy(kwargs))
         state = json.loads(kwargs["messages"][1]["content"][0]["text"])["policy_state"]
-        # Env 0 needs two actions; env 1 needs three.
-        distance = 0.5 if len(calls) == 1 else 0.75
-        return response(json.dumps({"target": (np.asarray(state["joint_positions"]) + distance).tolist()}))
+        return response(json.dumps({"target": (np.asarray(state["joint_positions"]) + 1).tolist()}))
 
     backend.client.chat.completions.create.side_effect = create
-    policy = make_multi_step_policy(backend, JointGoalAdapter())
+    policy = make_multi_step_policy(backend, JointGoalAdapter(max_steps=2))
     env, observation = inputs(action_dim)
-    for _ in range(2):
-        torch.testing.assert_close(policy.get_action(env, observation), torch.full((2, action_dim), 0.25))
-        observation["position"].add_(0.25)
+    torch.testing.assert_close(policy.get_action(env, observation), torch.full((2, action_dim), 0.25))
     assert len(calls) == 2
-    policy.get_action(env, observation)
-    assert len(calls) == 3  # Only env 0 needs another prediction.
-    current_state = json.loads(calls[2]["messages"][1]["content"][0]["text"])["policy_state"]
-    assert current_state["joint_positions"] == observation["position"][0].tolist()
+    # Env 0 reaches its goal; env 1 is close enough to require a smaller command.
+    observation["position"][0].add_(1)
+    observation["position"][1].add_(0.9)
+    expected = torch.stack((torch.full((action_dim,), 0.25), torch.full((action_dim,), 0.1)))
+    torch.testing.assert_close(policy.get_action(env, observation), expected)
+    assert len(calls) == 3
+    # Env 1 exhausts its budget while env 0 continues its second goal.
+    torch.testing.assert_close(policy.get_action(env, observation), torch.full((2, action_dim), 0.25))
+    assert len(calls) == 4
     policy.reset(torch.tensor([0]))
     policy.get_action(env, observation)
-    assert len(calls) == 5  # Env 0 was reset; env 1 exhausted its original chunk.
+    assert len(calls) == 5
     policy.reset()
     policy.get_action(env, observation)
     assert len(calls) == 7
+
+
+def test_goal_controller_output_is_validated_before_conversion(backend):
+    backend.client.chat.completions.create.return_value = response('{"target": [1, 2]}')
+    adapter = JointGoalAdapter(max_steps=2)
+    adapter.compute_command = Mock(return_value=np.array([np.inf, 0]))
+    adapter.command_to_action = Mock()
+    policy = make_multi_step_policy(backend, adapter)
+    with pytest.raises(ValueError, match="finite goal command"):
+        policy.get_action(*inputs())
+    adapter.command_to_action.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -403,14 +431,14 @@ def test_invalid_model_actions_are_rejected_with_python_optimization():
             ActionAdapter, ObservationAdapter, JointPositionState,
         )
         from isaaclab_arena_vlm_agent.embodiment_adapter.action_adapter import InvalidAgentResponseError
-        from isaaclab_arena_vlm_agent.policy.vlm_agent_policy import VLMAgentPolicy, VLMAgentPolicyCfg
+        from isaaclab_arena_vlm_agent.policy.vlm_agent_policy import VLMStepPolicy, VLMPolicyCfg
 
-        for command in (np.ones(2), np.empty((0, 2)), np.array([[1, np.nan]])):
+        for command in (np.ones((1, 2)), np.empty(0), np.array([1, np.nan])):
             backend = SimpleNamespace(infer=Mock(return_value={"target": [1, 2]}))
             adapter = ActionAdapter()
             adapter.decode_command = Mock(return_value=command)
-            policy = VLMAgentPolicy(
-                VLMAgentPolicyCfg(system_prompt="Control joints", max_attempts=2),
+            policy = VLMStepPolicy(
+                VLMPolicyCfg(system_prompt="Control joints", max_attempts=2),
                 inference_backend=backend, observation_adapter=ObservationAdapter(), action_adapter=adapter,
             )
             try:
@@ -457,8 +485,8 @@ def test_missing_camera_keys_fail_at_construction(backend):
     adapter = ObservationAdapter()
     adapter.camera_keys = ()
     with pytest.raises(AssertionError, match="camera observation key"):
-        VLMAgentPolicy(
-            VLMAgentPolicyCfg(system_prompt="Control these joints."),
+        VLMStepPolicy(
+            VLMPolicyCfg(system_prompt="Control these joints."),
             inference_backend=backend,
             observation_adapter=adapter,
             action_adapter=ActionAdapter(),
@@ -473,8 +501,8 @@ def test_incompatible_state_models_fail_before_inference(backend):
     adapter = ActionAdapter()
     adapter.state_model = OtherState
     with pytest.raises(AssertionError, match="same state_model"):
-        VLMAgentPolicy(
-            VLMAgentPolicyCfg(system_prompt="Control these joints."),
+        VLMStepPolicy(
+            VLMPolicyCfg(system_prompt="Control these joints."),
             inference_backend=backend,
             observation_adapter=ObservationAdapter(),
             action_adapter=adapter,
