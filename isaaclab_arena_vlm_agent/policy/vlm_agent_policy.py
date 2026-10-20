@@ -41,9 +41,9 @@ class VLMAgentPolicyCfg(PolicyCfg):
     image_max_width_or_height: int = 384
     """Maximum image width or height sent to the endpoint, in pixels.
 
-    384 is retained from the original Astra VLM policy as a configurable downsampling
-    default, rather than an endpoint requirement. For example, 1280x720 becomes 384x216.
-    Increase it when the task needs finer visual detail.
+    For 16:9 images, 384 yields the 384x216 resolution used for all three camera views
+    in Astranomy (Sections 2 and 3.4): https://research.nvidia.com/labs/srl/projects/astranomy/
+    The report documents an experimental setting; it does not establish an Astra image-size limit.
     """
 
     max_attempts: int = 3

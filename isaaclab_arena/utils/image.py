@@ -17,8 +17,9 @@ def encode_image(image: np.ndarray, max_width_or_height: int = 384) -> str:
 
     Args:
         image: HWC uint8 pixels; the alpha channel, if present, is discarded.
-        max_width_or_height: Maximum encoded image width or height, in pixels. The 384 default
-            comes from the original Astra VLM policy's downsampling setting; JPEG does not require it.
+        max_width_or_height: Maximum encoded image width or height, in pixels. For 16:9 images,
+            the 384 default matches Astranomy's 384x216 camera inputs (Section 2):
+            https://research.nvidia.com/labs/srl/projects/astranomy/
 
     Returns:
         A JPEG data URL for an image-capable chat-completion endpoint.
