@@ -35,7 +35,7 @@ class ChoiceSampler(SamplerBase, Generic[T]):
         *,
         index: int | None = None,
     ) -> list[T]:
-        """Draw ``num_samples`` items from ``choices``.
+        """Return ``num_samples`` items from ``choices``.
 
         Args:
             num_samples: Number of items to return, typically the

@@ -25,8 +25,8 @@ class AssetSelectionVariationCfg(VariationBaseCfg):
     """Configuration for AssetSelectionVariation."""
 
     random_choice: bool = False
-    """False takes name number ``seed % n`` of the ``n`` names in use, so consecutive build seeds take them in
-    order. True draws one name at random, seeded by the build seed and the variation key."""
+    """False takes the name at index ``seed % n`` of the ``n`` names to choose from, so consecutive build seeds
+    take the names in order. True draws a name at random, seeded by the build seed and the variation key."""
 
     asset_names: list[str] = field(default_factory=list)
     """Candidate names to choose from, in this order. Empty uses every candidate in declaration order."""
@@ -38,7 +38,8 @@ class AssetSelectionVariationCfg(VariationBaseCfg):
 class AssetSelectionVariation(BuildTimeVariationBase):
     """Choose one of several assets for a rigid Object; every environment of a build spawns the chosen asset.
 
-    Scene export and ObjectReference read the Object's own usd_path, so they fail for an Object declared without one.
+    Scene.export_to_usd() and ObjectReference read Object.usd_path, not the selected asset, so they fail for an
+    Object declared without a usd_path.
 
     Args:
         rigid_object: Object whose ``object_cfg.spawn`` the selection sets. It must be a rigid Object, not a
@@ -107,7 +108,7 @@ class AssetSelectionVariation(BuildTimeVariationBase):
         super().apply_cfg(cfg)
 
     def configure_at_build_time(self, seed: int, variation_key: str) -> None:
-        # In-order selection takes name number seed % n, and VariationBase does not keep the seed.
+        # VariationBase does not keep the seed, and in-order selection needs it.
         self._build_seed = seed
         super().configure_at_build_time(seed, variation_key)
 
@@ -117,11 +118,12 @@ class AssetSelectionVariation(BuildTimeVariationBase):
             f"'{self._rigid_object.name}' sets a bounding_box override, which placement would use for every candidate."
             " Set bounding_box to None so placement reads the bounds of the selected asset."
         )
-        names_in_use = list(self.cfg.asset_names) or list(self._spawn_cfgs_by_name)
+        names_to_choose_from = list(self.cfg.asset_names) or list(self._spawn_cfgs_by_name)
         # Both modes call self.sampler.sample(), which reports the name to the variation recorder and returns the
         # recorded name during replay.
         if self.cfg.random_choice:
-            selected_name = self.sampler.sample(1, names_in_use)[0]
+            selected_name = self.sampler.sample(1, names_to_choose_from)[0]
         else:
-            selected_name = self.sampler.sample(1, names_in_use, index=self._build_seed % len(names_in_use))[0]
+            in_order_index = self._build_seed % len(names_to_choose_from)
+            selected_name = self.sampler.sample(1, names_to_choose_from, index=in_order_index)[0]
         self._rigid_object.object_cfg.spawn = deepcopy(self._spawn_cfgs_by_name[selected_name])

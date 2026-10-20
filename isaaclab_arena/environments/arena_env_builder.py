@@ -239,8 +239,7 @@ class ArenaEnvBuilder:
                 continue
             assert variation_key in variation_record.build_time_samples, (
                 f"The replayed record has placement samples but no '{variation_key}' value. Replay a record"
-                f" that holds both, or, if the poses were recorded with '{variation_key}' disabled, disable it here"
-                " too."
+                f" that holds both, or disable '{variation_key}' if the poses were recorded without it."
             )
 
     def _apply_build_time_variations(self) -> None:
