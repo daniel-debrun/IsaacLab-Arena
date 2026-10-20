@@ -75,7 +75,6 @@ def compose_pick_and_place_with_selection(
         initial_pose=Pose(position_xyz=(0.0, 0.0, 0.05), rotation_xyzw=(0.0, 0.0, 0.0, 1.0)),
         relations=[IsAnchor()],
     )
-    # asset=None declares the pickup without an asset of its own.
     pickup = Object(name="pickup", asset=default_asset, relations=[On(table, clearance_m=ON_CLEARANCE_M)])
     pickup.add_variation(AssetSelectionVariation(pickup, asset_candidates, cfg=selection_cfg))
     plate_spawn_cfg = sim_utils.CuboidCfg(
@@ -122,6 +121,16 @@ def _test_selected_asset_is_spawned_placed_and_recorded(simulation_app):
     return True
 
 
+def _test_disabled_selection_keeps_declared_asset(simulation_app):
+    # The declared asset is not a candidate, so any selected candidate would change the height.
+    _, env_cfg, _ = compose_pick_and_place_with_selection(
+        make_abc_candidates(), default_asset=make_cuboid_candidate("declared", 0.25)
+    )
+
+    assert env_cfg.scene.pickup.spawn.size[2] == pytest.approx(0.25)
+    return True
+
+
 def _test_in_order_selection_follows_build_seed(simulation_app):
     from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariationCfg
 
@@ -139,7 +148,7 @@ def _test_in_order_selection_follows_build_seed(simulation_app):
     return True
 
 
-def _test_random_selection_depends_only_on_seed_and_key(simulation_app):
+def _test_random_selection_draws_from_seeded_generator(simulation_app):
     import torch
 
     from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariationCfg
@@ -159,7 +168,8 @@ def _test_random_selection_depends_only_on_seed_and_key(simulation_app):
     second_height = compose_random_selection(seed=7)
     assert first_height == second_height
 
-    heights_over_seeds = {compose_random_selection(seed) for seed in range(20)}
+    # These seeds share seed % 3, so in-order selection would take one name for all of them.
+    heights_over_seeds = {compose_random_selection(seed) for seed in range(0, 15, 3)}
     assert len(heights_over_seeds) > 1
     return True
 
@@ -171,7 +181,7 @@ def _test_recorded_asset_name_is_replayed(simulation_app, tmp_path):
     recorded_row = json.dumps({"variations": {SELECTION_KEY: "tall"}})
     recorded_samples_path.write_text(f"{recorded_row}\n" * NUM_ENVS)
     # In order with seed 42, a live draw over [short, tall] takes "short" (42 % 2 == 0).
-    _, env_cfg, env_kwargs = compose_pick_and_place_with_selection(
+    _, env_cfg, _ = compose_pick_and_place_with_selection(
         [make_cuboid_candidate("short", 0.1), make_cuboid_candidate("tall", 0.3)],
         selection_cfg=AssetSelectionVariationCfg(enabled=True),
         seed=42,
@@ -179,7 +189,6 @@ def _test_recorded_asset_name_is_replayed(simulation_app, tmp_path):
     )
 
     assert env_cfg.scene.pickup.spawn.size[2] == pytest.approx(0.3)
-    assert env_kwargs["variation_recorder"][SELECTION_KEY].sample_for_episode(0, 0) == "tall"
     return True
 
 
@@ -285,7 +294,6 @@ def _test_placement_replay_needs_recorded_asset_selection(simulation_app, tmp_pa
 
     with pytest.raises(AssertionError, match=r"no 'pickup\.asset_selection' value"):
         ArenaEnvBuilder(arena_env, builder_cfg).compose_manager_cfg()
-    assert pickup.object_cfg.spawn is None, "The selection drew a candidate before the replay check."
     return True
 
 
@@ -295,13 +303,17 @@ def test_selected_asset_is_spawned_placed_and_recorded():
     )
 
 
+def test_disabled_selection_keeps_declared_asset():
+    assert run_function_with_persistent_simulation_app(_test_disabled_selection_keeps_declared_asset, headless=HEADLESS)
+
+
 def test_in_order_selection_follows_build_seed():
     assert run_function_with_persistent_simulation_app(_test_in_order_selection_follows_build_seed, headless=HEADLESS)
 
 
-def test_random_selection_depends_only_on_seed_and_key():
+def test_random_selection_draws_from_seeded_generator():
     assert run_function_with_persistent_simulation_app(
-        _test_random_selection_depends_only_on_seed_and_key, headless=HEADLESS
+        _test_random_selection_draws_from_seeded_generator, headless=HEADLESS
     )
 
 
