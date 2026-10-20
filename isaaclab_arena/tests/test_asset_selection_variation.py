@@ -244,12 +244,12 @@ def _test_asset_selection_rejects_invalid_configuration(simulation_app, case_id)
         "no_candidates": (lambda: AssetSelectionVariation(Object(name="pickup"), []), "at least one"),
         "duplicate_names": (
             lambda: AssetSelectionVariation(Object(name="pickup"), [candidate, candidate]),
-            "Duplicate candidate name",
+            "has two candidates named",
         ),
         "multi_spawner_candidate": (
             lambda: AssetSelectionVariation(Object(name="pickup"), [("several", multi_asset_spawn_cfg)]),
             (
-                "AssetSelectionVariation 'asset_selection' candidate 0: 'several' has a MultiAssetSpawnerCfg; pass a"
+                "AssetSelectionVariation on 'pickup' candidate 0: 'several' has a MultiAssetSpawnerCfg; pass a"
                 " SpawnerCfg for one asset"
             ),
         ),

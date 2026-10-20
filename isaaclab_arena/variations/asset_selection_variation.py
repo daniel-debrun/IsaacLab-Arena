@@ -63,7 +63,7 @@ class AssetSelectionVariation(BuildTimeVariationBase):
         )
         assert not isinstance(rigid_object, RigidObjectSet), (
             f"'{rigid_object.name}' is a RigidObjectSet, which already spawns one member per environment."
-            " Add AssetSelectionVariation to a rigid Object."
+            " Add AssetSelectionVariation to a plain Object."
         )
         assert rigid_object.object_type == ObjectType.RIGID, (
             f"AssetSelectionVariation needs a rigid Object, but '{rigid_object.name}' is a"
@@ -73,19 +73,20 @@ class AssetSelectionVariation(BuildTimeVariationBase):
             isinstance(variation, AssetSelectionVariation) for variation in rigid_object.get_variations()
         ), f"'{rigid_object.name}' already has an AssetSelectionVariation; put all candidates in that one."
         assert asset_candidates, "AssetSelectionVariation needs at least one (name, spawn_cfg) candidate."
-        # Filled before super().__init__(), whose apply_cfg call checks asset_names against these names.
+        # Set before super().__init__(), whose apply_cfg call reads them.
+        self._rigid_object = rigid_object
         self._spawn_cfgs_by_name: dict[str, SpawnerCfg] = {}
         for candidate_index, candidate in enumerate(asset_candidates):
             assert_named_spawn_cfg(
-                candidate, argument_label=f"AssetSelectionVariation '{name}' candidate {candidate_index}"
+                candidate,
+                argument_label=f"AssetSelectionVariation on '{rigid_object.name}' candidate {candidate_index}",
             )
             candidate_name, spawn_cfg = candidate
-            assert candidate_name not in self._spawn_cfgs_by_name, f"Duplicate candidate name '{candidate_name}'."
+            assert (
+                candidate_name not in self._spawn_cfgs_by_name
+            ), f"AssetSelectionVariation on '{rigid_object.name}' has two candidates named '{candidate_name}'."
             self._spawn_cfgs_by_name[candidate_name] = deepcopy(spawn_cfg)
         super().__init__(cfg=cfg if cfg is not None else AssetSelectionVariationCfg(), name=name)
-        # rigid_object.variations holds this selection once it is added, and Isaac Lab's configclass validation
-        # follows attributes without a cycle check, so a validated config must not hold rigid_object.
-        self._rigid_object = rigid_object
         self._build_seed: int | None = None
 
     def apply_cfg(self, cfg: AssetSelectionVariationCfg) -> None:
@@ -97,12 +98,12 @@ class AssetSelectionVariation(BuildTimeVariationBase):
         declared_names = list(self._spawn_cfgs_by_name)
         unknown_names = [asset_name for asset_name in cfg.asset_names if asset_name not in self._spawn_cfgs_by_name]
         assert not unknown_names, (
-            f"AssetSelectionVariation '{self.name}' has unknown asset_names {unknown_names}; declared candidates:"
-            f" {declared_names}."
+            f"AssetSelectionVariation on '{self._rigid_object.name}' has unknown asset_names {unknown_names};"
+            f" declared candidates: {declared_names}."
         )
         assert len(set(cfg.asset_names)) == len(
             cfg.asset_names
-        ), f"AssetSelectionVariation '{self.name}' repeats a name in asset_names {cfg.asset_names}."
+        ), f"AssetSelectionVariation on '{self._rigid_object.name}' repeats a name in asset_names {cfg.asset_names}."
         super().apply_cfg(cfg)
 
     def configure_at_build_time(self, seed: int, variation_key: str) -> None:
