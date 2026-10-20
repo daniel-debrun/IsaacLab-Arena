@@ -525,7 +525,7 @@ For example, ``gripper_hit_table`` records occurrences at steps 3 and 9:
 .. code-block:: text
 
    step:                    1 2 3 4 5 6 7 8 9 10
-   gripper_touching_table:   F F T T T F F F T T
+   gripper_touching_table:  F F T T T F F F T T
    recorded:                - - x - - - - - x -
 
 Reading tracked events
