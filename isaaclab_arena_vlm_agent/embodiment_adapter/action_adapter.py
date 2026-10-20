@@ -8,28 +8,11 @@
 import numpy as np
 import torch
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Generic, Literal
+from typing import Generic
 
 from pydantic import BaseModel
 
 from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import PolicyStateT
-
-
-@dataclass(frozen=True)
-class AgentResponseErrorDetails:
-    """Describe a rejected model response with a stable code and correction message."""
-
-    code: Literal["invalid_schema", "invalid_command"]
-    message: str
-
-
-class InvalidAgentResponseError(ValueError):
-    """A model response was rejected and may be corrected on another inference attempt."""
-
-    def __init__(self, message: str, *, code: Literal["invalid_schema", "invalid_command"] = "invalid_command"):
-        super().__init__(message)
-        self.details = AgentResponseErrorDetails(code=code, message=message)
 
 
 class AgentActionAdapter(ABC, Generic[PolicyStateT]):

@@ -22,13 +22,13 @@ from isaaclab_arena_vlm_agent.embodiment_adapter.action_adapter import (
     AgentActionAdapter,
     ChunkActionAdapter,
     GoalActionAdapter,
-    InvalidAgentResponseError,
 )
 from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import (
     CAMERA_OBSERVATION_GROUP,
     PolicyState,
     VLMObservationAdapter,
 )
+from isaaclab_arena_vlm_agent.errors import InvalidAgentResponseError
 from isaaclab_arena_vlm_agent.image import image_to_jpeg_data_url
 
 
