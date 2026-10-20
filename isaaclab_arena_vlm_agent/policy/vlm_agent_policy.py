@@ -26,6 +26,7 @@ from isaaclab_arena_vlm_agent.embodiment_adapter.action_adapter import (
 )
 from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import (
     CAMERA_OBSERVATION_GROUP,
+    PolicyState,
     VLMObservationAdapter,
 )
 
@@ -79,6 +80,10 @@ class VLMAgentPolicy(PolicyBase[VLMAgentPolicyCfg]):
         assert isinstance(observation_adapter, VLMObservationAdapter)
         assert isinstance(action_adapter, AgentActionAdapter)
         assert observation_adapter.camera_keys, "Configure at least one camera observation key"
+        assert issubclass(observation_adapter.state_model, PolicyState), "Declare a concrete PolicyState model"
+        assert (
+            observation_adapter.state_model is action_adapter.state_model
+        ), "Observation and action adapters must declare the same state_model"
         self.observation_adapter = observation_adapter
         self.action_adapter = action_adapter
         self._response_schema = build_strict_schema(action_adapter.response_model)
@@ -99,8 +104,11 @@ class VLMAgentPolicy(PolicyBase[VLMAgentPolicyCfg]):
         assert self.action_adapter.is_robot_action_space_supported(
             env
         ), "Robot action space is unsupported by this adapter"
-        states = self.observation_adapter.extract_proprioception(env, observation)
+        states = self.observation_adapter.extract_policy_state(env, observation)
         assert len(states) == env.unwrapped.num_envs, "Expected one state per environment"
+        assert all(
+            type(state) is self.observation_adapter.state_model for state in states
+        ), "Expected instances of the declared state_model"
         actions = []
         for env_id, state in enumerate(states):
             command = self._get_command(env, observation, env_id, state)
@@ -111,13 +119,16 @@ class VLMAgentPolicy(PolicyBase[VLMAgentPolicyCfg]):
             actions.append(action.to(device=env.unwrapped.device))
         return torch.stack(actions)
 
-    def _get_command(self, env, observation, env_id: int, state: dict) -> np.ndarray:
+    def _get_command(self, env, observation, env_id: int, state: PolicyState) -> np.ndarray:
         """Infer the command to execute for one environment on this step."""
         return self._infer(self._request_content(env, observation, env_id, state), state)
 
-    def _request_content(self, env, observation, env_id: int, state: dict) -> list[dict]:
+    def _request_content(self, env, observation, env_id: int, state: PolicyState) -> list[dict]:
         """Prepare current state and images for a new inference request."""
-        content = [{"type": "text", "text": json.dumps({"task": self.task_description, "proprioception": state})}]
+        content = [{
+            "type": "text",
+            "text": json.dumps({"task": self.task_description, "policy_state": state.model_dump(mode="json")}),
+        }]
         for key in self.observation_adapter.camera_keys:
             images = observation[CAMERA_OBSERVATION_GROUP][key]
             assert images.ndim == 4 and images.shape[0] == env.unwrapped.num_envs, "Expected batched HWC images"
@@ -128,7 +139,7 @@ class VLMAgentPolicy(PolicyBase[VLMAgentPolicyCfg]):
             ])
         return content
 
-    def _infer(self, content: list[dict], state: dict) -> np.ndarray:
+    def _infer(self, content: list[dict], state: PolicyState) -> np.ndarray:
         """Request a command, allowing the model to correct locally rejected responses."""
         messages = [
             {"role": "system", "content": self.config.system_prompt},
@@ -184,7 +195,7 @@ class AgentCommandedChunkPolicy(VLMAgentPolicy):
         )
         self._chunks: dict[int, deque] = {}
 
-    def _get_command(self, env, observation, env_id: int, state: dict) -> np.ndarray:
+    def _get_command(self, env, observation, env_id: int, state: PolicyState) -> np.ndarray:
         if not self._chunks.get(env_id):
             chunk = self._infer(self._request_content(env, observation, env_id, state), state)
             self._chunks[env_id] = deque(chunk)
@@ -219,7 +230,7 @@ class AgentCommandedGoalPolicy(VLMAgentPolicy):
         )
         self._goals: dict[int, tuple[np.ndarray, int]] = {}
 
-    def _get_command(self, env, observation, env_id: int, state: dict) -> np.ndarray:
+    def _get_command(self, env, observation, env_id: int, state: PolicyState) -> np.ndarray:
         pending = self._goals.get(env_id)
         if (
             pending is None

@@ -8,16 +8,22 @@
 import numpy as np
 import torch
 from abc import ABC, abstractmethod
+from typing import Generic
 
 from pydantic import BaseModel
+
+from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import PolicyStateT
 
 
 class InvalidAgentResponse(ValueError):
     """An adapter rejected model output and requests a corrected response."""
 
 
-class AgentActionAdapter(ABC):
+class AgentActionAdapter(ABC, Generic[PolicyStateT]):
     """Validate model responses and convert commands into robot actions."""
+
+    state_model: type[PolicyStateT]
+    """Concrete measured-state model required for decoding and feedback control."""
 
     response_model: type[BaseModel]
     """Response model used to generate the requested schema and validate model output."""
@@ -31,14 +37,14 @@ class AgentActionAdapter(ABC):
         """
 
     @abstractmethod
-    def decode_command(self, response: BaseModel, proprioception: dict) -> np.ndarray:
+    def decode_command(self, response: BaseModel, policy_state: PolicyStateT) -> np.ndarray:
         """Decode a validated response into commands with adapter-defined dimensions and units.
 
         Use InvalidAgentResponse to request a correction for robot-specific constraints.
 
         Args:
             response: Model output validated against response_model.
-            proprioception: State sent with this inference request.
+            policy_state: Typed state sent with this inference request.
 
         Returns:
             A nonempty, finite one-dimensional command array.
@@ -65,7 +71,7 @@ class AgentActionAdapter(ABC):
         return torch.as_tensor(command, dtype=torch.float32, device=env.unwrapped.device)
 
 
-class ChunkActionAdapter(AgentActionAdapter):
+class ChunkActionAdapter(AgentActionAdapter[PolicyStateT]):
     """Decode fixed-length command sequences for AgentCommandedChunkPolicy.
 
     Implement decode_command to return (chunk_size, command_dim) and response_model
@@ -90,7 +96,7 @@ class ChunkActionAdapter(AgentActionAdapter):
         )
 
 
-class GoalActionAdapter(AgentActionAdapter):
+class GoalActionAdapter(AgentActionAdapter[PolicyStateT]):
     """Decode goals and provide closed-loop commands for AgentCommandedGoalPolicy.
 
     Goals are finite vectors with adapter-defined dimensions and units. A new goal
@@ -102,24 +108,24 @@ class GoalActionAdapter(AgentActionAdapter):
         self.max_steps = max_steps
 
     @abstractmethod
-    def goal_reached(self, goal: np.ndarray, proprioception: dict) -> bool:
+    def goal_reached(self, goal: np.ndarray, policy_state: PolicyStateT) -> bool:
         """Check goal completion against the current measured state.
 
         Args:
             goal: Validated goal for one environment.
-            proprioception: Current state from the observation adapter.
+            policy_state: Current typed state from the observation adapter.
 
         Returns:
             Whether to request a new goal before the next action.
         """
 
     @abstractmethod
-    def compute_command(self, goal: np.ndarray, proprioception: dict) -> np.ndarray:
+    def compute_command(self, goal: np.ndarray, policy_state: PolicyStateT) -> np.ndarray:
         """Compute one command toward the goal using current measured state.
 
         Args:
             goal: Validated goal for one environment.
-            proprioception: Current state from the observation adapter.
+            policy_state: Current typed state from the observation adapter.
 
         Returns:
             A finite command vector for command_to_action.

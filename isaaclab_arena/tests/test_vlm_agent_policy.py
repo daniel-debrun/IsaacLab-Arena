@@ -27,6 +27,7 @@ from isaaclab_arena_vlm_agent.embodiment_adapter.action_adapter import (
 )
 from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import (
     CAMERA_OBSERVATION_GROUP,
+    PolicyState,
     VLMObservationAdapter,
 )
 from isaaclab_arena_vlm_agent.policy.vlm_agent_policy import (
@@ -37,11 +38,30 @@ from isaaclab_arena_vlm_agent.policy.vlm_agent_policy import (
 )
 
 
-class ObservationAdapter(VLMObservationAdapter):
+class JointPositionState(PolicyState):
+    joint_positions: list[float]
+    """Measured joint positions in the same joint order and units as the target response."""
+
+
+class ObservationAdapter(VLMObservationAdapter[JointPositionState]):
+    state_model = JointPositionState
     camera_keys = ("front_view",)
 
-    def extract_proprioception(self, env, observation):
-        return [{"position": row.tolist()} for row in observation["position"]]
+    def extract_policy_state(self, env, observation) -> list[JointPositionState]:
+        return [JointPositionState(joint_positions=row.tolist()) for row in observation["position"]]
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {},
+        {"joint_positions": [1.0], "unused_velocity": [0.0]},
+        {"joint_positions": [float("nan")]},
+    ],
+)
+def test_policy_state_rejects_missing_extra_and_nonfinite_fields(fields):
+    with pytest.raises(ValidationError):
+        JointPositionState.model_validate(fields)
 
 
 class JointTargetResponse(BaseModel):
@@ -49,7 +69,8 @@ class JointTargetResponse(BaseModel):
     target: list[float]
 
 
-class ActionAdapter(AgentActionAdapter):
+class ActionAdapter(AgentActionAdapter[JointPositionState]):
+    state_model = JointPositionState
     response_model = JointTargetResponse
 
     def __init__(self, scale=1.0):
@@ -58,11 +79,11 @@ class ActionAdapter(AgentActionAdapter):
     def is_robot_action_space_supported(self, env):
         return env.unwrapped.action_dim > 0
 
-    def decode_command(self, response, proprioception):
+    def decode_command(self, response, policy_state: JointPositionState):
         target = np.asarray(response.target, dtype=np.float32)
-        if target.shape != (len(proprioception["position"]),):
+        if target.shape != (len(policy_state.joint_positions),):
             raise InvalidAgentResponse("Wrong command dimensions")
-        return target - np.asarray(proprioception["position"])
+        return target - np.asarray(policy_state.joint_positions)
 
     def command_to_action(self, env, command):
         return super().command_to_action(env, command * self.scale)
@@ -118,8 +139,8 @@ def test_policy_uses_adapter_actions_for_each_environment(backend, action_dim):
 
     def create(**kwargs):
         calls.append(copy.deepcopy(kwargs))
-        state = json.loads(kwargs["messages"][-1]["content"][0]["text"])["proprioception"]
-        return response(json.dumps({"target": (np.asarray(state["position"]) + 0.5).tolist()}))
+        state = json.loads(kwargs["messages"][-1]["content"][0]["text"])["policy_state"]
+        return response(json.dumps({"target": (np.asarray(state["joint_positions"]) + 0.5).tolist()}))
 
     client.chat.completions.create.side_effect = create
     config = VLMAgentPolicyCfg(
@@ -144,7 +165,7 @@ def test_policy_uses_adapter_actions_for_each_environment(backend, action_dim):
             content = call["messages"][1]["content"]
             state = json.loads(content[0]["text"])
             assert state["task"] == "Move each joint"
-            assert state["proprioception"]["position"] == observation["position"][env_id].tolist()
+            assert state["policy_state"]["joint_positions"] == observation["position"][env_id].tolist()
             assert content[1]["text"] == "camera=front_view"
             image = Image.open(io.BytesIO(base64.b64decode(content[2]["image_url"]["url"].split(",", 1)[1])))
             assert image.size == (8, 4)
@@ -235,30 +256,32 @@ class JointChunkResponse(BaseModel):
     actions: list[list[float]]
 
 
-class JointChunkAdapter(ChunkActionAdapter):
+class JointChunkAdapter(ChunkActionAdapter[JointPositionState]):
+    state_model = JointPositionState
     response_model = JointChunkResponse
 
     def is_robot_action_space_supported(self, env):
         return env.unwrapped.action_dim > 0
 
-    def decode_command(self, response, proprioception):
+    def decode_command(self, response, policy_state: JointPositionState):
         return np.asarray(response.actions, dtype=np.float32)
 
 
-class JointGoalAdapter(GoalActionAdapter):
+class JointGoalAdapter(GoalActionAdapter[JointPositionState]):
+    state_model = JointPositionState
     response_model = JointTargetResponse
 
     def is_robot_action_space_supported(self, env):
         return env.unwrapped.action_dim > 0
 
-    def decode_command(self, response, proprioception):
+    def decode_command(self, response, policy_state: JointPositionState):
         return np.asarray(response.target, dtype=np.float32)
 
-    def goal_reached(self, goal, proprioception):
-        return np.allclose(goal, proprioception["position"])
+    def goal_reached(self, goal, policy_state: JointPositionState):
+        return np.allclose(goal, policy_state.joint_positions)
 
-    def compute_command(self, goal, proprioception):
-        return np.clip(goal - np.asarray(proprioception["position"]), -0.25, 0.25)
+    def compute_command(self, goal, policy_state: JointPositionState):
+        return np.clip(goal - np.asarray(policy_state.joint_positions), -0.25, 0.25)
 
 
 def make_multi_step_policy(backend, adapter):
@@ -299,8 +322,8 @@ def test_chunks_replay_in_order_and_reset_independently(backend, action_dim):
         policy.get_action(env, observation), torch.tensor([[7.0] * action_dim, [6.0] * action_dim])
     )
     assert len(calls) == 3
-    current_state = json.loads(calls[2]["messages"][1]["content"][0]["text"])["proprioception"]
-    assert current_state["position"] == observation["position"][0].tolist()
+    current_state = json.loads(calls[2]["messages"][1]["content"][0]["text"])["policy_state"]
+    assert current_state["joint_positions"] == observation["position"][0].tolist()
     torch.testing.assert_close(
         policy.get_action(env, observation), torch.tensor([[8.0] * action_dim, [10.0] * action_dim])
     )
@@ -328,8 +351,8 @@ def test_goals_use_measured_feedback_step_limit_and_partial_reset(backend, actio
 
     def create(**kwargs):
         calls.append(copy.deepcopy(kwargs))
-        state = json.loads(kwargs["messages"][1]["content"][0]["text"])["proprioception"]
-        return response(json.dumps({"target": (np.asarray(state["position"]) + 1).tolist()}))
+        state = json.loads(kwargs["messages"][1]["content"][0]["text"])["policy_state"]
+        return response(json.dumps({"target": (np.asarray(state["joint_positions"]) + 1).tolist()}))
 
     backend.client.chat.completions.create.side_effect = create
     policy = make_multi_step_policy(backend, JointGoalAdapter(max_steps=2))
@@ -400,4 +423,28 @@ def test_missing_camera_keys_fail_at_construction(backend):
             observation_adapter=adapter,
             action_adapter=ActionAdapter(),
         )
+    backend.client.chat.completions.create.assert_not_called()
+
+
+def test_incompatible_state_models_fail_before_inference(backend):
+    class OtherState(PolicyState):
+        velocity: list[float]
+
+    adapter = ActionAdapter()
+    adapter.state_model = OtherState
+    with pytest.raises(AssertionError, match="same state_model"):
+        VLMAgentPolicy(
+            VLMAgentPolicyCfg(system_prompt="Control these joints."),
+            inference_backend=backend,
+            observation_adapter=ObservationAdapter(),
+            action_adapter=adapter,
+        )
+    backend.client.chat.completions.create.assert_not_called()
+
+
+def test_untyped_observation_state_fails_before_inference(backend):
+    policy = make_policy(backend)
+    policy.observation_adapter.extract_policy_state = Mock(return_value=[{"joint_positions": [1.0]}] * 2)
+    with pytest.raises(AssertionError, match="declared state_model"):
+        policy.get_action(*inputs())
     backend.client.chat.completions.create.assert_not_called()
