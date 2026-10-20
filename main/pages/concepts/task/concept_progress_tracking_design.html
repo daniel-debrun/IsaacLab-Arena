@@ -972,7 +972,8 @@ false; B is true from step 2 onward. Each requirement needs ten qualifying steps
 ends at step 7, the summary shows 6/10, with four more uninterrupted qualifying steps needed.</p>
 <p>Arena’s episode recorder also serializes the final progress state and predicate events into the
 episode’s JSONL record when an output path is configured. Tasks without completion criteria have
-no success termination or progress-tracking configuration and produce no progress fields.</p>
+no success termination or progress-tracking configuration, cannot configure tracked events,
+and produce no progress fields.</p>
 <p>For example, one entry of the JSONL record may look like this (placement predicate name shortened):</p>
 <div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
 <span class="w">  </span><span class="nt">"progress"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
@@ -1017,6 +1018,73 @@ Placement is still required. The two events record when settling and lifting com
 recordings that use <code class="docutils literal notranslate"><span class="pre">objectives</span></code>, <code class="docutils literal notranslate"><span class="pre">objective</span></code>, or <code class="docutils literal notranslate"><span class="pre">group</span></code> fields require conversion or
 regeneration before they can be read by the current report tools.</p>
 </section>
+</section>
+</section>
+<section id="tracked-events">
+<h2>Tracked events<a class="headerlink" href="#tracked-events" title="Link to this heading">#</a></h2>
+<p>Tracked events record when something of interest happens during an episode, such as a failed
+grasp or a dropped object. They do not affect task success, termination, or progress scores.</p>
+<p>Override <code class="docutils literal notranslate"><span class="pre">TaskBase.get_tracked_events()</span></code> to define events. Each event has a name and a nonempty,
+ordered list of predicates. It is recorded when the sequence completes. Use a one-element list
+for a single-condition event, or <code class="docutils literal notranslate"><span class="pre">TrueForConsecutiveStepsCfg</span></code> to require a condition to hold
+for consecutive control steps. The checks below are task-defined predicates:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">isaaclab_arena.progress_tracking.tracked_event_cfg</span><span class="w"> </span><span class="kn">import</span> <span class="n">TrackedEventCfg</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">isaaclab_arena.tasks.predicates.temporal</span><span class="w"> </span><span class="kn">import</span> <span class="n">TrueForConsecutiveStepsCfg</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">get_tracked_events</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">TrackedEventCfg</span><span class="p">]:</span>
+    <span class="k">return</span> <span class="p">[</span>
+        <span class="c1"># A single condition.</span>
+        <span class="n">TrackedEventCfg</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"gripper_hit_table"</span><span class="p">,</span> <span class="n">predicate_sequence</span><span class="o">=</span><span class="p">[</span><span class="n">gripper_touching_table</span><span class="p">]),</span>
+        <span class="c1"># The hand opens near the object, then stays closed without a grasp for 10 steps.</span>
+        <span class="n">TrackedEventCfg</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="s2">"failed_grasp"</span><span class="p">,</span>
+            <span class="n">predicate_sequence</span><span class="o">=</span><span class="p">[</span>
+                <span class="n">hand_open_near_object</span><span class="p">,</span>
+                <span class="n">TrueForConsecutiveStepsCfg</span><span class="p">(</span><span class="n">closed_without_grasp</span><span class="p">,</span> <span class="n">required_steps</span><span class="o">=</span><span class="mi">10</span><span class="p">),</span>
+            <span class="p">],</span>
+        <span class="p">),</span>
+        <span class="c1"># The object is lifted and grasped, then released and comes to rest outside the bowl.</span>
+        <span class="n">TrackedEventCfg</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="s2">"dropped_object"</span><span class="p">,</span>
+            <span class="n">predicate_sequence</span><span class="o">=</span><span class="p">[</span>
+                <span class="n">TrueForConsecutiveStepsCfg</span><span class="p">(</span><span class="n">lifted_and_grasped</span><span class="p">,</span> <span class="n">required_steps</span><span class="o">=</span><span class="mi">10</span><span class="p">),</span>
+                <span class="n">TrueForConsecutiveStepsCfg</span><span class="p">(</span><span class="n">not_grasped_and_resting_outside_bowl</span><span class="p">,</span> <span class="n">required_steps</span><span class="o">=</span><span class="mi">10</span><span class="p">),</span>
+            <span class="p">],</span>
+        <span class="p">),</span>
+    <span class="p">]</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p>Predicates complete in order. Earlier predicates do not need to stay true. Initial rest does
+not count as a dropped object because the lift must happen first.</p></li>
+<li><p>Each event is recorded once while its last predicate stays true. It can be recorded again
+after that predicate has been false for a step and the whole sequence completes again.</p></li>
+<li><p>To require several conditions at the same time, combine them in one predicate, as in
+<code class="docutils literal notranslate"><span class="pre">not_grasped_and_resting_outside_bowl</span></code>.</p></li>
+<li><p>Separate events run independently, including throughout sequential composite tasks. Event names
+from composite subtasks are prefixed with <code class="docutils literal notranslate"><span class="pre">subtask_&lt;index&gt;/</span></code>.</p></li>
+<li><p>A task with tracked events must also define success criteria.</p></li>
+</ul>
+<p>For example, <code class="docutils literal notranslate"><span class="pre">gripper_hit_table</span></code> records occurrences at steps 3 and 9:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>step:                    1 2 3 4 5 6 7 8 9 10
+gripper_touching_table:  F F T T T F F F T T
+recorded:                - - x - - - - - x -
+</pre></div>
+</div>
+<section id="reading-tracked-events">
+<h3>Reading tracked events<a class="headerlink" href="#reading-tracked-events" title="Link to this heading">#</a></h3>
+<p>During a run, read the current episode’s occurrences from <code class="docutils literal notranslate"><span class="pre">extras</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">progress</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">unwrapped</span><span class="o">.</span><span class="n">extras</span><span class="p">[</span><span class="s2">"progress_tracking"</span><span class="p">]</span>
+<span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">progress</span><span class="p">[</span><span class="s2">"tracked_events"</span><span class="p">][</span><span class="n">env_id</span><span class="p">]:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">event</span><span class="o">.</span><span class="n">step</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>This list contains all occurrences in the episode. The episode recorder writes their names and
+steps to <code class="docutils literal notranslate"><span class="pre">progress.tracked_events</span></code> in each episode’s JSONL record. <code class="docutils literal notranslate"><span class="pre">progress.tracked_event_names</span></code>
+also includes configured events with no occurrences.</p>
+<p>The HTML report shows a timeline and count per event. Select an occurrence to seek the recorded
+camera videos when timing is available. Record videos using simulation time for playback to keep
+seeking aligned with event steps.</p>
 </section>
 </section>
 </section>
@@ -1088,6 +1156,10 @@ regeneration before they can be read by the current report tools.</p>
 <li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#example-consecutive-step-summaries">Example consecutive-step summaries</a></li>
 </ul>
 </li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#tracked-events">Tracked events</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#reading-tracked-events">Reading tracked events</a></li>
 </ul>
 </li>
 </ul>
