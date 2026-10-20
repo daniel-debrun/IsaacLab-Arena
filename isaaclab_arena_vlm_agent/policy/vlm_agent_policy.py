@@ -39,7 +39,12 @@ class VLMAgentPolicyCfg(PolicyCfg):
     """Required system message defining the task, units, and response contract."""
 
     image_max_width_or_height: int = 384
-    """Maximum image width or height sent to the endpoint."""
+    """Maximum image width or height sent to the endpoint, in pixels.
+
+    384 is retained from the original Astra VLM policy as a configurable downsampling
+    default, rather than an endpoint requirement. For example, 1280x720 becomes 384x216.
+    Increase it when the task needs finer visual detail.
+    """
 
     max_attempts: int = 3
     """Maximum response-validation attempts per environment step."""
