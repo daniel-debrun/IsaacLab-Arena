@@ -358,7 +358,7 @@ After an automatic reset, ``env.extras["progress_tracking"]`` still shows the fi
 until the next step.
 
 Recurring observations independent of success
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Override ``TaskBase.get_tracked_events()`` to observe named events throughout an
 episode. These observations do not change success, failure termination, or task progress scores.
@@ -419,7 +419,7 @@ stored in the environment. Supply instantaneous checks and express temporal hold
 ``TrueForConsecutiveStepsCfg``. Custom private history has no event reset lifecycle.
 
 Reading and recording occurrences
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: python
 
