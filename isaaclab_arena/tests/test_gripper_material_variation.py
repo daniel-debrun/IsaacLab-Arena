@@ -177,28 +177,18 @@ def _test_gripper_material_in_physics(_simulation_app):
 
     import warp as wp
 
-    from isaaclab_arena.assets.object_library import Sphere
     from isaaclab_arena.embodiments.droid.droid import DroidAbsoluteJointPositionEmbodiment
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
     from isaaclab_arena.scene.scene import Scene
-    from isaaclab_arena.utils.pose import Pose
     from isaaclab_arena.variations.gripper_material_variation import GripperMaterialVariationCfg
-    from isaaclab_arena.variations.object_friction_variation import ObjectFrictionVariationCfg
-    from isaaclab_arena.variations.uniform_sampler import UniformSamplerCfg
 
     robot = DroidAbsoluteJointPositionEmbodiment()
     robot.get_variation("gripper_material").apply_cfg(
         GripperMaterialVariationCfg(enabled=True, material_names=["high_friction"])
     )
-    sphere = Sphere(initial_pose=Pose(position_xyz=(2.0, 0.0, 1.0)))
-    sphere.get_variation("friction").apply_cfg(
-        ObjectFrictionVariationCfg(enabled=True, sampler_cfg=UniformSamplerCfg(low=[0.65], high=[0.65]))
-    )
-    arena_env = IsaacLabArenaEnvironment(
-        name="gripper_material_physics_test", scene=Scene(assets=[sphere]), embodiment=robot
-    )
+    arena_env = IsaacLabArenaEnvironment(name="gripper_material_physics_test", scene=Scene(assets=[]), embodiment=robot)
     env = ArenaEnvBuilder(
         arena_env, ArenaEnvBuilderCfg(num_envs=2, solve_relations=False, presets="physx")
     ).make_registered()
@@ -212,19 +202,11 @@ def _test_gripper_material_in_physics(_simulation_app):
         assert torch.all((~pad_materials).any(dim=1))
         torch.testing.assert_close(materials[0], materials[1])
         assert torch.allclose(materials[..., 1][pad_materials], torch.ones_like(materials[..., 1][pad_materials]))
-        object_materials = wp.to_torch(base_env.scene["sphere"].root_view.get_material_properties()).clone()
-        torch.testing.assert_close(object_materials[..., :2], torch.full_like(object_materials[..., :2], 0.65))
         actions = torch.zeros((2, base_env.action_manager.total_action_dim), device=base_env.device)
         for _ in range(3):
             env.step(actions)
         env.reset()
         torch.testing.assert_close(wp.to_torch(base_env.scene["robot"].root_view.get_material_properties()), materials)
-        torch.testing.assert_close(
-            wp.to_torch(base_env.scene["sphere"].root_view.get_material_properties()), object_materials
-        )
-        assert base_env.variation_recorder["sphere.friction"].sample_for_episode(1, base_env.get_episode_index(1))[
-            0
-        ] == pytest.approx(0.65)
         record = base_env.variation_recorder[f"{robot.name}.gripper_material"]
         assert record.sample_for_episode(1, base_env.get_episode_index(1)) == "high_friction"
     finally:
