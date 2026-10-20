@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for declaring an Object with asset= or without an asset."""
+"""Tests for AssetRegistry.get_named_spawn_cfg() and for declaring an Object with asset= or without an asset."""
 
 import re
 
@@ -25,7 +25,7 @@ def _make_box_spawn_cfg(size: tuple[float, float, float]):
     )
 
 
-def _test_get_named_spawn_cfg_copies_a_registered_rigid_object(simulation_app) -> bool:
+def _test_get_named_spawn_cfg_returns_registered_spawn_cfg(simulation_app) -> bool:
     from isaaclab.sim import UsdFileCfg
 
     from isaaclab_arena.assets.registries import AssetRegistry
@@ -38,15 +38,27 @@ def _test_get_named_spawn_cfg_copies_a_registered_rigid_object(simulation_app) -
 
     _, sugar_box_spawn_cfg = asset_registry.get_named_spawn_cfg("sugar_box", scale=(1.5, 1.5, 1.5))
     assert sugar_box_spawn_cfg.scale == (1.5, 1.5, 1.5)
-
-    with pytest.raises(AssertionError, match=re.escape("Asset 'ground_plane' is ObjectType.BASE, not rigid.")):
-        asset_registry.get_named_spawn_cfg("ground_plane")
     return True
 
 
-def test_get_named_spawn_cfg_copies_a_registered_rigid_object():
+def test_get_named_spawn_cfg_returns_registered_spawn_cfg():
     result = run_function_with_persistent_simulation_app(
-        _test_get_named_spawn_cfg_copies_a_registered_rigid_object, headless=HEADLESS
+        _test_get_named_spawn_cfg_returns_registered_spawn_cfg, headless=HEADLESS
+    )
+    assert result, "Test failed"
+
+
+def _test_get_named_spawn_cfg_rejects_non_rigid_asset(simulation_app) -> bool:
+    from isaaclab_arena.assets.registries import AssetRegistry
+
+    with pytest.raises(AssertionError, match=re.escape("Asset 'ground_plane' is ObjectType.BASE, not rigid.")):
+        AssetRegistry().get_named_spawn_cfg("ground_plane")
+    return True
+
+
+def test_get_named_spawn_cfg_rejects_non_rigid_asset():
+    result = run_function_with_persistent_simulation_app(
+        _test_get_named_spawn_cfg_rejects_non_rigid_asset, headless=HEADLESS
     )
     assert result, "Test failed"
 
@@ -76,7 +88,7 @@ def test_object_declared_with_asset_or_without_asset():
     assert result, "Test failed"
 
 
-def _test_object_rejects_asset_with_other_spawn_inputs(simulation_app, case_id: str) -> bool:
+def _test_object_rejects_invalid_asset_arguments(simulation_app, case_id: str) -> bool:
     import isaaclab.sim as sim_utils
 
     from isaaclab_arena.assets.object import Object
@@ -113,8 +125,8 @@ def _test_object_rejects_asset_with_other_spawn_inputs(simulation_app, case_id: 
     "case_id",
     ["asset_with_usd_path", "asset_with_scale", "asset_with_multi_asset_spawner", "no_asset_articulation_type"],
 )
-def test_object_rejects_asset_with_other_spawn_inputs(case_id: str):
+def test_object_rejects_invalid_asset_arguments(case_id: str):
     result = run_function_with_persistent_simulation_app(
-        _test_object_rejects_asset_with_other_spawn_inputs, headless=HEADLESS, case_id=case_id
+        _test_object_rejects_invalid_asset_arguments, headless=HEADLESS, case_id=case_id
     )
     assert result, "Test failed"
