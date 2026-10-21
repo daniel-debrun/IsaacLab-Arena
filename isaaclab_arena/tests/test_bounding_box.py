@@ -430,8 +430,8 @@ def test_aabb_empty_and_unbounded_bounds_are_rejected_by_finite_queries():
         finite_queries = (
             lambda: box.to_obb(),
             lambda: box.transformed((0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0)),
-            lambda: box.projected_overlap_volume(bounded),
-            lambda: bounded.projected_overlap_volume(box),
+            lambda: box.overlap_volume_upper_bound(bounded),
+            lambda: bounded.overlap_volume_upper_bound(box),
             lambda: box.overlaps(oriented),
             lambda: oriented.overlaps(box),
         )
@@ -447,8 +447,8 @@ def test_aabb_queries_read_current_bounds_and_conversions_snapshot_them():
     snapshot = box.to_obb()
     box.min_point[0, 0] = 0.5
     box.max_point[0, :2] = torch.tensor([3.0, 6.0])
-    torch.testing.assert_close(box.projected_overlap_volume(other), torch.tensor([36.0]))
-    torch.testing.assert_close(snapshot.projected_overlap_volume(other), torch.tensor([12.0]))
+    torch.testing.assert_close(box.overlap_volume_upper_bound(other), torch.tensor([36.0]))
+    torch.testing.assert_close(snapshot.overlap_volume_upper_bound(other), torch.tensor([12.0]))
     moved = box.transformed((4.0, 5.0, 6.0), _yaw(math.pi / 2))
     torch.testing.assert_close(moved.center_W, torch.tensor([[1.0, 6.75, 9.0]]))
 
@@ -507,16 +507,18 @@ def test_box_queries_match_on_cuda_and_reject_mixed_devices():
     torch.testing.assert_close(gpu_boxes.get_corners_at().cpu(), boxes.get_corners_at())
     torch.testing.assert_close(gpu_boxes.overlaps(gpu_target).cpu(), boxes.overlaps(target))
     torch.testing.assert_close(
-        gpu_boxes.projected_overlap_volume(gpu_target).cpu(), boxes.projected_overlap_volume(target)
+        gpu_boxes.overlap_volume_upper_bound(gpu_target).cpu(), boxes.overlap_volume_upper_bound(target)
     )
-    torch.testing.assert_close(gpu_aabb.projected_overlap_volume(gpu_boxes).cpu(), aabb.projected_overlap_volume(boxes))
+    torch.testing.assert_close(
+        gpu_aabb.overlap_volume_upper_bound(gpu_boxes).cpu(), aabb.overlap_volume_upper_bound(boxes)
+    )
     with pytest.raises(AssertionError, match="device"):
         gpu_boxes.overlaps(target)
     with pytest.raises(AssertionError, match="device"):
         OrientedBoundingBox(torch.zeros(3, device="cuda"), torch.ones(3))
 
 
-def test_projected_volume_matches_aabb_value_and_gradients_at_quarter_turns():
+def test_overlap_bound_matches_aabb_value_and_gradients_at_quarter_turns():
     """Axis permutations give the interval-intersection volume and gradients of their axis-aligned boxes."""
     s = math.sqrt(0.5)
     centers = torch.tensor([[0.9, 0.1, 0.2], [0.4, 0.2, 0.1], [0.6, 0.1, 0.2], [0.3, 0.2, 0.1]], requires_grad=True)
@@ -530,15 +532,15 @@ def test_projected_volume_matches_aabb_value_and_gradients_at_quarter_turns():
     upper = torch.minimum(centers + world_extents, target.max_point + 0.1)
     lower = torch.maximum(centers - world_extents, target.min_point - 0.1)
     expected = torch.relu(upper - lower).prod(dim=-1)
-    actual = boxes.projected_overlap_volume(target, margin=0.1)
+    actual = boxes.overlap_volume_upper_bound(target, margin=0.1)
     torch.testing.assert_close(actual, expected)
     torch.testing.assert_close(
         torch.autograd.grad(actual.sum(), centers)[0], torch.autograd.grad(expected.sum(), centers)[0]
     )
-    torch.testing.assert_close(boxes.projected_overlap_volume(target), target.projected_overlap_volume(boxes))
+    torch.testing.assert_close(boxes.overlap_volume_upper_bound(target), target.overlap_volume_upper_bound(boxes))
 
 
-def test_projected_volume_matches_corner_projections_and_gradients():
+def test_overlap_bound_matches_corner_projections_and_gradients():
     """Tilted batches equal the smaller face-axis volume computed from independently projected corners."""
     s = math.sqrt(0.5)
     R_W_A = torch.tensor([[2 / 15, -2 / 3, 11 / 15], [14 / 15, 1 / 3, 2 / 15], [-1 / 3, 2 / 3, 2 / 3]])
@@ -559,7 +561,7 @@ def test_projected_volume_matches_corner_projections_and_gradients():
         lower = torch.maximum(projections_a.amin(dim=-2), projections_b.amin(dim=-2) - 0.05)
         volumes.append(torch.relu(upper - lower).prod(dim=-1))
     expected = torch.minimum(*volumes)
-    actual = first.projected_overlap_volume(second, margin=0.05)
+    actual = first.overlap_volume_upper_bound(second, margin=0.05)
     assert (expected[:2] > 0).all() and expected[2] == 0
     torch.testing.assert_close(actual, expected)
     torch.testing.assert_close(
@@ -567,23 +569,25 @@ def test_projected_volume_matches_corner_projections_and_gradients():
     )
 
 
-def test_projected_volume_margin_inflates_only_the_other_box():
+def test_overlap_bound_margin_inflates_only_the_other_box():
     """Margin inflates other's projections, turning touching into overlap; invalid margins are rejected."""
     outer = OrientedBoundingBox((0.0, 0.0, 0.0), (2.0, 2.0, 2.0))
     inner = OrientedBoundingBox((0.5, 0.1, 0.2), (0.25, 0.5, 0.75))
-    torch.testing.assert_close(outer.projected_overlap_volume(inner, margin=0.125), torch.tensor([0.75 * 1.25 * 1.75]))
-    torch.testing.assert_close(inner.projected_overlap_volume(outer, margin=0.125), torch.tensor([0.75]))
+    torch.testing.assert_close(
+        outer.overlap_volume_upper_bound(inner, margin=0.125), torch.tensor([0.75 * 1.25 * 1.75])
+    )
+    torch.testing.assert_close(inner.overlap_volume_upper_bound(outer, margin=0.125), torch.tensor([0.75]))
     for margin in (-0.1, math.nan, math.inf):
         with pytest.raises(AssertionError, match="Margin"):
-            outer.projected_overlap_volume(inner, margin=margin)
+            outer.overlap_volume_upper_bound(inner, margin=margin)
 
     first = OrientedBoundingBox((0.0, 0.0, 0.0), (1.0, 1.0, 1.0))
     second = OrientedBoundingBox((2.125, 0.0, 0.0), (1.0, 1.0, 1.0))
-    torch.testing.assert_close(first.projected_overlap_volume(second, margin=0.125), torch.zeros(1))
-    torch.testing.assert_close(first.projected_overlap_volume(second, margin=0.25), torch.tensor([0.5]))
+    torch.testing.assert_close(first.overlap_volume_upper_bound(second, margin=0.125), torch.zeros(1))
+    torch.testing.assert_close(first.overlap_volume_upper_bound(second, margin=0.25), torch.tensor([0.5]))
 
 
-def test_projected_volume_gradient_pushes_hardest_along_the_shallowest_overlap():
+def test_overlap_bound_gradient_pushes_hardest_along_the_shallowest_overlap():
     """Each face axis is pushed by volume over overlap length; contained axes and boxes get no push."""
     angle = math.pi / 6
     R_W_A = torch.tensor([[math.cos(angle), -math.sin(angle), 0.0], [math.sin(angle), math.cos(angle), 0.0], [0, 0, 1]])
@@ -591,18 +595,18 @@ def test_projected_volume_gradient_pushes_hardest_along_the_shallowest_overlap()
     # In the obstacle frame, overlaps are 0.2 along x, 1.5 along y, and z is contained (length 1.0).
     center = (R_W_A @ torch.tensor([1.8, 0.5, 0.1])).requires_grad_()
     subject = OrientedBoundingBox(center, (1.0, 1.0, 0.5), _yaw(angle))
-    volume = obstacle.projected_overlap_volume(subject)
+    volume = obstacle.overlap_volume_upper_bound(subject)
     torch.testing.assert_close(volume, torch.tensor([0.2 * 1.5 * 1.0]))
     torch.testing.assert_close(torch.autograd.grad(volume.sum(), center)[0], R_W_A @ torch.tensor([-1.5, -0.2, 0.0]))
 
     contained_center = torch.tensor([0.2, 0.1, 0.0], requires_grad=True)
     contained = OrientedBoundingBox(contained_center, (0.25, 0.25, 0.25), _yaw(angle))
-    contained_volume = obstacle.projected_overlap_volume(contained)
+    contained_volume = obstacle.overlap_volume_upper_bound(contained)
     torch.testing.assert_close(contained_volume, torch.tensor([0.125]))
     torch.testing.assert_close(torch.autograd.grad(contained_volume.sum(), contained_center)[0], torch.zeros(3))
 
 
-def test_projected_volume_is_positive_exactly_when_yaw_only_boxes_overlap():
+def test_overlap_bound_is_positive_exactly_when_yaw_only_boxes_overlap():
     """Face axes complete the separating-axis test for boxes rotated only about Z."""
     generator = torch.Generator().manual_seed(0)
     count = 256
@@ -617,11 +621,11 @@ def test_projected_volume_is_positive_exactly_when_yaw_only_boxes_overlap():
     for margin in (0.0, 0.05):
         overlaps = first.overlaps(second, margin=margin)
         assert 0 < overlaps.sum() < count
-        assert torch.equal(first.projected_overlap_volume(second, margin=margin) > 0, overlaps)
+        assert torch.equal(first.overlap_volume_upper_bound(second, margin=margin) > 0, overlaps)
 
 
-def test_projected_volume_of_touching_aabbs_is_exactly_zero():
-    """AABB pairs read min/max bounds, so touching faces give no penalty despite float32 centers."""
+def test_overlap_bound_of_touching_aabbs_is_exactly_zero():
+    """AABB pairs read min/max bounds, so touching faces give exactly zero despite float32 centers."""
     generator = torch.Generator().manual_seed(0)
     first_min = torch.rand(1000, 3, generator=generator)
     first_max = first_min + torch.rand(1000, 3, generator=generator) + 0.01
@@ -631,11 +635,11 @@ def test_projected_volume_of_touching_aabbs_is_exactly_zero():
     first = AxisAlignedBoundingBox(first_min, first_max)
     second = AxisAlignedBoundingBox(second_min, second_max)
     assert not first.overlaps(second).any()
-    assert torch.equal(first.projected_overlap_volume(second), torch.zeros(1000))
-    assert torch.equal(second.projected_overlap_volume(first), torch.zeros(1000))
+    assert torch.equal(first.overlap_volume_upper_bound(second), torch.zeros(1000))
+    assert torch.equal(second.overlap_volume_upper_bound(first), torch.zeros(1000))
     torch.testing.assert_close(
-        first.projected_overlap_volume(second, margin=0.1),
-        first.to_obb().projected_overlap_volume(second.to_obb(), margin=0.1),
+        first.overlap_volume_upper_bound(second, margin=0.1),
+        first.to_obb().overlap_volume_upper_bound(second.to_obb(), margin=0.1),
     )
 
 

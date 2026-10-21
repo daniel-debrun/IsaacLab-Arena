@@ -89,7 +89,7 @@ class BoundingBox(ABC):
         return AxisAlignedBoundingBox(*self.get_axis_aligned_bounds())
 
     def overlaps(self, other: "BoundingBox", margin: float = 0.0) -> torch.Tensor:
-        """Return strict SAT overlap or projected-clearance violation, shape (N,).
+        """Return strict separating-axis test (SAT) overlap or projected-clearance violation, shape (N,).
 
         At zero margin, touching on a separating axis is not overlap. Exactly parallel
         edge pairs contribute no axis; small nonzero cross axes remain in the test.
@@ -103,17 +103,17 @@ class BoundingBox(ABC):
         depths, norms = self._sat_depths(other, margin)
         return ((depths > 0) | (norms == 0)).all(dim=-1)
 
-    def projected_overlap_volume(self, other: "BoundingBox", margin: float = 0.0) -> torch.Tensor:
-        """Return a differentiable overlap penalty in cubed length units, shape (N,).
+    def overlap_volume_upper_bound(self, other: "BoundingBox", margin: float = 0.0) -> torch.Tensor:
+        """Return a differentiable upper bound on the overlap volume, in cubed length units, shape (N,).
 
-        It is the smaller interval-overlap volume along either box's face axes: the intersection volume
-        for axis-aligned pairs. It is zero when a face axis separates the boxes or this box has a zero-size
-        dimension, and can stay positive for tilted boxes separated only by an edge-cross-edge axis.
+        It is the smaller interval-overlap volume along either box's face axes: exact for axis-aligned pairs at
+        zero margin, but possibly much larger for rotated boxes, even positive for boxes separated only by an
+        edge-cross-edge axis. It is zero when a face axis separates the boxes or this box has a zero-size dimension.
 
         Args:
             other: Finite boxes in the same frame and device; rows pair N/N or 1/N.
             margin: Finite nonnegative length added to other's projected radii.
-                Positive margins make the penalty asymmetric.
+                Positive margins make the result asymmetric.
         """
         from isaaclab.utils.math import matrix_from_quat
 
@@ -501,7 +501,7 @@ class AxisAlignedBoundingBox(BoundingBox):
         return (intersection_volume / safe_volume).clamp(0, 1)
 
     def overlaps(self, other: BoundingBox, margin: float = 0.0) -> torch.Tensor:
-        """Check if this AABB overlaps other boxes in 3D, using SAT when other is oriented.
+        """Check if this AABB overlaps other boxes in 3D, using the separating-axis test when other is oriented.
 
         Args:
             other: The other bounding box to test against, in the same frame and on the same device.
@@ -523,8 +523,8 @@ class AxisAlignedBoundingBox(BoundingBox):
             & (other._max_point[:, 2] + margin > self._min_point[:, 2])
         )
 
-    def projected_overlap_volume(self, other: BoundingBox, margin: float = 0.0) -> torch.Tensor:
-        """Return the overlap penalty, read from min/max bounds when other is also axis-aligned.
+    def overlap_volume_upper_bound(self, other: BoundingBox, margin: float = 0.0) -> torch.Tensor:
+        """Return the overlap volume upper bound, read from min/max bounds when other is also axis-aligned.
 
         Reading the bounds directly keeps touching AABB pairs at exactly zero.
 
@@ -533,7 +533,7 @@ class AxisAlignedBoundingBox(BoundingBox):
             margin: Finite nonnegative length added to both sides of other's bounds.
         """
         if not isinstance(other, AxisAlignedBoundingBox):
-            return super().projected_overlap_volume(other, margin)
+            return super().overlap_volume_upper_bound(other, margin)
         _assert_valid_margin(margin)
         min_a, max_a, min_b, max_b = self._get_paired_bounds(other)
         upper = torch.minimum(max_a, max_b + margin)
