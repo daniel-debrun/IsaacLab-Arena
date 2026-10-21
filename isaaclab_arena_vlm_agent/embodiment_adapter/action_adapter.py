@@ -83,11 +83,7 @@ class ChunkActionAdapter(AgentActionAdapter):
 
 
 class GoalActionAdapter(AgentActionAdapter):
-    """Decode goals and provide closed-loop commands for VLMGoalPolicy.
-
-    Goals are finite vectors with adapter-defined dimensions and units. A new goal
-    is requested when goal_reached returns True or max_steps commands have executed.
-    """
+    """Decode goals and provide closed-loop commands for VLMGoalPolicy."""
 
     def __init__(self, max_steps: int):
         assert type(max_steps) is int and max_steps > 0, "max_steps must be a positive integer"
