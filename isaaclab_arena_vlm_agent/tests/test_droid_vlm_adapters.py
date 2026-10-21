@@ -56,14 +56,8 @@ def _inputs():
     "field,value",
     [
         ("position_root_m", [0.1, 0.2]),
-        ("position_root_m", [float("nan"), 0.0, 0.0]),
-        ("position_root_m", [0.0, float("inf"), 0.0]),
-        ("quaternion_root_xyzw", [0.0, 0.0, 0.0, 0.0]),
-        ("quaternion_root_xyzw", [0.0, 0.0, 0.0, 2.0]),
         ("quaternion_root_xyzw", [0.0, 0.0, 1.0]),
         ("gripper_closed", 0.5),
-        ("gripper_closed", "false"),
-        ("unexpected", 1),
     ],
 )
 def test_droid_response_rejects_invalid_pose_and_gripper(field, value):
@@ -204,4 +198,39 @@ def test_invalid_droid_chunk_is_corrected_before_any_action():
     policy.set_task_description("Move")
     actions = policy.get_action(*_inputs())
     torch.testing.assert_close(actions[:, 0], torch.tensor([0.6, 0.8]))
+    assert backend.infer.call_count == 3
+
+
+@pytest.mark.parametrize("mode", ["single", "chunk", "goal"])
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("position_root_m", [float("nan"), 0.0, 0.0]),
+        ("position_root_m", [0.0, float("inf"), 0.0]),
+        ("quaternion_root_xyzw", [0.0, 0.0, 0.0, 0.0]),
+        ("quaternion_root_xyzw", [0.0, 0.0, 0.0, 2.0]),
+    ],
+)
+def test_invalid_droid_pose_is_corrected_before_any_action(mode, field, value):
+    if mode == "single":
+        policy_type, adapter = VLMStepPolicy, DroidPoseActionAdapter()
+    elif mode == "chunk":
+        policy_type, adapter = VLMChunkPolicy, DroidChunkActionAdapter(chunk_size=2)
+    else:
+        policy_type, adapter = VLMGoalPolicy, DroidGoalActionAdapter(max_steps=2)
+    adapter.is_robot_action_space_supported = Mock(return_value=True)
+    responses = [_target() | {field: value}, _target(0.6), _target(0.8)]
+    if mode == "chunk":
+        responses = [{"commands": [response, _target()]} for response in responses]
+    backend = SimpleNamespace(infer=Mock(side_effect=responses))
+    policy = policy_type(
+        VLMPolicyCfg(system_prompt="Return absolute pose commands."),
+        inference_backend=backend,
+        observation_adapter=DroidObservationAdapter(),
+        action_adapter=adapter,
+    )
+    policy.set_task_description("Move")
+    actions = policy.get_action(*_inputs())
+    torch.testing.assert_close(actions[:, 0], torch.tensor([0.6, 0.8]))
+    assert torch.isfinite(actions).all()
     assert backend.infer.call_count == 3

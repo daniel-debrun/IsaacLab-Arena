@@ -7,6 +7,12 @@
 
 from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import VLMObservationAdapter
 
+POLICY_OBSERVATION_GROUP = "policy"
+"""Observation group containing measured DROID robot state."""
+
+GRIPPER_POSITION_KEY = "gripper_pos"
+"""Normalized measured gripper closure within the policy observation group."""
+
 
 class DroidObservationAdapter(VLMObservationAdapter):
     """Select DROID RGB views and extract only the measured pose and gripper state."""
@@ -29,7 +35,7 @@ class DroidObservationAdapter(VLMObservationAdapter):
         """
         base = env.unwrapped
         T_R_E = base.arena_world.get_body_pose_in_root("robot", "base_link")
-        gripper_closed_fraction = observation["policy"]["gripper_pos"]
+        gripper_closed_fraction = observation[POLICY_OBSERVATION_GROUP][GRIPPER_POSITION_KEY]
         assert T_R_E.shape == (base.num_envs, 7), "Expected one root-relative end-effector pose per environment"
         assert gripper_closed_fraction.shape == (
             base.num_envs,
