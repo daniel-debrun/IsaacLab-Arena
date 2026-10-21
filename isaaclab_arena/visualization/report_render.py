@@ -453,6 +453,55 @@ def _render_consecutive_step_summary(episode) -> str:
     )
 
 
+def _render_tracked_event_occurrences(episode) -> str:
+    """Render recurring observations as timelines and a table of occurrence steps."""
+    occurrences_by_event = episode.tracked_event_occurrences
+    if not occurrences_by_event:
+        return ""
+    last_step = 1
+    for steps in occurrences_by_event.values():
+        if steps:
+            last_step = max(last_step, max(steps))
+    episode_length = episode.record.get("episode_length")
+    if isinstance(episode_length, int) and episode_length > last_step:
+        last_step = episode_length
+    last_step = max(1, last_step)
+    dt = episode.control_step_dt
+    timelines = []
+    rows = []
+    for name, steps in occurrences_by_event.items():
+        label = html.escape(name)
+        markers = []
+        links = []
+        for step in steps:
+            seconds = step * dt if dt is not None else None
+            time_label = f" ({seconds:.3f} s)" if seconds is not None else ""
+            title = f"{label}: step {step}{time_label}"
+            # Camera videos start with step 1 at time zero; keep labels in simulation time.
+            seek_seconds = max(0, step - 1) * dt if dt is not None else None
+            seek = (
+                f' data-seek-time="{seek_seconds:.9g}"' if seek_seconds is not None and episode.video_by_camera else ""
+            )
+            markers.append(
+                f'<button class="event-marker" style="left:{100 * step / last_step:.4f}%"'
+                f' title="{title}" aria-label="{title}"{seek}></button>'
+            )
+            links.append(f'<button class="event-step"{seek}>step {step}{time_label}</button>')
+        timelines.append(
+            f'<div class="event-row"><span>{label} ({len(steps)})</span>'
+            f'<div class="event-track">{"".join(markers)}</div></div>'
+        )
+        rows.append(f'<tr><td>{label}</td><td>{len(steps)}</td><td>{", ".join(links) or "No occurrences"}</td></tr>')
+    return (
+        '<details class="signals" open><summary>Tracked occurrences</summary>'
+        f'{"".join(timelines)}<p class="note">Timeline: step 0 to {last_step}. Each marker is one'
+        " recorded occurrence. These observations do not affect task success. Select an occurrence to seek"
+        " recorded video when timing is available.</p>"
+        "<table><thead><tr><th>Event</th><th>Count</th><th>Occurrences</th></tr></thead>"
+        f'<tbody>{"".join(rows)}</tbody></table></details>'
+    )
+
+
 def _render_episode_card(episode, cameras: list[str], video_prefix: str, policy: str = "", criteria_sets=None) -> str:
     outcome = _episode_outcome(episode)
     progress = episode.progress_fraction
@@ -469,6 +518,7 @@ def _render_episode_card(episode, cameras: list[str], video_prefix: str, policy:
         slots.append(f'<div class="videoslot"><div class="camera">{html.escape(camera)}</div>{body}</div>')
 
     signals_html = _render_consecutive_step_summary(episode) + _render_signals(criteria_sets or [])
+    signals_html += _render_tracked_event_occurrences(episode)
     if episode.outcome_disagrees_with_progress:
         reached = (
             "all completion criteria met" if episode.all_criteria_complete else "completion criteria are incomplete"

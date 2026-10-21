@@ -181,26 +181,27 @@ class DroidEmbodimentBase(EmbodimentBase, ABC):
         )
 
     def _configure_newton_gripper(self) -> None:
-        """Apply Newton's explicit six-joint Robotiq gripper actuation."""
-        gripper_joint_names = tuple(_DROID_NEWTON_GRIPPER_MIMIC_SIGNS)
+        """Drive the Robotiq motor and leave its mechanically coupled joints passive."""
         self.scene_config.robot.actuators["gripper"] = ImplicitActuatorCfg(
-            joint_names_expr=list(gripper_joint_names),
-            effort_limit=20.0,
-            velocity_limit=1.2,
+            joint_names_expr=["finger_joint"],
+            joint_effort_limit=1.0,
             stiffness=40.0,
-            damping=8.0,
-            armature=0.05,
+            damping=4.0,
+            armature=0.001,
         )
-
-        open_command = dict.fromkeys(gripper_joint_names, 0.0)
-        close_command = {
-            name: sign * _DROID_NEWTON_GRIPPER_CLOSE_RAD for name, sign in _DROID_NEWTON_GRIPPER_MIMIC_SIGNS.items()
-        }
+        # Zero drive gains leave the followers controlled by their mimic constraints.
+        self.scene_config.robot.actuators["gripper_followers"] = ImplicitActuatorCfg(
+            joint_names_expr=[name for name in _DROID_NEWTON_GRIPPER_MIMIC_SIGNS if name != "finger_joint"],
+            stiffness=0.0,
+            damping=0.0,
+            joint_effort_limit=20.0,
+            armature=0.001,
+        )
         self.action_config.gripper_action = BinaryJointPositionZeroToOneActionCfg(
             asset_name="robot",
-            joint_names=list(gripper_joint_names),
-            open_command_expr=open_command,
-            close_command_expr=close_command,
+            joint_names=["finger_joint"],
+            open_command_expr={"finger_joint": 0.0},
+            close_command_expr={"finger_joint": _DROID_NEWTON_GRIPPER_CLOSE_RAD},
         )
         self.observation_config.policy.gripper_pos = ObsTerm(func=newton_gripper_pos)
 
@@ -400,15 +401,15 @@ class DroidSceneCfg:
         actuators={
             "panda_shoulder": ImplicitActuatorCfg(
                 joint_names_expr=["panda_joint[1-4]"],
-                effort_limit=87.0,
-                velocity_limit=2.175,
+                joint_effort_limit=87.0,
+                actuator_velocity_limit=2.175,
                 stiffness=400.0,
                 damping=80.0,
             ),
             "panda_forearm": ImplicitActuatorCfg(
                 joint_names_expr=["panda_joint[5-7]"],
-                effort_limit=12.0,
-                velocity_limit=2.61,
+                joint_effort_limit=12.0,
+                actuator_velocity_limit=2.61,
                 stiffness=400.0,
                 damping=80.0,
             ),
@@ -416,7 +417,7 @@ class DroidSceneCfg:
                 joint_names_expr=["finger_joint"],
                 stiffness=None,
                 damping=None,
-                velocity_limit=5.0,
+                actuator_velocity_limit=5.0,
             ),
         },
     )
@@ -620,7 +621,8 @@ def spawn_newton_droid(
 ):
     """Spawn DROID from USD and apply Newton-specific rigid-body and collision setup."""
     from isaaclab.sim import schemas
-    from isaaclab_newton.sim.schemas import MujocoRigidBodyPropertiesCfg
+    from isaaclab_newton.sim.schemas import MujocoCollisionCfg, MujocoRigidBodyPropertiesCfg
+    from pxr import Sdf, Usd, UsdGeom, UsdPhysics
 
     from isaaclab_arena.utils.usd.helpers import move_collision_schemas_to_meshes
 
@@ -637,4 +639,29 @@ def spawn_newton_droid(
         MujocoRigidBodyPropertiesCfg(gravcomp=1.0),
         prim.GetStage(),
     )
+    # Convex pads provide stable contact patches for the shared Newton Robotiq gripper.
+    pad_count = 0
+    for child in Usd.PrimRange(prim):
+        if child.IsA(UsdGeom.Mesh) and "fingertipsstep" in child.GetName():
+            UsdPhysics.MeshCollisionAPI.Apply(child).CreateApproximationAttr().Set("convexHull")
+            pad_count += 1
+    assert pad_count == 2, f"Expected two DROID fingertip meshes, found {pad_count}"
+    schemas.apply_collision_properties(
+        f"{prim.GetPath()}/Gripper/.*",
+        [MujocoCollisionCfg(priority=2, condim=4, solref=(0.002, 1.0), solimp=(0.95, 0.99, 0.001, 0.5, 2.0))],
+    )
+    joints = {child.GetName(): child for child in Usd.PrimRange(prim) if child.IsA(UsdPhysics.RevoluteJoint)}
+    # Author native couplings explicitly: the USD's PhysX mimic defaults are too
+    # compliant for the Robotiq linkage under contact loads. Only finger_joint is driven.
+    for name, sign in _DROID_NEWTON_GRIPPER_MIMIC_SIGNS.items():
+        if name == "finger_joint":
+            continue
+        joint = joints[name]
+        joint.AddAppliedSchema("NewtonMimicAPI")
+        joint.CreateRelationship("newton:mimicJoint").SetTargets([joints["finger_joint"].GetPath()])
+        joint.CreateAttribute("newton:mimicCoef0", Sdf.ValueTypeNames.Float).Set(0.0)
+        joint.CreateAttribute("newton:mimicCoef1", Sdf.ValueTypeNames.Float).Set(sign)
+        joint.AddAppliedSchema("MjcEqualityJointAPI")
+        joint.CreateAttribute("mjc:solref", Sdf.ValueTypeNames.DoubleArray).Set([0.002, 1.0])
+        joint.CreateAttribute("mjc:solimp", Sdf.ValueTypeNames.DoubleArray).Set([0.99, 0.999, 0.001, 0.5, 2.0])
     return prim

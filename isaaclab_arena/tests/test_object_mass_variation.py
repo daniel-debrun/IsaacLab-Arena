@@ -117,7 +117,7 @@ def _test_disabled_object_mass_variation_not_in_events_cfg(simulation_app):
 
     arena_env = get_test_environment(enabled=False)
     args_cli = get_isaaclab_arena_cli_parser().parse_args(["--num_envs", "1"])
-    env_cfg, _ = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).compose_manager_cfg()
+    env_cfg, _ = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).build_env_cfg()
 
     assert not hasattr(env_cfg.events, TEST_EVENT_NAME), (
         f"Disabled variation must not add '{TEST_EVENT_NAME}' to env_cfg.events; "
@@ -133,7 +133,7 @@ def _test_enabled_object_mass_variation_in_events_cfg(simulation_app):
 
     arena_env = get_test_environment(enabled=True)
     args_cli = get_isaaclab_arena_cli_parser().parse_args(["--num_envs", "1"])
-    env_cfg, _ = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).compose_manager_cfg()
+    env_cfg, _ = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli)).build_env_cfg()
 
     assert hasattr(
         env_cfg.events, TEST_EVENT_NAME

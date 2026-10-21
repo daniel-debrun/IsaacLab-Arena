@@ -117,7 +117,7 @@ def _create_episode_limit_env(
             recorded_variation_samples_path=recorded_variation_samples_path,
         ),
     )
-    env_cfg, env_kwargs = builder.compose_manager_cfg()
+    env_cfg, env_kwargs = builder.build_env_cfg()
     env_cfg.decimation = 2
     env_cfg.sim.render_interval = 2
     env_cfg.events = combine_configclass_instances("EpisodeLimitEventsCfg", env_cfg.events, EpisodeLimitEventsCfg())

@@ -41,6 +41,7 @@ if TYPE_CHECKING:
 
 def _assert_interactive_runner_args(args_cli: argparse.Namespace) -> None:
     """Check that command-line arguments describe one interactive Kit environment."""
+    assert args_cli.presets in (None, PhysicsBackend.PHYSX), "environment_runner requires PhysX: use --presets physx"
     assert (
         args_cli.visualizer is not None and "kit" in args_cli.visualizer
     ), "environment_runner requires the Kit GUI; use --viz kit"
@@ -100,7 +101,7 @@ def _create_interactive_environment(
     assert (
         arena_builder.resolved_physics_backend is not PhysicsBackend.NEWTON
     ), "environment_runner mouse interaction currently requires PhysX"
-    env_cfg, env_kwargs = arena_builder.compose_manager_cfg()
+    env_cfg, env_kwargs = arena_builder.build_env_cfg()
     # Enable mouse picking without recording the interactive session.
     env_cfg.sim.enable_scene_query_support = True
     env_cfg.recorders = {}

@@ -12,7 +12,7 @@ import numpy as np
 from PIL import Image
 
 
-def encode_image(image: np.ndarray, max_width_or_height: int = 384) -> str:
+def image_to_jpeg_data_url(image: np.ndarray, max_width_or_height: int = 384) -> str:
     """Encode an RGB or RGBA image as JPEG, preserving aspect ratio without upscaling.
 
     Args:
@@ -24,9 +24,7 @@ def encode_image(image: np.ndarray, max_width_or_height: int = 384) -> str:
     Returns:
         A JPEG data URL for an image-capable chat-completion endpoint.
     """
-    assert (
-        isinstance(max_width_or_height, int) and max_width_or_height > 0
-    ), "max_width_or_height must be a positive integer"
+    assert max_width_or_height > 0, "max_width_or_height must be positive"
     assert image.ndim == 3 and image.shape[-1] in (3, 4), f"Unexpected image shape {image.shape}"
     assert image.dtype == np.uint8, f"Expected uint8 pixels, got {image.dtype}"
     frame = Image.fromarray(image[..., :3])

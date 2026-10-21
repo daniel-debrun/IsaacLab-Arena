@@ -15,15 +15,11 @@ from pydantic import BaseModel
 from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import PolicyStateT
 
 
-class InvalidAgentResponse(ValueError):
-    """An adapter rejected model output and requests a corrected response."""
-
-
 class AgentActionAdapter(ABC, Generic[PolicyStateT]):
     """Validate model responses and convert commands into robot actions."""
 
     state_model: type[PolicyStateT]
-    """Concrete measured-state model required for decoding and feedback control."""
+    """Concrete measured-state model required for decoding responses into actions."""
 
     response_model: type[BaseModel]
     """Response model used to generate the requested schema and validate model output."""
@@ -40,14 +36,14 @@ class AgentActionAdapter(ABC, Generic[PolicyStateT]):
     def decode_command(self, response: BaseModel, policy_state: PolicyStateT) -> np.ndarray:
         """Decode a validated response into commands with adapter-defined dimensions and units.
 
-        Use InvalidAgentResponse to request a correction for robot-specific constraints.
+        Use InvalidAgentResponseError to request a correction for robot-specific constraints.
 
         Args:
             response: Model output validated against response_model.
             policy_state: Typed state sent with this inference request.
 
         Returns:
-            A nonempty, finite one-dimensional command array.
+            A nonempty, finite command vector, or a chunk as defined by the adapter.
         """
 
     def is_command_valid(self, command: np.ndarray) -> bool:
@@ -63,7 +59,7 @@ class AgentActionAdapter(ABC, Generic[PolicyStateT]):
 
         Args:
             env: Arena environment, optionally gym-wrapped.
-            command: Validated command for one environment.
+            command: One validated action row for one environment.
 
         Returns:
             One-dimensional float32 action tensor; override for other action conventions.
@@ -72,7 +68,7 @@ class AgentActionAdapter(ABC, Generic[PolicyStateT]):
 
 
 class ChunkActionAdapter(AgentActionAdapter[PolicyStateT]):
-    """Decode fixed-length command sequences for AgentCommandedChunkPolicy.
+    """Decode fixed-length command sequences for VLMChunkPolicy.
 
     Implement decode_command to return (chunk_size, command_dim) and response_model
     to describe that response. command_to_action converts one row at a time.
@@ -97,7 +93,7 @@ class ChunkActionAdapter(AgentActionAdapter[PolicyStateT]):
 
 
 class GoalActionAdapter(AgentActionAdapter[PolicyStateT]):
-    """Decode goals and provide closed-loop commands for AgentCommandedGoalPolicy.
+    """Decode goals and provide closed-loop commands for VLMGoalPolicy.
 
     Goals are finite vectors with adapter-defined dimensions and units. A new goal
     is requested when goal_reached returns True or max_steps commands have executed.
@@ -113,7 +109,7 @@ class GoalActionAdapter(AgentActionAdapter[PolicyStateT]):
 
         Args:
             goal: Validated goal for one environment.
-            policy_state: Current typed state from the observation adapter.
+            policy_state: Current state from the observation adapter.
 
         Returns:
             Whether to request a new goal before the next action.
@@ -125,7 +121,7 @@ class GoalActionAdapter(AgentActionAdapter[PolicyStateT]):
 
         Args:
             goal: Validated goal for one environment.
-            policy_state: Current typed state from the observation adapter.
+            policy_state: Current state from the observation adapter.
 
         Returns:
             A finite command vector for command_to_action.

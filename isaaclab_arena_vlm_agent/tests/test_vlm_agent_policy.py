@@ -10,32 +10,30 @@ import copy
 import io
 import json
 import numpy as np
+import subprocess
+import sys
+import textwrap
 import torch
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 from PIL import Image
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
 from isaaclab_arena.inference.backend import InferenceBackend, build_strict_schema
 from isaaclab_arena_vlm_agent.embodiment_adapter.action_adapter import (
     AgentActionAdapter,
     ChunkActionAdapter,
     GoalActionAdapter,
-    InvalidAgentResponse,
 )
 from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import (
     CAMERA_OBSERVATION_GROUP,
     PolicyState,
     VLMObservationAdapter,
 )
-from isaaclab_arena_vlm_agent.policy.vlm_agent_policy import (
-    AgentCommandedChunkPolicy,
-    AgentCommandedGoalPolicy,
-    VLMAgentPolicy,
-    VLMAgentPolicyCfg,
-)
+from isaaclab_arena_vlm_agent.errors import InvalidAgentResponseError
+from isaaclab_arena_vlm_agent.policy.vlm_agent_policy import VLMChunkPolicy, VLMGoalPolicy, VLMPolicyCfg, VLMStepPolicy
 
 
 class JointPositionState(PolicyState):
@@ -82,7 +80,7 @@ class ActionAdapter(AgentActionAdapter[JointPositionState]):
     def decode_command(self, response, policy_state: JointPositionState):
         target = np.asarray(response.target, dtype=np.float32)
         if target.shape != (len(policy_state.joint_positions),):
-            raise InvalidAgentResponse("Wrong command dimensions")
+            raise InvalidAgentResponseError("Wrong command dimensions")
         return target - np.asarray(policy_state.joint_positions)
 
     def command_to_action(self, env, command):
@@ -108,12 +106,12 @@ def backend(monkeypatch):
 
 
 def make_policy(backend, **kwargs):
-    config = VLMAgentPolicyCfg(
+    config = VLMPolicyCfg(
         system_prompt="Return the joint targets using the supplied schema.",
         image_max_width_or_height=8,
         **kwargs,
     )
-    policy = VLMAgentPolicy(
+    policy = VLMStepPolicy(
         config,
         inference_backend=backend,
         observation_adapter=ObservationAdapter(),
@@ -143,11 +141,11 @@ def test_policy_uses_adapter_actions_for_each_environment(backend, action_dim):
         return response(json.dumps({"target": (np.asarray(state["joint_positions"]) + 0.5).tolist()}))
 
     client.chat.completions.create.side_effect = create
-    config = VLMAgentPolicyCfg(
+    config = VLMPolicyCfg(
         system_prompt="Use this robot's joint units.",
         image_max_width_or_height=8,
     )
-    policy = VLMAgentPolicy(
+    policy = VLMStepPolicy(
         config,
         inference_backend=backend,
         observation_adapter=ObservationAdapter(),
@@ -224,7 +222,7 @@ def test_invalid_commands_fail_after_bounded_attempts(backend):
     policy = make_policy(backend, max_attempts=2)
     policy.action_adapter.command_to_action = Mock()
     try:
-        with pytest.raises(InvalidAgentResponse, match="Wrong command dimensions"):
+        with pytest.raises(InvalidAgentResponseError, match="Wrong command dimensions"):
             policy.get_action(*inputs())
         assert client.chat.completions.create.call_count == 2
         policy.action_adapter.command_to_action.assert_not_called()
@@ -248,22 +246,26 @@ def test_environment_validation_precedes_inference(backend):
 @pytest.mark.parametrize("prompt", ["", " \n\t", None])
 def test_missing_prompt_is_rejected(prompt):
     with pytest.raises(AssertionError, match="policy.system_prompt"):
-        VLMAgentPolicyCfg(system_prompt=prompt)
-
-
-class JointChunkResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-    actions: list[list[float]]
+        VLMPolicyCfg(system_prompt=prompt)
 
 
 class JointChunkAdapter(ChunkActionAdapter[JointPositionState]):
     state_model = JointPositionState
-    response_model = JointChunkResponse
 
     def is_robot_action_space_supported(self, env):
         return env.unwrapped.action_dim > 0
 
+    def __init__(self, chunk_size: int):
+        super().__init__(chunk_size)
+        self.response_model = create_model(
+            "JointChunkResponse",
+            __config__=ConfigDict(extra="forbid", strict=True),
+            actions=(list[list[float]], Field(min_length=chunk_size, max_length=chunk_size)),
+        )
+
     def decode_command(self, response, policy_state: JointPositionState):
+        if any(len(row) != len(policy_state.joint_positions) for row in response.actions):
+            raise InvalidAgentResponseError("Wrong command dimensions")
         return np.asarray(response.actions, dtype=np.float32)
 
 
@@ -275,7 +277,10 @@ class JointGoalAdapter(GoalActionAdapter[JointPositionState]):
         return env.unwrapped.action_dim > 0
 
     def decode_command(self, response, policy_state: JointPositionState):
-        return np.asarray(response.target, dtype=np.float32)
+        target = np.asarray(response.target, dtype=np.float32)
+        if target.shape != (len(policy_state.joint_positions),):
+            raise InvalidAgentResponseError("Wrong goal dimensions")
+        return target
 
     def goal_reached(self, goal, policy_state: JointPositionState):
         return np.allclose(goal, policy_state.joint_positions)
@@ -285,9 +290,9 @@ class JointGoalAdapter(GoalActionAdapter[JointPositionState]):
 
 
 def make_multi_step_policy(backend, adapter):
-    policy_type = AgentCommandedChunkPolicy if isinstance(adapter, ChunkActionAdapter) else AgentCommandedGoalPolicy
+    policy_type = VLMChunkPolicy if isinstance(adapter, ChunkActionAdapter) else VLMGoalPolicy
     policy = policy_type(
-        VLMAgentPolicyCfg(system_prompt="Control these joints.", max_attempts=1),
+        VLMPolicyCfg(system_prompt="Control these joints.", max_attempts=1),
         inference_backend=backend,
         observation_adapter=ObservationAdapter(),
         action_adapter=adapter,
@@ -333,13 +338,22 @@ def test_chunks_replay_in_order_and_reset_independently(backend, action_dim):
     assert len(calls) == 6
 
 
-@pytest.mark.parametrize("commands", [[[1, 2]], [1, 2, 3], [[1, 2], [3, float("nan")], [4, 5]]])
+@pytest.mark.parametrize(
+    "commands",
+    [
+        [],
+        [[1, 2]],
+        [1, 2, 3],
+        [[1, 2], [3, float("nan")], [4, 5]],
+        [[1, 2], [3], [4, 5]],
+    ],
+)
 def test_whole_chunk_is_validated_before_execution(backend, commands):
     backend.client.chat.completions.create.return_value = response(json.dumps({"actions": commands}))
     adapter = JointChunkAdapter(chunk_size=3)
     adapter.command_to_action = Mock()
     policy = make_multi_step_policy(backend, adapter)
-    with pytest.raises((AssertionError, ValidationError)):
+    with pytest.raises(InvalidAgentResponseError):
         policy.get_action(*inputs())
     adapter.command_to_action.assert_not_called()
     assert backend.client.chat.completions.create.call_count == 1
@@ -382,9 +396,63 @@ def test_goal_controller_output_is_validated_before_conversion(backend):
     adapter.compute_command = Mock(return_value=np.array([np.inf, 0]))
     adapter.command_to_action = Mock()
     policy = make_multi_step_policy(backend, adapter)
-    with pytest.raises(AssertionError, match="finite goal command"):
+    with pytest.raises(ValueError, match="finite goal command"):
         policy.get_action(*inputs())
     adapter.command_to_action.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "payload,code",
+    [
+        ({"wrong_field": [1, 2]}, "invalid_schema"),
+        ({"target": [1]}, "invalid_command"),
+        ({"target": [1, float("nan")]}, "invalid_command"),
+    ],
+)
+def test_response_rejection_exposes_structured_details(backend, payload, code):
+    backend.client.chat.completions.create.return_value = response(json.dumps(payload))
+    policy = make_policy(backend, max_attempts=2)
+    with pytest.raises(InvalidAgentResponseError) as caught:
+        policy.get_action(*inputs())
+    assert caught.value.details.code == code
+    assert caught.value.details.message == str(caught.value)
+    correction = backend.client.chat.completions.create.call_args.kwargs["messages"][-1]["content"]
+    assert f'"code": "{code}"' in correction
+    assert backend.client.chat.completions.create.call_count == 2
+
+
+def test_invalid_model_actions_are_rejected_with_python_optimization():
+    # This child imports no simulation runtime; -O must not disable model-output rejection.
+    script = textwrap.dedent("""\
+        import numpy as np
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        from isaaclab_arena_vlm_agent.tests.test_vlm_agent_policy import (
+            ActionAdapter, ObservationAdapter, JointPositionState,
+        )
+        from isaaclab_arena_vlm_agent.errors import InvalidAgentResponseError
+        from isaaclab_arena_vlm_agent.policy.vlm_agent_policy import VLMStepPolicy, VLMPolicyCfg
+
+        for command in (np.ones((1, 2)), np.empty(0), np.array([1, np.nan])):
+            backend = SimpleNamespace(infer=Mock(return_value={"target": [1, 2]}))
+            adapter = ActionAdapter()
+            adapter.decode_command = Mock(return_value=command)
+            policy = VLMStepPolicy(
+                VLMPolicyCfg(system_prompt="Control joints", max_attempts=2),
+                inference_backend=backend, observation_adapter=ObservationAdapter(), action_adapter=adapter,
+            )
+            try:
+                policy._infer([], JointPositionState(joint_positions=[0.0, 0.0]))
+            except InvalidAgentResponseError as error:
+                if error.details.code != "invalid_command" or backend.infer.call_count != 2:
+                    raise RuntimeError("Incorrect rejection details or retry count")
+            else:
+                raise RuntimeError("Invalid model actions were accepted with assertions disabled")
+        print("optimized rejection checks passed")
+    """)
+    result = subprocess.run([sys.executable, "-O", "-c", script], capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "optimized rejection checks passed" in result.stdout
 
 
 @pytest.mark.parametrize("error_type", [KeyError, TypeError, AssertionError, ValueError])
@@ -417,8 +485,8 @@ def test_missing_camera_keys_fail_at_construction(backend):
     adapter = ObservationAdapter()
     adapter.camera_keys = ()
     with pytest.raises(AssertionError, match="camera observation key"):
-        VLMAgentPolicy(
-            VLMAgentPolicyCfg(system_prompt="Control these joints."),
+        VLMStepPolicy(
+            VLMPolicyCfg(system_prompt="Control these joints."),
             inference_backend=backend,
             observation_adapter=adapter,
             action_adapter=ActionAdapter(),
@@ -433,8 +501,8 @@ def test_incompatible_state_models_fail_before_inference(backend):
     adapter = ActionAdapter()
     adapter.state_model = OtherState
     with pytest.raises(AssertionError, match="same state_model"):
-        VLMAgentPolicy(
-            VLMAgentPolicyCfg(system_prompt="Control these joints."),
+        VLMStepPolicy(
+            VLMPolicyCfg(system_prompt="Control these joints."),
             inference_backend=backend,
             observation_adapter=ObservationAdapter(),
             action_adapter=adapter,

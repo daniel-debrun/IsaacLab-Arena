@@ -48,7 +48,7 @@ def _build_env_cfg(
     env_cfg_override=None,
     default_physics_backend=None,
 ):
-    """Build a real env cfg through ArenaEnvBuilder.compose_manager_cfg with the given preset."""
+    """Build a real env cfg through ArenaEnvBuilder.build_env_cfg with the given preset."""
     from functools import partial
 
     from isaaclab_arena.assets.registries import AssetRegistry
@@ -92,7 +92,7 @@ def _build_env_cfg(
     )
 
     builder = ArenaEnvBuilder(arena_env, ArenaEnvBuilderCfg(num_envs=1, presets=presets))
-    env_cfg, _ = builder.compose_manager_cfg()
+    env_cfg, _ = builder.build_env_cfg()
     return env_cfg
 
 
@@ -192,9 +192,11 @@ def _test_droid_abs_joint_pos_newton_preset_applies_newton_spawn(simulation_app)
     env_cfg = _build_env_cfg(presets="newton", embodiment=DroidAbsoluteJointPositionEmbodiment())
     assert isinstance(env_cfg.sim.physics, NewtonCfg)
     assert env_cfg.scene.robot.spawn.func is spawn_newton_droid
-    gripper_joint_names = list(_DROID_NEWTON_GRIPPER_MIMIC_SIGNS)
-    assert env_cfg.scene.robot.actuators["gripper"].joint_names_expr == gripper_joint_names
-    assert env_cfg.actions.gripper_action.joint_names == gripper_joint_names
+    assert env_cfg.scene.robot.actuators["gripper"].joint_names_expr == ["finger_joint"]
+    assert env_cfg.actions.gripper_action.joint_names == ["finger_joint"]
+    followers = env_cfg.scene.robot.actuators["gripper_followers"]
+    assert set(followers.joint_names_expr) == set(_DROID_NEWTON_GRIPPER_MIMIC_SIGNS) - {"finger_joint"}
+    assert followers.stiffness == followers.damping == 0.0
     assert env_cfg.observations.policy.gripper_pos.func is newton_gripper_pos
     return True
 
@@ -206,9 +208,11 @@ def _test_droid_rel_joint_pos_newton_preset_applies_newton_gripper(simulation_ap
     )
 
     env_cfg = _build_env_cfg(presets="newton", embodiment=DroidRelativeJointPositionEmbodiment())
-    gripper_joint_names = list(_DROID_NEWTON_GRIPPER_MIMIC_SIGNS)
-    assert env_cfg.scene.robot.actuators["gripper"].joint_names_expr == gripper_joint_names
-    assert env_cfg.actions.gripper_action.joint_names == gripper_joint_names
+    assert env_cfg.scene.robot.actuators["gripper"].joint_names_expr == ["finger_joint"]
+    assert env_cfg.actions.gripper_action.joint_names == ["finger_joint"]
+    followers = env_cfg.scene.robot.actuators["gripper_followers"]
+    assert set(followers.joint_names_expr) == set(_DROID_NEWTON_GRIPPER_MIMIC_SIGNS) - {"finger_joint"}
+    assert followers.stiffness == followers.damping == 0.0
     return True
 
 
@@ -486,6 +490,15 @@ def _test_droid_newton_prim_physics(simulation_app) -> bool:
     robot = DroidDifferentialIKEmbodiment()
     baseline = _build_env_cfg(presets="newton", embodiment=robot).scene.robot.spawn
     root = baseline.func("/World/Original", baseline)
+    # These pad properties must apply outside the gear environment as well.
+    pads = []
+    for prim in Usd.PrimRange(root):
+        if prim.IsA(UsdGeom.Mesh) and "fingertipsstep" in prim.GetName():
+            pads.append(prim)
+            assert UsdPhysics.MeshCollisionAPI(prim).GetApproximationAttr().Get() == "convexHull"
+            assert prim.GetAttribute("mjc:condim").Get() == 4
+            assert prim.GetAttribute("mjc:priority").Get() == 2
+    assert len(pads) == 2
     # Use a real collider after DROID's Newton setup has moved schemas to meshes.
     collider = next(prim for prim in Usd.PrimRange(root) if prim.HasAPI(UsdPhysics.CollisionAPI))
     collider_path = str(collider.GetPath().MakeRelativePath(root.GetPath()))
@@ -520,6 +533,27 @@ def _test_droid_newton_prim_physics(simulation_app) -> bool:
 @pytest.mark.with_newton
 def test_droid_newton_prim_physics():
     assert run_function_with_persistent_simulation_app(_test_droid_newton_prim_physics, headless=HEADLESS)
+
+
+def _test_gear_assets_reject_incompatible_physics(simulation_app):
+    from isaaclab.sim import SimulationCfg
+    from isaaclab_newton.physics import NewtonCfg
+    from isaaclab_physx.physics import PhysxCfg
+
+    from isaaclab_arena.assets.object_library import GearInsertionBase, GearInsertionMediumGear
+    from isaaclab_arena.scene.scene import Scene
+
+    for asset_type in (GearInsertionBase, GearInsertionMediumGear):
+        scene = Scene(assets=[asset_type()])
+        scene.validate_simulation_cfg(SimulationCfg(physics=NewtonCfg()))
+        for physics in (None, PhysxCfg()):
+            with pytest.raises(AssertionError, match="requires the Newton physics backend"):
+                scene.validate_simulation_cfg(SimulationCfg(physics=physics))
+    return True
+
+
+def test_gear_assets_reject_incompatible_physics():
+    assert run_function_with_persistent_simulation_app(_test_gear_assets_reject_incompatible_physics, headless=HEADLESS)
 
 
 if __name__ == "__main__":

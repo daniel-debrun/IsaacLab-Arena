@@ -43,7 +43,7 @@ def _test_get_local_poses_matches_camera_offset_cfg(simulation_app) -> bool:
     )
     args_cli = get_isaaclab_arena_cli_parser().parse_args(["--num_envs", "1", "--enable_cameras"])
     builder = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli))
-    env_cfg, env_kwargs = builder.compose_manager_cfg()
+    env_cfg, env_kwargs = builder.build_env_cfg()
 
     env_cfg.scene.wrist_cam.offset = CameraCfg.OffsetCfg(
         pos=TEST_CAMERA_OFFSET.position_xyz,

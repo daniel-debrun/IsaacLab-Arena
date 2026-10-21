@@ -24,7 +24,7 @@ def _test_replicator_online_visual_physics_with_rtx(_) -> bool:
     )
 
     builder = get_arena_builder_from_cli(args)
-    env_cfg, env_kwargs = builder.compose_manager_cfg()
+    env_cfg, env_kwargs = builder.build_env_cfg()
     env = builder.make_registered(env_cfg, env_kwargs, render_mode="rgb_array")
     try:
         env.reset()

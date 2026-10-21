@@ -10,29 +10,30 @@ from __future__ import annotations
 import json
 import numpy as np
 import torch
+from abc import abstractmethod
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 from pydantic import ValidationError
 
 from isaaclab_arena.inference.backend import InferenceBackend, InferenceRequest, build_strict_schema
 from isaaclab_arena.policy.policy_base import PolicyBase, PolicyCfg
-from isaaclab_arena.utils.image import encode_image
 from isaaclab_arena_vlm_agent.embodiment_adapter.action_adapter import (
     AgentActionAdapter,
     ChunkActionAdapter,
     GoalActionAdapter,
-    InvalidAgentResponse,
 )
 from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import (
     CAMERA_OBSERVATION_GROUP,
     PolicyState,
     VLMObservationAdapter,
 )
+from isaaclab_arena_vlm_agent.errors import InvalidAgentResponseError
+from isaaclab_arena_vlm_agent.image import image_to_jpeg_data_url
 
 
 @dataclass
-class VLMAgentPolicyCfg(PolicyCfg):
+class VLMPolicyCfg(PolicyCfg):
     """Configure policy prompts, image encoding, and action-validation attempts."""
 
     system_prompt: str = ""
@@ -53,20 +54,19 @@ class VLMAgentPolicyCfg(PolicyCfg):
         assert (
             isinstance(self.system_prompt, str) and self.system_prompt.strip()
         ), "Set policy.system_prompt in the experiment"
-        assert isinstance(self.image_max_width_or_height, int) and self.image_max_width_or_height > 0
+        assert self.image_max_width_or_height > 0
         assert isinstance(self.max_attempts, int) and self.max_attempts >= 1
 
 
-class VLMAgentPolicy(PolicyBase[VLMAgentPolicyCfg]):
-    """Request one action per environment per step using stateless adapters.
+class VLMPolicy(PolicyBase[VLMPolicyCfg]):
+    """Share VLM request preparation and response validation across execution strategies.
 
     Each request contains only the current images, robot state, and task description.
-    The adapters define the command dimensions, units, and native action conversion.
     """
 
     def __init__(
         self,
-        config: VLMAgentPolicyCfg,
+        config: VLMPolicyCfg,
         *,
         inference_backend: InferenceBackend,
         observation_adapter: VLMObservationAdapter,
@@ -96,7 +96,7 @@ class VLMAgentPolicy(PolicyBase[VLMAgentPolicyCfg]):
         self.task_description = None
 
     def get_action(self, env, observation) -> torch.Tensor:
-        """Infer a batch of native actions from the current observation.
+        """Return a batch of native actions using the policy execution strategy.
 
         Args:
             env: Arena environment, optionally gym-wrapped.
@@ -124,9 +124,9 @@ class VLMAgentPolicy(PolicyBase[VLMAgentPolicyCfg]):
             actions.append(action.to(device=env.unwrapped.device))
         return torch.stack(actions)
 
+    @abstractmethod
     def _get_command(self, env, observation, env_id: int, state: PolicyState) -> np.ndarray:
-        """Infer the command to execute for one environment on this step."""
-        return self._infer(self._request_content(env, observation, env_id, state), state)
+        """Return one command using the current observation and any pending prediction."""
 
     def _request_content(self, env, observation, env_id: int, state: PolicyState) -> list[dict]:
         """Prepare current state and images for a new inference request."""
@@ -140,7 +140,10 @@ class VLMAgentPolicy(PolicyBase[VLMAgentPolicyCfg]):
             image = images[env_id].detach().cpu().numpy()
             content.extend([
                 {"type": "text", "text": f"camera={key}"},
-                {"type": "image_url", "image_url": {"url": encode_image(image, self.config.image_max_width_or_height)}},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": image_to_jpeg_data_url(image, self.config.image_max_width_or_height)},
+                },
             ])
         return content
 
@@ -150,6 +153,7 @@ class VLMAgentPolicy(PolicyBase[VLMAgentPolicyCfg]):
             {"role": "system", "content": self.config.system_prompt},
             {"role": "user", "content": content},
         ]
+        rejection: InvalidAgentResponseError | None = None
         for attempt in range(self.config.max_attempts):
             payload = self._inference_backend.infer(
                 InferenceRequest(
@@ -161,31 +165,56 @@ class VLMAgentPolicy(PolicyBase[VLMAgentPolicyCfg]):
             )
             try:
                 response = self.action_adapter.response_model.model_validate(payload)
-                command = np.asarray(self.action_adapter.decode_command(response, state), dtype=np.float32)
-            except (InvalidAgentResponse, ValidationError) as exc:
-                rejection = exc
+            except ValidationError as exc:
+                rejection = InvalidAgentResponseError(str(exc), code="invalid_schema")
             else:
-                # Adapter implementation errors must propagate without asking the model to fix them.
-                is_valid = self.action_adapter.is_command_valid(command)
                 try:
-                    assert is_valid, "Expected finite commands with the adapter's required shape"
-                except AssertionError as exc:
+                    command = np.asarray(self.action_adapter.decode_command(response, state), dtype=np.float32)
+                except InvalidAgentResponseError as exc:
                     rejection = exc
                 else:
-                    return command
+                    # Adapter implementation errors must propagate without asking the model to fix them.
+                    if self.action_adapter.is_command_valid(command):
+                        return command
+                    rejection = InvalidAgentResponseError("Expected finite commands with the adapter's required shape")
             messages.append({"role": "assistant", "content": json.dumps(payload)})
-            messages.append(
-                {"role": "user", "content": f"Invalid actions: {rejection}. Return a corrected prediction."}
-            )
+            messages.append({
+                "role": "user",
+                "content": f"Invalid actions: {json.dumps(asdict(rejection.details))}. Return a corrected prediction.",
+            })
+        assert rejection is not None, "Expected a rejection after exhausting response-validation attempts"
         raise rejection
 
 
-class AgentCommandedChunkPolicy(VLMAgentPolicy):
+class VLMStepPolicy(VLMPolicy):
+    """Predict one action per environment from fresh observations on every step."""
+
+    def __init__(
+        self,
+        config: VLMPolicyCfg,
+        *,
+        inference_backend: InferenceBackend,
+        observation_adapter: VLMObservationAdapter,
+        action_adapter: AgentActionAdapter,
+    ):
+        assert not isinstance(action_adapter, (ChunkActionAdapter, GoalActionAdapter)), "Expected a single-step adapter"
+        super().__init__(
+            config,
+            inference_backend=inference_backend,
+            observation_adapter=observation_adapter,
+            action_adapter=action_adapter,
+        )
+
+    def _get_command(self, env, observation, env_id: int, state: PolicyState) -> np.ndarray:
+        return self._infer(self._request_content(env, observation, env_id, state), state)
+
+
+class VLMChunkPolicy(VLMPolicy):
     """Execute a validated command chunk before requesting another from current observations."""
 
     def __init__(
         self,
-        config: VLMAgentPolicyCfg,
+        config: VLMPolicyCfg,
         *,
         inference_backend: InferenceBackend,
         observation_adapter: VLMObservationAdapter,
@@ -215,12 +244,12 @@ class AgentCommandedChunkPolicy(VLMAgentPolicy):
                 self._chunks.pop(env_id, None)
 
 
-class AgentCommandedGoalPolicy(VLMAgentPolicy):
+class VLMGoalPolicy(VLMPolicy):
     """Use adapter-defined feedback to execute a goal until completion or its step limit."""
 
     def __init__(
         self,
-        config: VLMAgentPolicyCfg,
+        config: VLMPolicyCfg,
         *,
         inference_backend: InferenceBackend,
         observation_adapter: VLMObservationAdapter,
@@ -247,7 +276,8 @@ class AgentCommandedGoalPolicy(VLMAgentPolicy):
         else:
             goal, executed = pending
         command = np.asarray(self.action_adapter.compute_command(goal, state), dtype=np.float32)
-        assert command.ndim == 1 and command.size > 0 and np.isfinite(command).all(), "Expected a finite goal command"
+        if command.ndim != 1 or command.size == 0 or not np.isfinite(command).all():
+            raise ValueError("Expected a finite goal command")
         self._goals[env_id] = (goal, executed + 1)
         return command
 

@@ -67,7 +67,7 @@ def _build_droid_env(disable_fabric: bool):
     # Both builds share the builder's default seed, so reset-time joint randomization draws the same
     # offsets and the two builds are expected to render the same scene.
     builder = ArenaEnvBuilder(arena_env, arena_env_builder_cfg_from_argparse(args_cli))
-    env_cfg, env_kwargs = builder.compose_manager_cfg()
+    env_cfg, env_kwargs = builder.build_env_cfg()
     # Arena turns this off by default. Without it a reset can return while assets are still streaming,
     # which blanks or misplaces geometry in the first frames and would be misread as a rebuild failure.
     env_cfg.wait_for_textures = True

@@ -134,6 +134,7 @@ class IsaacLabArenaManagerBasedRLEnv(ManagerBasedRLEnv):
                 env=self,
                 subtasks_are_sequential=progress_cfg.subtasks_are_sequential,
                 desired_subtask_success_state=progress_cfg.desired_subtask_success_state,
+                tracked_events=progress_cfg.tracked_events,
             )
             self._task_progress_step = self.common_step_counter
             if not recorder_cfg or isinstance(recorder_cfg, dict):

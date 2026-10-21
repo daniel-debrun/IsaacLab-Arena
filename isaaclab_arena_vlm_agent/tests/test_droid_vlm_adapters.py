@@ -28,12 +28,7 @@ from isaaclab_arena_vlm_agent.embodiment_adapter.droid_pose import (
     DroidPoseChunk,
     DroidPoseCommand,
 )
-from isaaclab_arena_vlm_agent.policy.vlm_agent_policy import (
-    AgentCommandedChunkPolicy,
-    AgentCommandedGoalPolicy,
-    VLMAgentPolicy,
-    VLMAgentPolicyCfg,
-)
+from isaaclab_arena_vlm_agent.policy.vlm_agent_policy import VLMChunkPolicy, VLMGoalPolicy, VLMPolicyCfg, VLMStepPolicy
 
 
 def _target(x=0.4, closed=False):
@@ -149,11 +144,11 @@ def test_chunk_length_is_checked_before_execution(length):
 @pytest.mark.parametrize("mode", ["single", "chunk", "goal"])
 def test_droid_adapters_integrate_with_policy_and_partial_resets(mode):
     if mode == "single":
-        policy_type, adapter = VLMAgentPolicy, DroidPoseActionAdapter()
+        policy_type, adapter = VLMStepPolicy, DroidPoseActionAdapter()
     elif mode == "chunk":
-        policy_type, adapter = AgentCommandedChunkPolicy, DroidChunkActionAdapter(chunk_size=2)
+        policy_type, adapter = VLMChunkPolicy, DroidChunkActionAdapter(chunk_size=2)
     else:
-        policy_type, adapter = AgentCommandedGoalPolicy, DroidGoalActionAdapter(max_steps=2)
+        policy_type, adapter = VLMGoalPolicy, DroidGoalActionAdapter(max_steps=2)
     # Real action-manager compatibility is covered by the simulation test.
     adapter.is_robot_action_space_supported = Mock(return_value=True)
     requests = []
@@ -165,7 +160,7 @@ def test_droid_adapters_integrate_with_policy_and_partial_resets(mode):
         return _target(0.6)
 
     policy = policy_type(
-        VLMAgentPolicyCfg(system_prompt="Return an absolute base_link target in robot-root coordinates."),
+        VLMPolicyCfg(system_prompt="Return an absolute base_link target in robot-root coordinates."),
         inference_backend=SimpleNamespace(infer=infer),
         observation_adapter=DroidObservationAdapter(),
         action_adapter=adapter,
@@ -202,8 +197,8 @@ def test_invalid_droid_chunk_is_corrected_before_any_action():
             ]
         )
     )
-    policy = AgentCommandedChunkPolicy(
-        VLMAgentPolicyCfg(system_prompt="Return two absolute pose commands."),
+    policy = VLMChunkPolicy(
+        VLMPolicyCfg(system_prompt="Return two absolute pose commands."),
         inference_backend=backend,
         observation_adapter=DroidObservationAdapter(),
         action_adapter=adapter,

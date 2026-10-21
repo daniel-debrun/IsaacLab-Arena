@@ -1,0 +1,208 @@
+# Copyright (c) 2026, The Isaac Lab Arena Project Developers (https://github.com/isaac-sim/IsaacLab-Arena/blob/main/CONTRIBUTORS.md).
+# All rights reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+"""Check a pending GitHub review draft against the pull request before sending it.
+
+Usage (on the host, with ``gh`` authenticated):
+    python3 -I skills/developer/draft-pr-review/scripts/validate_pending_review.py OWNER/REPO PR_NUMBER REVIEW_DRAFT.json
+
+Checks that the review draft has no ``event`` (so the review stays pending), that ``commit_id`` is the
+current PR head, that the summary and comments start with the attribution line, and that every
+inline comment is anchored on a line inside GitHub's diff. Only read-only ``gh`` commands are run.
+A review draft without ``body`` checks comments meant for an existing pending review.
+"""
+
+from __future__ import annotations
+
+import argparse
+import ast
+import json
+import re
+import subprocess
+import sys
+from dataclasses import dataclass, field
+
+ATTRIBUTION_LINE = re.compile(r"^_AI-drafted \([^()\r\n]+\), reviewed by me\._\n\n")
+HUNK_HEADER = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+
+
+@dataclass
+class DiffHunk:
+    """Line numbers a review comment may target within one diff hunk."""
+
+    right_lines: set[int] = field(default_factory=set)
+    """New-file line numbers of added and context lines."""
+
+    left_lines: set[int] = field(default_factory=set)
+    """Old-file line numbers of deleted and context lines."""
+
+
+def run_gh(arguments: list[str]) -> str:
+    """Run a read-only ``gh`` command.
+
+    Args:
+        arguments: Arguments passed to ``gh``.
+
+    Returns:
+        The command's standard output.
+    """
+    return subprocess.run(["gh", *arguments], check=True, capture_output=True, text=True).stdout
+
+
+def decode_diff_path(path: str) -> str | None:
+    """Decode a Git diff path, including quoted UTF-8 names and deleted files."""
+    if path == "/dev/null":
+        return None
+    if path.startswith('"'):
+        path = ast.literal_eval(path).encode("latin-1").decode("utf-8")
+    return path[2:]
+
+
+def parse_hunks_by_path(diff_text: str) -> dict[str, list[DiffHunk]]:
+    """Parse a unified diff into the hunks of each file.
+
+    Args:
+        diff_text: Unified diff as printed by ``gh pr diff``.
+
+    Returns:
+        Hunks keyed by the path GitHub uses for review comments (the old path for deleted files).
+    """
+    hunks_by_path: dict[str, list[DiffHunk]] = {}
+    old_path = new_path = None
+    current_hunk: DiffHunk | None = None
+    old_line = new_line = 0
+    for line in diff_text.split("\n"):
+        if line.startswith("diff --git "):
+            current_hunk = None
+            old_path = new_path = None
+            continue
+        if current_hunk is None and line.startswith("--- "):
+            old_path = decode_diff_path(line[4:])
+            continue
+        if current_hunk is None and line.startswith("+++ "):
+            new_path = decode_diff_path(line[4:])
+            continue
+        header_match = HUNK_HEADER.match(line)
+        if header_match:
+            old_line, new_line = int(header_match.group(1)), int(header_match.group(2))
+            current_hunk = DiffHunk()
+            comment_path = new_path if new_path is not None else old_path
+            hunks_by_path.setdefault(comment_path, []).append(current_hunk)
+            continue
+        if current_hunk is None or line.startswith("\\"):
+            continue
+        if line.startswith("+"):
+            current_hunk.right_lines.add(new_line)
+            new_line += 1
+        elif line.startswith("-"):
+            current_hunk.left_lines.add(old_line)
+            old_line += 1
+        elif line.startswith(" "):
+            current_hunk.right_lines.add(new_line)
+            current_hunk.left_lines.add(old_line)
+            new_line += 1
+            old_line += 1
+    return hunks_by_path
+
+
+def find_anchor_problem(comment: dict, hunks_by_path: dict[str, list[DiffHunk]]) -> str | None:
+    """Explain why an inline comment cannot be anchored on the diff.
+
+    Args:
+        comment: One entry of the review draft's ``comments`` list.
+        hunks_by_path: Diff hunks from parse_hunks_by_path.
+
+    Returns:
+        A description of the problem, or None when the comment can be anchored.
+    """
+    path = comment.get("path")
+    side = comment.get("side")
+    end_line = comment.get("line")
+    start_line = comment.get("start_line", end_line)
+    start_side = comment.get("start_side", side)
+    if not isinstance(path, str) or path not in hunks_by_path:
+        return f"{path} is not part of the PR diff"
+    if side not in ("LEFT", "RIGHT") or start_side not in ("LEFT", "RIGHT"):
+        return f"{path}: side and start_side must be LEFT or RIGHT"
+    if type(end_line) is not int or end_line < 1 or type(start_line) is not int or start_line < 1:
+        return f"{path}: line and start_line must be positive integers"
+    if ("start_line" in comment) != ("start_side" in comment):
+        return f"{path}: start_line and start_side must be supplied together"
+    if start_line > end_line:
+        return f"{path}: start_line {start_line} is after line {end_line}"
+    if start_side != side:
+        return f"{path}:{start_line}-{end_line}: start_side and side differ; keep both on one side"
+    for hunk in hunks_by_path[path]:
+        allowed_lines = hunk.right_lines if side == "RIGHT" else hunk.left_lines
+        if start_line in allowed_lines and end_line in allowed_lines:
+            return None
+    return f"{path}:{start_line}-{end_line} ({side}) is not inside a single diff hunk"
+
+
+def validate_review_draft(review_draft: object, head_sha: str, hunks_by_path: dict[str, list[DiffHunk]]) -> list[str]:
+    """Return review draft errors that would prevent creating the intended pending review."""
+    if not isinstance(review_draft, dict):
+        return ["review draft must be a JSON object"]
+    problems: list[str] = []
+    if "event" in review_draft:
+        problems.append("review draft has 'event'; remove it so the review is created as PENDING")
+    if review_draft.get("commit_id") != head_sha:
+        problems.append(f"commit_id {review_draft.get('commit_id')} is not the PR head {head_sha}")
+    if "body" in review_draft and (not isinstance(review_draft["body"], str) or not review_draft["body"].strip()):
+        problems.append("review body must be a nonempty string")
+    elif "body" in review_draft and not ATTRIBUTION_LINE.match(review_draft["body"]):
+        problems.append("review body must start with the attribution line followed by a blank line")
+    comments = review_draft.get("comments", [])
+    if not isinstance(comments, list):
+        return problems + ["comments must be a list"]
+    if not comments and "body" not in review_draft:
+        problems.append("provide a review body or at least one comment")
+    for index, comment in enumerate(comments):
+        if not isinstance(comment, dict):
+            problems.append(f"comment {index}: must be an object")
+            continue
+        if not isinstance(comment.get("body"), str) or not comment["body"].strip():
+            problems.append(f"comment {index}: body must be a nonempty string")
+        elif not ATTRIBUTION_LINE.match(comment["body"]):
+            problems.append(f"comment {index}: body must start with the attribution line followed by a blank line")
+        anchor_problem = find_anchor_problem(comment, hunks_by_path)
+        if anchor_problem is not None:
+            problems.append(f"comment {index}: {anchor_problem}")
+    return problems
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("repository", help="OWNER/REPO, e.g. isaac-sim/IsaacLab-Arena")
+    parser.add_argument("pull_request_number", type=int)
+    parser.add_argument("review_draft_path", help="Review draft JSON for POST /pulls/{number}/reviews")
+    arguments = parser.parse_args()
+
+    with open(arguments.review_draft_path) as review_draft_file:
+        review_draft = json.load(review_draft_file)
+    head_sha = run_gh(
+        ["api", f"repos/{arguments.repository}/pulls/{arguments.pull_request_number}", "--jq", ".head.sha"]
+    ).strip()
+    diff_text = run_gh(["pr", "diff", str(arguments.pull_request_number), "--repo", arguments.repository])
+    hunks_by_path = parse_hunks_by_path(diff_text)
+
+    problems = validate_review_draft(review_draft, head_sha, hunks_by_path)
+    latest_head_sha = run_gh(
+        ["api", f"repos/{arguments.repository}/pulls/{arguments.pull_request_number}", "--jq", ".head.sha"]
+    ).strip()
+    if latest_head_sha != head_sha:
+        problems.append("PR head changed while fetching the diff; refresh the findings and retry")
+
+    if problems:
+        print("NOT READY:")
+        for problem in problems:
+            print(f"  - {problem}")
+        return 1
+    print(f"OK: {len(review_draft.get('comments', []))} inline comments, pinned to {head_sha[:10]}, no event")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

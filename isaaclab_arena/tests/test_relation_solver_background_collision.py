@@ -613,6 +613,61 @@ def test_discover_passive_assets_filters():
     assert result, "discover_passive_assets() returned the wrong subset"
 
 
+def _test_passive_references_follow_placed_parent(simulation_app, usd_path):
+    """Neither empty frames nor geometry on a placed parent are fixed obstacles."""
+    from pxr import Usd, UsdGeom
+
+    from isaaclab_arena.assets.object import Object
+    from isaaclab_arena.assets.object_reference import ObjectReference
+    from isaaclab_arena.assets.object_type import ObjectType
+    from isaaclab_arena.relations.collision_mode import CollisionMode
+    from isaaclab_arena.relations.passive_collision_objects import (
+        discover_passive_assets,
+        get_placement_collision_objects,
+    )
+    from isaaclab_arena.relations.relations import AtPosition
+    from isaaclab_arena.utils.pose import Pose
+
+    stage = Usd.Stage.CreateNew(usd_path)
+    root = UsdGeom.Xform.Define(stage, "/Base")
+    stage.SetDefaultPrim(root.GetPrim())
+    UsdGeom.Xform.Define(stage, "/Base/target")
+    UsdGeom.Cube.Define(stage, "/Base/obstacle").CreateSizeAttr(0.1)
+    stage.GetRootLayer().Save()
+
+    parent = Object(name="base", usd_path=usd_path, object_type=ObjectType.BASE, initial_pose=Pose.identity())
+    parent.add_relation(AtPosition(x=0.5, y=0.0))
+    references = []
+    for name in ("target", "obstacle"):
+        references.append(
+            ObjectReference(
+                name=name,
+                prim_path=f"{parent.get_prim_path()}/{name}",
+                parent_asset=parent,
+                object_type=ObjectType.BASE,
+            )
+        )
+    scene_assets = [parent, *references]
+    assert discover_passive_assets(scene_assets, placement_assets=[parent]) == []
+    collision_objects = get_placement_collision_objects([parent], scene_assets, CollisionMode.BBOX)
+    assert collision_objects == [], "References move with their placed parent, regardless of geometry."
+
+    # Having relations alone does not mean the parent participates in this placement.
+    assert get_placement_collision_objects([], [parent, references[1]], CollisionMode.BBOX) == [references[1]]
+
+    # A passive parent already covers its child geometry; do not add it twice.
+    parent.relations.clear()
+    assert get_placement_collision_objects([], scene_assets, CollisionMode.BBOX) == [parent]
+    return True
+
+
+def test_passive_references_follow_placed_parent(tmp_path):
+    assert run_function_with_persistent_simulation_app(
+        _test_passive_references_follow_placed_parent,
+        usd_path=str(tmp_path / "base_with_target.usda"),
+    )
+
+
 def test_background_with_pose_range_rejected_for_aggregate_collision():
     from unittest.mock import MagicMock
 
@@ -891,9 +946,10 @@ def test_relation_placement_forwards_anchor_background_mesh_exclusions(monkeypat
     reference.is_anchor = True
     calls = {}
 
-    def fake_discover_passive_assets(assets, include_background: bool = False):
+    def fake_discover_passive_assets(assets, include_background: bool = False, *, placement_assets=()):
         calls["assets"] = list(assets)
         calls["include_background"] = include_background
+        calls["placement_assets"] = list(placement_assets)
         return [background]
 
     def aggregate(objects, excluded_prim_paths_by_object):
@@ -920,6 +976,7 @@ def test_relation_placement_forwards_anchor_background_mesh_exclusions(monkeypat
     assert calls["assets"] == []
     assert calls["include_background"] is True
     assert calls["exclusions"] == {background: {"/Kitchen/counter"}}
+    assert calls["placement_assets"] == [reference]
     assert calls["objects"] == [reference]
     assert calls["collision_objects"] == []
 
@@ -944,7 +1001,7 @@ def test_relation_placement_includes_background_mesh_for_background_override(mon
     placed_object.add_relation(IsAnchor())
     calls = {}
 
-    def fake_discover_passive_assets(assets, include_background: bool = False):
+    def fake_discover_passive_assets(assets, include_background: bool = False, *, placement_assets=()):
         calls["assets"] = list(assets)
         calls["include_background"] = include_background
         return []
@@ -991,7 +1048,7 @@ def test_relation_placement_skips_background_mesh_for_default_bbox(monkeypatch):
     placed_object.add_relation(IsAnchor())
     calls = {}
 
-    def fake_discover_passive_assets(assets, include_background: bool = False):
+    def fake_discover_passive_assets(assets, include_background: bool = False, *, placement_assets=()):
         calls["assets"] = list(assets)
         calls["include_background"] = include_background
         return []
