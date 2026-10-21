@@ -86,6 +86,10 @@ Use active target-source notation for Arena-owned poses and transforms:
   frames matter in Arena calculations, bind the value to an explicit transform name, for example
   `T_W_O = object.data.root_pose_w`.
 
+All Arena-owned poses, positions, vectors, and rotations should be marked with the frame they're expressed in (vectors) and frames they transform between (rotations):
+- `q_W_B` for the rotation between the body and the world frame. Not something generic like `rotation`.
+- `t_W_B` for an body's translation in the world frame. Not something generic like `position`.
+
 ### Wrapped Environment
 
 `ArenaEnvBuilder.make_registered()` returns the gym-wrapped env (not the base env). Use `env.unwrapped` explicitly to access Isaac Lab-specific attributes (`cfg`, `device`, `step_dt`, etc.) that are not forwarded by gymnasium's `OrderEnforcing` wrapper:
