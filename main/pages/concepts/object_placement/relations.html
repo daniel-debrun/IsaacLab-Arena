@@ -711,15 +711,15 @@ controls clutter independently of <code class="docutils literal notranslate"><sp
 </div>
 <p>Restrictions:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">ClutterOn</span></code> must be the object’s only spatial relation and cannot use
-<code class="docutils literal notranslate"><span class="pre">RandomAroundSolution</span></code>. <code class="docutils literal notranslate"><span class="pre">RotateAroundSolution</span></code> sets its base rotation;
-random yaw preserves that rotation’s tilt.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ClutterOn</span></code> must be the object’s only spatial relation.
+<code class="docutils literal notranslate"><span class="pre">RotateAroundSolution</span></code> sets its base rotation; random yaw preserves that
+rotation’s tilt.</p></li>
 <li><p>Both <code class="docutils literal notranslate"><span class="pre">bbox</span></code> and <code class="docutils literal notranslate"><span class="pre">mesh</span></code> collision modes support yaw-only clutter.
 Roll or pitch requires <code class="docutils literal notranslate"><span class="pre">collision_mode=&quot;bbox&quot;</span></code> on the object.</p></li>
 <li><p>The support must participate in placement and cannot itself use <code class="docutils literal notranslate"><span class="pre">ClutterOn</span></code>.
 It must remain upright with a fixed yaw that is a multiple of 90 degrees.
 For a non-anchor support, disable <code class="docutils literal notranslate"><span class="pre">random_yaw_init</span></code> and do not use
-<code class="docutils literal notranslate"><span class="pre">FaceTo</span></code> or <code class="docutils literal notranslate"><span class="pre">RandomAroundSolution</span></code> on the support.</p></li>
+<code class="docutils literal notranslate"><span class="pre">FaceTo</span></code> on the support.</p></li>
 <li><p>For recording, non-clutter objects with placement relations must be fixed
 anchors or kinematic rigid bodies.</p></li>
 </ul>
@@ -787,8 +787,6 @@ another object.</p>
 <li><p>When random yaw initialization is enabled, it replaces the random heading.</p></li>
 <li><p>The target must also participate in relation placement.</p></li>
 <li><p>A movable subject can have only one <code class="docutils literal notranslate"><span class="pre">FaceTo</span></code> relation.</p></li>
-<li><p>Neither the subject nor target can use <code class="docutils literal notranslate"><span class="pre">RandomAroundSolution</span></code> with nonzero
-XY offsets.</p></li>
 <li><p>The subject and target must have different XY positions.</p></li>
 </ul>
 </section>
@@ -808,18 +806,14 @@ can make the intended layout harder or impossible to satisfy.</p>
 </section>
 <section id="placement-modifiers">
 <h2>Placement Modifiers<a class="headerlink" href="#placement-modifiers" title="Link to this heading">#</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">RandomAroundSolution</span></code> and <code class="docutils literal notranslate"><span class="pre">RotateAroundSolution</span></code> are pose modifiers applied
-after solving. They change how a solved pose is used rather than adding spatial
-constraints:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">RandomAroundSolution</span></code> creates a range of positions and orientations around
-the solved pose. It is intended for direct, single-environment
-<code class="docutils literal notranslate"><span class="pre">ObjectPlacer</span></code> use; the default builder does not apply it as a continuous
-reset range.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">RotateAroundSolution</span></code> adds a fixed roll, pitch, or yaw to the solved pose.
-The robot-placement example later in this sequence uses it to set the
-robot’s final heading.</p></li>
-</ul>
+<p><code class="docutils literal notranslate"><span class="pre">RotateAroundSolution</span></code> is a pose modifier applied after solving. It changes
+how a solved pose is used rather than adding a spatial constraint: it adds a
+fixed roll, pitch, or yaw to the solved pose. The robot-placement example later
+in this sequence uses it to set the robot’s final heading.</p>
+<p>To randomize an object’s position within a region, constrain it with
+<code class="docutils literal notranslate"><span class="pre">PositionLimitsBox</span></code> instead of pinning it with <code class="docutils literal notranslate"><span class="pre">AtPosition</span></code>. Each solved
+layout lands somewhere inside the box, so resets drawn from the layout pool
+spread the object across it.</p>
 </section>
 <section id="relations-in-environment-specifications">
 <h2>Relations in Environment Specifications<a class="headerlink" href="#relations-in-environment-specifications" title="Link to this heading">#</a></h2>
@@ -895,8 +889,8 @@ reset ownership before constructing the scene. It rejects:</p>
 <ul class="simple">
 <li><p>unknown roots or incomplete compound assets;</p></li>
 <li><p>missing non-anchor assets constrained by relations;</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">RigidObjectSet</span></code> and <code class="docutils literal notranslate"><span class="pre">RandomAroundSolution</span></code> assets, whose identity or
-random reset cannot be recovered from poses alone;</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">RigidObjectSet</span></code> assets, whose identity cannot be recovered from poses
+alone;</p></li>
 <li><p>disabled pose resets, nonzero initial root velocity, or non-fixed
 asset-owned pose-reset policies.</p></li>
 </ul>
