@@ -7,13 +7,14 @@
 
 from __future__ import annotations
 
+import gymnasium as gym
 import json
 import numpy as np
 import torch
 from abc import abstractmethod
 from collections import deque
 from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
 
@@ -89,7 +90,7 @@ class VLMPolicy(PolicyBase[VLMPolicyCfg]):
         self._inference_backend = inference_backend
         self.task_description = None
 
-    def get_action(self, env, observation) -> torch.Tensor:
+    def get_action(self, env: gym.Env, observation: dict[str, Any]) -> torch.Tensor:
         """Return a batch of native actions using the policy execution strategy.
 
         Args:
@@ -114,10 +115,10 @@ class VLMPolicy(PolicyBase[VLMPolicyCfg]):
         return torch.stack(actions)
 
     @abstractmethod
-    def _get_command(self, env, observation, env_id: int) -> np.ndarray:
+    def _get_command(self, env: gym.Env, observation: dict[str, Any], env_id: int) -> np.ndarray:
         """Return one command using the current observation and any pending prediction."""
 
-    def _request_content(self, env, observation, env_id: int) -> list[dict]:
+    def _request_content(self, env: gym.Env, observation: dict[str, Any], env_id: int) -> list[dict[str, Any]]:
         """Combine the task description with adapter-built observation content."""
         content = [{"type": "text", "text": json.dumps({"task": self.task_description})}]
         content.extend(
@@ -187,7 +188,7 @@ class VLMStepPolicy(VLMPolicy):
             action_adapter=action_adapter,
         )
 
-    def _get_command(self, env, observation, env_id: int) -> np.ndarray:
+    def _get_command(self, env: gym.Env, observation: dict[str, Any], env_id: int) -> np.ndarray:
         return self._infer(self._request_content(env, observation, env_id), env.unwrapped.arena_world, env_id)
 
 
