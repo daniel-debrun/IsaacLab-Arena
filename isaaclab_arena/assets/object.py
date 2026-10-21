@@ -63,8 +63,6 @@ class Object(RootedObjectBase):
             self.add_variation(AssetSelectionVariation(self))
         self.usd_path = usd_path
         self.spawner_cfg = spawner_cfg
-        self.asset_name = name
-        """Name of the asset this Object spawns: the registry name of a library object, else the object name."""
         self.scale = scale
         self.initial_pose = initial_pose
         self.relations = list(relations)

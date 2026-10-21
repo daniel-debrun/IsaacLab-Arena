@@ -16,7 +16,6 @@ from isaaclab.managers import SceneEntityCfg, TerminationTermCfg
 from isaaclab.utils.configclass import configclass
 
 from isaaclab_arena.assets.asset import Asset
-from isaaclab_arena.assets.object import Object
 from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.assets.register import agent_ready, register_task
 from isaaclab_arena.assets.registries import ObjectRelationLibraryRegistry
@@ -34,11 +33,6 @@ from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
 from isaaclab_arena.tasks.task_transition import Relocate, TaskTransition
 from isaaclab_arena.utils.cameras import get_viewer_cfg_look_at_object
 from isaaclab_arena.utils.configclass import make_configclass
-
-
-def _get_asset_name(asset: Asset) -> str:
-    """Return the name of the asset an Object spawns, or the name of any other asset."""
-    return asset.asset_name if isinstance(asset, Object) else asset.name
 
 
 @agent_ready
@@ -115,8 +109,8 @@ class PickAndPlaceTask(TaskBase):
         """Return the task description passed to the task, or one that names the spawned assets."""
         if self.task_description is not None:
             return self.task_description
-        pick_up_asset_name = _get_asset_name(self.pick_up_object)
-        destination_asset_name = _get_asset_name(self.destination_location)
+        pick_up_asset_name = self.pick_up_object.asset_name
+        destination_asset_name = self.destination_location.asset_name
         return f"Pick up the {pick_up_asset_name}, and place it into the {destination_asset_name}"
 
     def apply_reachability_constraints(self) -> None:

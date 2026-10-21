@@ -25,6 +25,8 @@ class Asset:
         super().__init__(**kwargs)
         assert name is not None, "Name is required for all assets"
         self.name = name
+        self.asset_name = name
+        """Name of the spawned asset, for example its registry name. Defaults to name."""
         self.tags = tags
         self.variations: dict[str, VariationBase] = {}
 
