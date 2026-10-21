@@ -16,6 +16,7 @@ from isaaclab.managers import SceneEntityCfg, TerminationTermCfg
 from isaaclab.utils.configclass import configclass
 
 from isaaclab_arena.assets.asset import Asset
+from isaaclab_arena.assets.object import Object
 from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.assets.register import agent_ready, register_task
 from isaaclab_arena.assets.registries import ObjectRelationLibraryRegistry
@@ -35,6 +36,11 @@ from isaaclab_arena.utils.cameras import get_viewer_cfg_look_at_object
 from isaaclab_arena.utils.configclass import make_configclass
 
 
+def _get_asset_name(asset: Asset) -> str:
+    """Return the name of the asset an Object spawns, or the name of any other asset."""
+    return asset.asset_name if isinstance(asset, Object) else asset.name
+
+
 @agent_ready
 @register_task
 class PickAndPlaceTask(TaskBase):
@@ -52,7 +58,8 @@ class PickAndPlaceTask(TaskBase):
         background_scene: Background whose minimum object height defines the drop failure.
         destination_object: Destination asset used by the default Mimic configuration.
         episode_length_s: Maximum episode duration in seconds.
-        task_description: Natural-language task instruction. A description is generated when omitted.
+        task_description: Natural-language task instruction. When omitted, get_task_description() names the
+            assets that the pick-up object and the destination spawn.
         force_threshold: Minimum filtered normal force exerted on the object by the destination, in newtons.
         velocity_threshold: Object linear-speed threshold in meters per second. Speed must be below it.
         mimic_env_cfg_factory: Optional factory for a custom Mimic environment configuration.
@@ -76,7 +83,7 @@ class PickAndPlaceTask(TaskBase):
         support_cone_half_angle_rad: float = math.pi / 4,
         placement_consecutive_steps: int = 1,
     ):
-        super().__init__(episode_length_s=episode_length_s)
+        super().__init__(episode_length_s=episode_length_s, task_description=task_description)
         assert (
             destination_location.object_type != ObjectType.DEFORMABLE
         ), "PickAndPlaceTask does not support deformable destinations"
@@ -103,11 +110,14 @@ class PickAndPlaceTask(TaskBase):
         self.placement_consecutive_steps = placement_consecutive_steps
         self.mimic_env_cfg_factory = mimic_env_cfg_factory
         self.events_cfg = None
-        self.task_description = (
-            f"Pick up the {pick_up_object.name}, and place it into the {destination_location.name}"
-            if task_description is None
-            else task_description
-        )
+
+    def get_task_description(self) -> str:
+        """Return the task description passed to the task, or one that names the spawned assets."""
+        if self.task_description is not None:
+            return self.task_description
+        pick_up_asset_name = _get_asset_name(self.pick_up_object)
+        destination_asset_name = _get_asset_name(self.destination_location)
+        return f"Pick up the {pick_up_asset_name}, and place it into the {destination_asset_name}"
 
     def apply_reachability_constraints(self) -> None:
         """The robot must reach the object it picks up and the location it places onto."""

@@ -70,6 +70,8 @@ class LibraryObject(Object):
             asset_cfg_addon=self.asset_cfg_addon,
             **kwargs,
         )
+        # instance_name can name the object by its role, so the asset name comes from the registry name.
+        self.asset_name = type(self).name
 
 
 @register_asset

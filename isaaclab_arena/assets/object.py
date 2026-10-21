@@ -63,6 +63,8 @@ class Object(RootedObjectBase):
             self.add_variation(AssetSelectionVariation(self))
         self.usd_path = usd_path
         self.spawner_cfg = spawner_cfg
+        self.asset_name = name
+        """Name of the asset this Object spawns: the registry name of a library object, else the object name."""
         self.scale = scale
         self.initial_pose = initial_pose
         self.relations = list(relations)
@@ -81,6 +83,16 @@ class Object(RootedObjectBase):
         keep the cached entry."""
         self.object_cfg = self._init_object_cfg()
         self._pose_event_cfg = self._build_reset_event()
+
+    def set_asset(self, asset_name: str, spawn_cfg: SpawnerCfg) -> None:
+        """Spawn the asset ``asset_name`` from ``spawn_cfg`` instead of the current asset.
+
+        Args:
+            asset_name: Name of the asset, for example its registry name.
+            spawn_cfg: Spawn configuration of the asset.
+        """
+        self.asset_name = asset_name
+        self.object_cfg.spawn = spawn_cfg
 
     def get_bounding_box(self) -> AxisAlignedBoundingBox:
         """Get local bounding box (relative to object origin).

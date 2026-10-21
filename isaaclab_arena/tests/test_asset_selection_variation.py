@@ -278,6 +278,20 @@ def _test_rigid_objects_outside_sets_have_disabled_asset_selection(simulation_ap
     return True
 
 
+def _test_task_description_names_the_spawned_asset(simulation_app):
+    from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariationCfg
+
+    _, default_env_cfg, _ = compose_pick_and_place_with_selection()
+    _, selected_env_cfg, _ = compose_pick_and_place_with_selection(
+        selection_cfg=AssetSelectionVariationCfg(enabled=True, asset_names=["sugar_box"])
+    )
+
+    # The pickup is named by its role, and the description names the asset it spawns.
+    assert default_env_cfg.task_description == "Pick up the cracker_box, and place it into the plate"
+    assert selected_env_cfg.task_description == "Pick up the sugar_box, and place it into the plate"
+    return True
+
+
 def test_selected_asset_is_spawned_placed_and_recorded():
     assert run_function_with_persistent_simulation_app(
         _test_selected_asset_is_spawned_placed_and_recorded, headless=HEADLESS
@@ -322,4 +336,10 @@ def test_placement_replay_needs_recorded_asset_selection(tmp_path):
 def test_rigid_objects_outside_sets_have_disabled_asset_selection():
     assert run_function_with_persistent_simulation_app(
         _test_rigid_objects_outside_sets_have_disabled_asset_selection, headless=HEADLESS
+    )
+
+
+def test_task_description_names_the_spawned_asset():
+    assert run_function_with_persistent_simulation_app(
+        _test_task_description_names_the_spawned_asset, headless=HEADLESS
     )

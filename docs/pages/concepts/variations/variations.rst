@@ -239,9 +239,9 @@ Every episode row records the chosen name, for example ``"pickup.asset_selection
 
 Limitations:
 
-* The task description does not follow the selection: ``PickAndPlaceTask`` builds its default
-  description when the task is built, and a hand-written ``language_instruction`` applies to every
-  rebuild. For a language-conditioned policy, use one Run per object.
+* A hand-written ``language_instruction`` applies to every rebuild. ``PickAndPlaceTask`` and
+  ``AssemblyTask`` build their default description from the selected asset, so for a
+  language-conditioned policy, leave ``language_instruction`` unset or use one Run per object.
 * Only the spawn configuration changes. A library object such as ``Mug`` keeps the behavior written
   for its own asset.
 * An Object with a ``bounding_box`` override cannot use the selection, because placement would use

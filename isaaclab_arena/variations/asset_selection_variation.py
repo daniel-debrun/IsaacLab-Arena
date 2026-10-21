@@ -39,7 +39,7 @@ class AssetSelectionVariation(BuildTimeVariationBase):
     """Choose the registered rigid object that an Object spawns; every environment of a build spawns it.
 
     Args:
-        rigid_object: Object whose spawn configuration the selection sets.
+        rigid_object: Object whose asset the selection sets.
         cfg: Selection settings. By default the selection is off.
         name: Name of the variation on its Object.
     """
@@ -99,4 +99,4 @@ class AssetSelectionVariation(BuildTimeVariationBase):
         else:
             in_order_index = self._build_seed % len(asset_names)
             selected_name = self.sampler.sample(1, asset_names, index=in_order_index)[0]
-        self._rigid_object.object_cfg.spawn = spawn_cfgs_by_name[selected_name]
+        self._rigid_object.set_asset(selected_name, spawn_cfgs_by_name[selected_name])
