@@ -42,7 +42,7 @@ class AgentActionAdapter(ABC):
 
         Args:
             response: Model output validated against response_model.
-            arena_world: Live Arena scene queries for decoding the response.
+            arena_world: Live Arena scene state and cache derived geometry.
             env_id: Environment index within the batched world state.
 
         Returns:
