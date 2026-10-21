@@ -86,9 +86,15 @@ Use active target-source notation for Arena-owned poses and transforms:
   frames matter in Arena calculations, bind the value to an explicit transform name, for example
   `T_W_O = object.data.root_pose_w`.
 
-All Arena-owned poses, positions, vectors, and rotations should be marked with the frame they're expressed in (vectors) and frames they transform between (rotations):
-- `q_W_B` for the rotation between the body and the world frame. Not something generic like `rotation`.
-- `t_W_B` for an body's translation in the world frame. Not something generic like `position`.
+Name Arena-owned spatial quantities after their frames instead of generic names such as `position`, `rotation`, or `axis`:
+- Rotations name both frames, for example `q_W_B` for the rotation from body frame `B` into world frame `W`.
+- Translations, points, and other vectors name the frame they are expressed in, for example `t_W` for a
+  body's translation in world frame `W`, `axis_R`, or `forces_W`.
+- When a single frame is ambiguous, for example when composing offsets between several frames, name the source,
+  target, and expressed-in frames explicitly: `t_A_B` (`B`'s origin relative to `A`, in `A`) or `t_A_B_in_C`
+  (expressed in `C`). See `isaaclab_arena/variations/camera_extrinsics_variation.py`.
+- Fields of a frame-carrying type such as `Pose` keep their names (`position_xyz`, `rotation_xyzw`); the variable
+  holding the pose names the frames.
 
 ### Wrapped Environment
 
