@@ -148,11 +148,16 @@ class DroidGoalActionAdapter(GoalActionAdapter, DroidPoseActionAdapter):
         Returns:
             Whether all three errors are within their configured tolerances.
         """
+        # Euclidean distance in meters; both positions are expressed in the robot-root frame R.
         position_error = np.linalg.norm(goal[:3] - np.asarray(policy_state["position_root_m"]))
+        # E is the measured end-effector frame; G is its goal frame, both relative to R.
         q_R_E = np.asarray(policy_state["quaternion_root_xyzw"])
         q_R_G = goal[3:7]
+        # The normalized dot product gives cos(theta / 2); abs handles equivalent q and -q rotations.
         cosine_half_angle = abs(np.dot(q_R_E, q_R_G) / (np.linalg.norm(q_R_E) * np.linalg.norm(q_R_G)))
+        # Recover the shortest rotation angle in radians; clipping prevents roundoff from invalidating arccos.
         rotation_error = 2.0 * np.arccos(np.clip(cosine_half_angle, 0.0, 1.0))
+        # Compare the binary target (0 open, 1 closed) with measured closure, including physical overshoot.
         gripper_error = abs(float(goal[7]) - policy_state["gripper_closed_fraction"])
         return bool(
             position_error <= self.position_tolerance_m
