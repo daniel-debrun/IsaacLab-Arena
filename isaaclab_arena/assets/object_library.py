@@ -1995,3 +1995,62 @@ class ProceduralCube(Object):
             **self.asset_cfg_addon,
         )
         return self._add_initial_pose_to_cfg(cfg)
+
+
+def _newton_gear_insertion_spawn_cfg(*, mass: float, kinematic: bool, friction: float) -> dict[str, Any]:
+    """Build the Newton rigid-body configuration shared by the gear insertion assets."""
+    from isaaclab_newton.sim.schemas import (
+        NewtonCollisionPropertiesCfg,
+        NewtonMaterialPropertiesCfg,
+        NewtonRigidBodyPropertiesCfg,
+    )
+
+    return {
+        "make_uninstanceable": True,
+        "rigid_props": NewtonRigidBodyPropertiesCfg(
+            disable_gravity=False,
+            kinematic_enabled=kinematic,
+        ),
+        "mass_props": sim_utils.MassPropertiesCfg(mass=mass),
+        "collision_props": NewtonCollisionPropertiesCfg(
+            contact_offset=1.0e-4,
+            rest_offset=0.0,
+        ),
+        "physics_material": NewtonMaterialPropertiesCfg(
+            static_friction=friction,
+            dynamic_friction=friction,
+            restitution=0.0,
+        ),
+    }
+
+
+class _NewtonGearInsertionObject(LibraryObject):
+    """Gear asset with collision and rigid-body properties authored for Newton."""
+
+    tags = ["object", "gear", "gear_insertion", "newton_only"]
+
+    def validate_simulation_cfg(self, sim_cfg: sim_utils.SimulationCfg) -> None:
+        """Reject physics backends incompatible with the asset's Newton properties."""
+        from isaaclab_newton.physics import NewtonCfg
+
+        assert isinstance(sim_cfg.physics, NewtonCfg), f"Asset '{self.name}' requires the Newton physics backend."
+
+
+@register_asset
+class GearInsertionBase(_NewtonGearInsertionObject):
+    """Fixed base used by the Newton gear insertion task."""
+
+    name = "gear_insertion_base"
+    usd_path = f"{ARENA_NUCLEUS_DIR}/Arena/assets/object_library/gear_insertion/factory_gear_base.usda"
+    object_type = ObjectType.RIGID
+    spawn_cfg_addon = _newton_gear_insertion_spawn_cfg(mass=0.05, kinematic=True, friction=0.3)
+
+
+@register_asset
+class GearInsertionMediumGear(_NewtonGearInsertionObject):
+    """Movable medium gear used by the Newton gear insertion task."""
+
+    name = "gear_insertion_medium_gear"
+    usd_path = f"{ARENA_NUCLEUS_DIR}/Arena/assets/object_library/gear_insertion/factory_gear_medium.usda"
+    object_type = ObjectType.RIGID
+    spawn_cfg_addon = _newton_gear_insertion_spawn_cfg(mass=0.019, kinematic=False, friction=0.8)

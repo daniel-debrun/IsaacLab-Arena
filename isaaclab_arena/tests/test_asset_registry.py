@@ -6,8 +6,11 @@
 import torch
 import tqdm
 
+import pytest
+
 from isaaclab_arena.cli.isaaclab_arena_cli import arena_env_builder_cfg_from_argparse, get_isaaclab_arena_cli_parser
 from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
+from isaaclab_arena.utils.physics_backend import PhysicsBackend
 from isaaclab_arena.utils.pose import Pose
 
 NUM_STEPS = 2
@@ -43,7 +46,7 @@ def test_default_assets_registered():
     assert result, "Test failed"
 
 
-def _test_all_assets_in_registry(simulation_app):
+def _test_all_assets_in_registry(simulation_app, physics_backend: PhysicsBackend):
     # Import the necessary classes.
 
     from isaaclab_arena.assets.object import Object
@@ -63,7 +66,14 @@ def _test_all_assets_in_registry(simulation_app):
     first_position = (0.5, 0.0, 0.0)
     objects_in_registry_names: list[str] = []
     objects_in_registry: list[Object] = []
-    for idx, asset_cls in enumerate(asset_registry.get_assets_by_tag("object")):
+    asset_classes = asset_registry.get_assets_by_tag("object")
+    # Keep the existing PhysX smoke coverage and exercise Newton-only objects separately.
+    if physics_backend is PhysicsBackend.NEWTON:
+        asset_classes = [asset_cls for asset_cls in asset_classes if "newton_only" in asset_cls.tags]
+    else:
+        asset_classes = [asset_cls for asset_cls in asset_classes if "newton_only" not in asset_cls.tags]
+    assert asset_classes, f"No objects selected for {physics_backend}"
+    for idx, asset_cls in enumerate(asset_classes):
         asset = asset_cls()
         # Set their pose
         pose = Pose(
@@ -99,7 +109,7 @@ def _test_all_assets_in_registry(simulation_app):
 
     # Compile the environment.
     args_parser = get_isaaclab_arena_cli_parser()
-    args_cli = args_parser.parse_args([])
+    args_cli = args_parser.parse_args(["--presets", str(physics_backend)])
 
     builder = ArenaEnvBuilder(isaaclab_arena_environment, arena_env_builder_cfg_from_argparse(args_cli))
     env = builder.make_registered()
@@ -124,11 +134,16 @@ def _test_all_assets_in_registry(simulation_app):
     return True
 
 
-def test_all_assets_in_registry():
+@pytest.mark.parametrize(
+    "physics_backend",
+    [PhysicsBackend.PHYSX, pytest.param(PhysicsBackend.NEWTON, marks=pytest.mark.with_newton)],
+)
+def test_all_assets_in_registry(physics_backend):
     # Basic test that just adds all our pick-up objects to the scene and checks that nothing crashes.
     result = run_function_with_persistent_simulation_app(
         _test_all_assets_in_registry,
         headless=HEADLESS,
+        physics_backend=physics_backend,
     )
     assert result, "Test failed"
 

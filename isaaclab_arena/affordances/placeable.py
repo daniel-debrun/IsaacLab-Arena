@@ -102,7 +102,7 @@ class Placeable(AffordanceBase):
         if asset_cfg is None:
             asset_cfg = SceneEntityCfg(self.name)
 
-        set_normalized_object_pose(
+        set_object_uprightness(
             env=env,
             asset_cfg=asset_cfg,
             upright_percentage=upright_percentage,
@@ -126,7 +126,7 @@ def get_object_axis_in_world_frame(object_quat: torch.tensor, upright_axis_name:
     return object_axis_world
 
 
-def set_normalized_object_pose(
+def set_object_uprightness(
     env: ManagerBasedEnv,
     asset_cfg: SceneEntityCfg,
     upright_percentage: float | torch.Tensor = 1.0,

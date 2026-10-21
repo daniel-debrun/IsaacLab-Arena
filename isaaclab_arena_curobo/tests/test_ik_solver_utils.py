@@ -113,7 +113,7 @@ class _FakeIKSolver:
 
 
 class _FakeHost:
-    """Minimal ``CuroboIKSolver``-shaped host: owns the solver, the hand links, and the pose plumbing."""
+    """Test double providing an IK solver, hand-link names, tensor conversion, and pose construction."""
 
     def __init__(self, ik_solver: _FakeIKSolver, hand_link_names: list[str]) -> None:
         import logging

@@ -48,7 +48,7 @@ class ArenaRecorderManager(RecorderManager):
             super().add_to_episodes(key, value, env_ids)
             return
 
-        requested_env_ids = self._normalize_env_ids(env_ids)
+        requested_env_ids = self._env_ids_to_device_tensor(env_ids)
         active_row_indices = self._env.active_episode_mask[requested_env_ids].nonzero(as_tuple=False).flatten()
         if active_row_indices.numel() == 0:
             return
@@ -73,7 +73,7 @@ class ArenaRecorderManager(RecorderManager):
         """
         if not self.active_terms:
             return
-        requested_env_ids = self._normalize_env_ids(env_ids)
+        requested_env_ids = self._env_ids_to_device_tensor(env_ids)
         finishing_env_ids = requested_env_ids[self._env.active_episode_mask[requested_env_ids]]
         if finishing_env_ids.numel() > 0:
             super().record_pre_reset(finishing_env_ids, force_export_or_skip)
@@ -86,14 +86,14 @@ class ArenaRecorderManager(RecorderManager):
         """
         if not self.active_terms:
             return
-        requested_env_ids = self._normalize_env_ids(env_ids)
+        requested_env_ids = self._env_ids_to_device_tensor(env_ids)
         reset_mask = torch.isin(requested_env_ids, self._env.reset_env_ids)
         reset_mask &= self._env.active_episode_mask[requested_env_ids]
         reset_env_ids = requested_env_ids[reset_mask]
         if reset_env_ids.numel() > 0:
             super().record_post_reset(reset_env_ids)
 
-    def _normalize_env_ids(self, env_ids: Sequence[int] | torch.Tensor | None) -> torch.Tensor:
+    def _env_ids_to_device_tensor(self, env_ids: Sequence[int] | torch.Tensor | None) -> torch.Tensor:
         """Return environment IDs on the environment's device."""
         if env_ids is None:
             return torch.arange(self._env.num_envs, device=self._env.device)

@@ -50,6 +50,8 @@ Lint and format tooling (`pre-commit` and the hooks it runs — black, flake8, i
 
 ## Coding style
 
+- Name functions and describe behavior using the specific operation, result, or responsibility. Avoid vague uses of "compose", "resolve", "normalize", "materialize", and "plumbing" when a more precise description is available. Preserve established technical meanings, such as quaternion normalization, transform composition, and Hydra configuration composition.
+- For data conversions, name the destination representation, such as `_env_ids_to_list()`. For coordinate transforms, follow [Coordinate-frame naming](#coordinate-frame-naming).
 - Keep comprehensions simple. When they contain nested loops, filtering, or multiple transformations that make them hard to read, use explicit loops and named intermediate variables instead.
 - Keep `__init__.py` files free of eager imports or re-exports
 - Prefer `assert condition, "message"` over `if not condition: raise ValueError("message")` for internal invariant checks. (Formatting, imports, and typing are enforced by `pre-commit` — see `.pre-commit-config.yaml`.)
