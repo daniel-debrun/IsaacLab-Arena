@@ -95,6 +95,26 @@ Then run the Experiment:
 The Experiment Runner loads the Runs in YAML order and reuses one SimulationApp. It builds a fresh
 environment for every Run, then closes that environment before starting the next one.
 
+Set ``policy_wait_for_objects_to_settle`` in the Experiment YAML to delay policy inference:
+
+.. code-block:: yaml
+
+   shared:
+     policy_wait_for_objects_to_settle: true
+     # Existing environment, policy, and rollout_limit settings go here.
+   runs:
+     baseline: {}
+     start_immediately:
+       policy_wait_for_objects_to_settle: false
+
+Each Run can override the shared default. The launch flag ``--policy_wait_for_objects_to_settle``
+enables waiting for every Run, overriding YAML values of ``false``.
+When enabled, policy inference waits until the configured leading
+``objects_settled`` predicates pass in all active environments, including after episode resets.
+This option is disabled by default and has no effect when no initial settling predicate is configured.
+While waiting, the runner repeats the environment's current command; settling steps count toward
+rollout limits and episode timeouts.
+
 .. note::
 
    The four Runs execute one after another on your machine. The 64 environments in

@@ -13,6 +13,58 @@ HEADLESS = True
 SCORE_TOL = 1e-6
 
 
+def _test_initial_object_settling_gate(simulation_app):
+    import torch
+    from functools import partial
+    from unittest.mock import patch
+
+    from isaaclab.managers import TerminationTermCfg
+
+    from isaaclab_arena.progress_tracking.completion_criteria import CompletionCriteria
+    from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
+    from isaaclab_arena.tasks.predicates.object_settling import objects_settled
+    from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
+
+    # An empty object list avoids scene access while still exercising the real predicate.
+    for predicate in (
+        partial(objects_settled, object_names=[]),
+        TerminationTermCfg(func=objects_settled, params={"object_names": []}),
+    ):
+        env = _MockEnv(num_envs=2)
+        tracker = ProgressTracker(
+            [
+                CompletionCriteria(
+                    name="settle_then_act",
+                    predicate_sequence=[
+                        TrueForConsecutiveStepsCfg(predicate=predicate, required_steps=2),
+                        _MockPredicate(2),
+                    ],
+                )
+            ],
+            num_envs=2,
+            device="cpu",
+            env=env,
+        )
+        with patch(
+            "isaaclab_arena.tasks.predicates.object_settling.objects_below_velocity_thresholds",
+            return_value=torch.ones(2, dtype=torch.bool),
+        ):
+            assert tracker.initial_object_settling_pending().tolist() == [True, True]
+            tracker.step(env, step_index=torch.tensor([1, 1]))
+            # Repeated reads must not advance consecutive-step counters.
+            assert tracker.initial_object_settling_pending().tolist() == [True, True]
+            assert tracker.initial_object_settling_pending().tolist() == [True, True]
+            tracker.step(env, step_index=torch.tensor([2, 2]))
+            assert tracker.initial_object_settling_pending().tolist() == [False, False]
+            tracker.reset([1])
+            assert tracker.initial_object_settling_pending().tolist() == [False, True]
+    return True
+
+
+def test_initial_object_settling_gate():
+    assert run_function_with_persistent_simulation_app(_test_initial_object_settling_gate)
+
+
 class _MockPredicate:
     """Callable predicate that returns a controlled per-env bool tensor."""
 

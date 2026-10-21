@@ -44,6 +44,7 @@ def execute_experiment(
     record_viewport_video: bool = False,
     record_camera_video: bool = False,
     continue_on_error: bool = False,
+    policy_wait_for_objects_to_settle: bool = False,
 ) -> list[ArenaRunResult]:
     """Execute an experiment's runs in order and return their results.
 
@@ -53,6 +54,7 @@ def execute_experiment(
         record_viewport_video: Whether to record the viewport for each run.
         record_camera_video: Whether to record observation cameras for each run.
         continue_on_error: Whether to continue with later runs after one fails.
+        policy_wait_for_objects_to_settle: Whether to wait for initial object settling before policy inference.
 
     Returns:
         One result per attempted run, in execution order.
@@ -67,6 +69,9 @@ def execute_experiment(
             result = build_and_run(
                 run_cfg,
                 output_dir=run_output_dir,
+                policy_wait_for_objects_to_settle=(
+                    policy_wait_for_objects_to_settle or run_cfg.policy_wait_for_objects_to_settle
+                ),
                 video_cfg=VideoRecordingCfg(
                     record_viewport_video=record_viewport_video,
                     record_camera_video=record_camera_video,
@@ -91,6 +96,7 @@ def build_and_run(
     cfg: ArenaRunCfg,
     output_dir: str | Path,
     video_cfg: VideoRecordingCfg | None = None,
+    policy_wait_for_objects_to_settle: bool = False,
 ) -> ArenaRunResult:
     """Build and execute one typed Arena run, then return its result."""
     metrics_per_rebuild: list[MetricsDataCollection] = []
@@ -125,7 +131,15 @@ def build_and_run(
                 num_episodes,
             )
             env = wrap_env_for_video(env, rebuild_video_cfg, num_steps, num_episodes)
-            metrics = rollout_policy(env, policy, num_steps=num_steps, num_episodes=num_episodes)
+            metrics = rollout_policy(
+                env,
+                policy,
+                num_steps=num_steps,
+                num_episodes=num_episodes,
+                policy_wait_for_objects_to_settle=(
+                    policy_wait_for_objects_to_settle or rebuild_cfg.policy_wait_for_objects_to_settle
+                ),
+            )
             if metrics is not None:
                 metrics_per_rebuild.append(metrics)
         finally:

@@ -68,6 +68,9 @@ class ArenaRunCfg:
     variations: dict[str, Any] = field(default_factory=dict)
     """Variation values applied when the environment is compiled."""
 
+    policy_wait_for_objects_to_settle: bool = False
+    """Wait for leading objects_settled requirements before policy inference, including after resets."""
+
     def __post_init__(self) -> None:
         assert self.name, "run name must not be empty"
         if self.recorded_variation_samples_paths is not None:

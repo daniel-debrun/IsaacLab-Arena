@@ -685,6 +685,27 @@ class ProgressTracker:
                 return predicate
         raise KeyError(f"Unknown completion criteria: {criteria_name!r}")
 
+    def initial_object_settling_pending(self) -> torch.Tensor:
+        """Return environments still waiting on a leading objects_settled requirement.
+
+        Read sequence progress without evaluating predicates or advancing consecutive-step
+        counters. Sequential tasks only gate startup on their first subtask.
+        """
+        from isaaclab_arena.tasks.predicates.object_settling import objects_settled
+
+        pending = torch.zeros_like(self._task_success)
+        runners = self._subtask_runners[0] if self.subtasks_are_sequential else self.runners
+        for runner in runners:
+            for sequence_name, chain in runner.predicate_chains.items():
+                predicate = chain[0][0]
+                if isinstance(predicate, _TrueForConsecutiveSteps):
+                    predicate = predicate.predicate
+                while isinstance(predicate, functools.partial):
+                    predicate = predicate.func
+                if predicate is objects_settled:
+                    pending |= runner.current_predicate_index[sequence_name] == 0
+        return pending
+
     def reset(self, env_ids: list[int] | torch.Tensor) -> None:
         """Clear progress and events for the specified environment IDs."""
 

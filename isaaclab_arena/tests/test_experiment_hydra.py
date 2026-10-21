@@ -52,6 +52,22 @@ def _write_experiment(tmp_path: Path, contents: str) -> Path:
     return config_path
 
 
+def test_policy_settling_wait_accepts_shared_defaults_and_run_overrides(tmp_path):
+    values = yaml.safe_load(GETTING_STARTED_EXPERIMENT_PATH.read_text())
+    values["shared"]["policy_wait_for_objects_to_settle"] = True
+    values["runs"]["swap_objects"]["policy_wait_for_objects_to_settle"] = False
+    config_path = _write_experiment(tmp_path, yaml.safe_dump(values))
+
+    experiment = _load_experiment(config_path)
+
+    assert experiment.runs["baseline"].policy_wait_for_objects_to_settle is True
+    assert experiment.runs["swap_objects"].policy_wait_for_objects_to_settle is False
+    overridden = _load_experiment(config_path, overrides=["runs.baseline.policy_wait_for_objects_to_settle=false"])
+    assert overridden.runs["baseline"].policy_wait_for_objects_to_settle is False
+    serialized_path = _write_experiment(tmp_path, serialize_arena_experiment_to_yaml(experiment))
+    assert _load_experiment(serialized_path) == experiment
+
+
 def test_getting_started_experiment_composes_typed_runs():
     experiment_cfg = _load_experiment(GETTING_STARTED_EXPERIMENT_PATH)
     runs = experiment_cfg.runs

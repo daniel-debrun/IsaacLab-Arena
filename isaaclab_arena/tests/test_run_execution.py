@@ -92,8 +92,13 @@ def _experiment(*run_cfgs: ArenaRunCfg) -> ArenaExperimentCfg:
     return ArenaExperimentCfg(runs={run_cfg.name: run_cfg for run_cfg in run_cfgs})
 
 
-def test_build_and_run_splits_episode_budget_without_mutating_config(monkeypatch, tmp_path):
+@pytest.mark.parametrize("policy_wait_for_objects_to_settle", [False, True])
+@pytest.mark.parametrize("config_wait_for_settling", [False, True])
+def test_build_and_run_splits_episode_budget_without_mutating_config(
+    monkeypatch, tmp_path, policy_wait_for_objects_to_settle, config_wait_for_settling
+):
     run = _run()
+    run.policy_wait_for_objects_to_settle = config_wait_for_settling
     rollout_limits = []
     received_run_cfgs = []
 
@@ -106,7 +111,10 @@ def test_build_and_run_splits_episode_budget_without_mutating_config(monkeypatch
     monkeypatch.setattr(run_execution, "wrap_env_for_video", lambda env, video_cfg, steps, episodes: env)
     monkeypatch.setattr(run_execution, "close_run_resources", lambda policy, env: None)
 
-    def record_rollout(env, policy, num_steps, num_episodes):
+    received_settling_options = []
+
+    def record_rollout(env, policy, num_steps, num_episodes, policy_wait_for_objects_to_settle):
+        received_settling_options.append(policy_wait_for_objects_to_settle)
         rollout_limits.append((num_steps, num_episodes))
 
     monkeypatch.setattr(run_execution, "rollout_policy", record_rollout)
@@ -114,8 +122,12 @@ def test_build_and_run_splits_episode_budget_without_mutating_config(monkeypatch
     result = run_execution.build_and_run(
         run,
         output_dir=tmp_path,
+        policy_wait_for_objects_to_settle=policy_wait_for_objects_to_settle,
     )
 
+    assert (
+        received_settling_options == [policy_wait_for_objects_to_settle or config_wait_for_settling] * run.num_rebuilds
+    )
     base_seed = run.environment_builder.seed
     run_seed_0 = deepcopy(run)  # Rebuild 0 keeps the configured seed.
     run_seed_1 = deepcopy(run)
@@ -168,7 +180,9 @@ def test_build_and_run_resolves_variation_replay_budget(
     monkeypatch.setattr(
         run_execution,
         "rollout_policy",
-        lambda env, policy, num_steps, num_episodes: rollout_limits.append((num_steps, num_episodes)),
+        lambda env, policy, num_steps, num_episodes, policy_wait_for_objects_to_settle: rollout_limits.append(
+            (num_steps, num_episodes)
+        ),
     )
 
     run_execution.build_and_run(run, output_dir=tmp_path)
@@ -211,7 +225,9 @@ def test_build_and_run_assigns_one_replay_file_per_rebuild(
     monkeypatch.setattr(
         run_execution,
         "rollout_policy",
-        lambda env, policy, num_steps, num_episodes: rollout_limits.append((num_steps, num_episodes)),
+        lambda env, policy, num_steps, num_episodes, policy_wait_for_objects_to_settle: rollout_limits.append(
+            (num_steps, num_episodes)
+        ),
     )
 
     run_execution.build_and_run(run, output_dir=tmp_path)
@@ -308,11 +324,14 @@ def test_build_and_run_requires_a_limit_for_an_unbounded_policy(monkeypatch, tmp
     assert closed_resources == [(policy, environment)]
 
 
-def test_execute_experiment_runs_in_declaration_order(monkeypatch, tmp_path):
+@pytest.mark.parametrize("policy_wait_for_objects_to_settle", [False, True])
+def test_execute_experiment_runs_in_declaration_order(monkeypatch, tmp_path, policy_wait_for_objects_to_settle):
     received = []
+    received_settling_options = []
 
-    def build_and_run(run_cfg, output_dir, video_cfg):
+    def build_and_run(run_cfg, output_dir, video_cfg, policy_wait_for_objects_to_settle):
         received.append((run_cfg.name, output_dir, video_cfg.video_base_dir))
+        received_settling_options.append(policy_wait_for_objects_to_settle)
         return ArenaRunResult(run_name=run_cfg.name, status=RunStatus.COMPLETED)
 
     monkeypatch.setattr(run_execution, "build_and_run", build_and_run)
@@ -320,8 +339,10 @@ def test_execute_experiment_runs_in_declaration_order(monkeypatch, tmp_path):
     results = run_execution.execute_experiment(
         _experiment(_run(name="first"), _run(name="second")),
         output_dir=tmp_path,
+        policy_wait_for_objects_to_settle=policy_wait_for_objects_to_settle,
     )
 
+    assert received_settling_options == [policy_wait_for_objects_to_settle] * 2
     assert [result.run_name for result in results] == ["first", "second"]
     assert received == [
         ("first", tmp_path / "first", str(tmp_path / "first")),
@@ -332,7 +353,7 @@ def test_execute_experiment_runs_in_declaration_order(monkeypatch, tmp_path):
 def test_execute_experiment_records_failure_and_continues(monkeypatch, tmp_path):
     attempted = []
 
-    def build_and_run(run_cfg, output_dir, video_cfg):
+    def build_and_run(run_cfg, output_dir, video_cfg, policy_wait_for_objects_to_settle):
         attempted.append(run_cfg.name)
         if run_cfg.name == "failing":
             raise RuntimeError("rollout failed")
@@ -356,7 +377,7 @@ def test_execute_experiment_records_failure_and_continues(monkeypatch, tmp_path)
 def test_execute_experiment_stops_on_failure_by_default(monkeypatch, tmp_path):
     attempted = []
 
-    def build_and_run(run_cfg, output_dir, video_cfg):
+    def build_and_run(run_cfg, output_dir, video_cfg, policy_wait_for_objects_to_settle):
         attempted.append(run_cfg.name)
         raise RuntimeError("rollout failed")
 
@@ -411,7 +432,7 @@ def test_build_environment_tolerates_an_environment_without_recorders(monkeypatc
 def test_execute_experiment_writes_one_timings_file_per_run(monkeypatch, tmp_path):
     """Each Run's timings cover that Run alone, matching what OSMO produces per process."""
 
-    def build_and_run(run_cfg, output_dir, video_cfg):
+    def build_and_run(run_cfg, output_dir, video_cfg, policy_wait_for_objects_to_settle):
         with Timer(run_cfg.name):
             pass
         return ArenaRunResult(run_name=run_cfg.name, status=RunStatus.COMPLETED)
@@ -432,7 +453,7 @@ def test_execute_experiment_writes_one_timings_file_per_run(monkeypatch, tmp_pat
 def test_execute_experiment_writes_no_timings_for_a_failed_run(monkeypatch, tmp_path):
     """A failed Run leaves no timings file, which is what the Experiment aggregation expects."""
 
-    def build_and_run(run_cfg, output_dir, video_cfg):
+    def build_and_run(run_cfg, output_dir, video_cfg, policy_wait_for_objects_to_settle):
         if run_cfg.name == "failing":
             raise RuntimeError("rollout failed")
         with Timer("step"):

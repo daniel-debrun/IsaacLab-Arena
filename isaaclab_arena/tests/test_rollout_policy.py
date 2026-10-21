@@ -21,6 +21,9 @@ class _RolloutEnvironment:
         self.steps_completed = 0
         self.completed_episode_count = 0
         self.reset_env_ids = torch.empty(0, dtype=torch.long)
+        self.progress_tracker = None
+        self.active_episode_mask = torch.ones(3, dtype=torch.bool)
+        self.action_manager = SimpleNamespace(action=torch.zeros(3, 1))
 
     def configure_episode_limit(self, num_episodes):
         assert not self.reset_called
@@ -107,3 +110,71 @@ def test_step_rollout_keeps_its_step_limit_and_resets_actual_reset_environments(
     assert policy.reset_calls == [None, [1]]
     assert policy.observed_steps == [0, 1]
     assert progress_bar.n == 2
+
+
+def test_rollout_defers_first_policy_observation_until_batch_settles_and_waits_after_reset(
+    monkeypatch,
+):
+    environment = _RolloutEnvironment([
+        (0, [], [], []),
+        (0, [], [], []),
+        (1, [1], [1], []),
+        (1, [], [], []),
+        (1, [], [], []),
+    ])
+    pending_by_step = [
+        [True, True, True],
+        [False, True, False],
+        [False, False, False],
+        [False, True, False],
+        [False, False, False],
+    ]
+    environment.progress_tracker = SimpleNamespace(
+        initial_object_settling_pending=lambda: torch.tensor(pending_by_step[environment.steps_completed])
+    )
+    policy = _Policy()
+    _capture_progress(monkeypatch, total=5)
+
+    policy_runner.rollout_policy(
+        _wrap_environment(environment),
+        policy,
+        num_steps=5,
+        num_episodes=None,
+        policy_wait_for_objects_to_settle=True,
+    )
+
+    assert policy.observed_steps == [2, 4]
+    assert policy.reset_calls == [None, [1]]
+
+
+def test_rollout_does_not_wait_for_inactive_environments(monkeypatch):
+    environment = _RolloutEnvironment([(1, [], [0], [])])
+    environment.active_episode_mask = torch.tensor([True, False, False])
+    environment.progress_tracker = SimpleNamespace(
+        initial_object_settling_pending=lambda: torch.tensor([False, True, True])
+    )
+    policy = _Policy()
+    _capture_progress(monkeypatch, total=1)
+
+    policy_runner.rollout_policy(
+        _wrap_environment(environment),
+        policy,
+        num_steps=None,
+        num_episodes=1,
+        policy_wait_for_objects_to_settle=True,
+    )
+
+    assert policy.observed_steps == [0]
+
+
+def test_rollout_does_not_wait_for_settling_by_default(monkeypatch):
+    environment = _RolloutEnvironment([(0, [], [], [])])
+    environment.progress_tracker = SimpleNamespace(
+        initial_object_settling_pending=lambda: torch.ones(3, dtype=torch.bool)
+    )
+    policy = _Policy()
+    _capture_progress(monkeypatch, total=1)
+
+    policy_runner.rollout_policy(_wrap_environment(environment), policy, num_steps=1, num_episodes=None)
+
+    assert policy.observed_steps == [0]
