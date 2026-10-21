@@ -11,6 +11,7 @@ from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_wi
 def _test_droid_absolute_pose_adapters(simulation_app):
     import math
     import torch
+    from types import SimpleNamespace
 
     from isaaclab.utils.math import combine_frame_transforms
 
@@ -20,10 +21,10 @@ def _test_droid_absolute_pose_adapters(simulation_app):
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
     from isaaclab_arena.scene.scene import Scene
     from isaaclab_arena.utils.pose import Pose
-    from isaaclab_arena_vlm_agent.embodiment_adapter.droid_action_adapter import DroidPoseActionAdapter
-    from isaaclab_arena_vlm_agent.embodiment_adapter.droid_motion_generator import DroidPoseMotionGenerator
-    from isaaclab_arena_vlm_agent.embodiment_adapter.droid_observation_adapter import DroidObservationAdapter
-    from isaaclab_arena_vlm_agent.embodiment_adapter.droid_pose import DroidPoseCommand
+    from isaaclab_arena_vlm_agent.droid_motion_generator import DroidPoseMotionGenerator
+    from isaaclab_arena_vlm_agent.droid_observation_adapter import DroidObservationAdapter
+    from isaaclab_arena_vlm_agent.pose import PoseCommand
+    from isaaclab_arena_vlm_agent.pose_action_adapter import PoseActionAdapter
 
     # Use a translated, rotated root and separate environment origins to expose world/root confusion.
     embodiment = DroidDifferentialIKEmbodiment(
@@ -49,12 +50,19 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         obs, _ = env.reset()
         base = env.unwrapped
         observation_adapter = DroidObservationAdapter()
-        action_adapter = DroidPoseActionAdapter()
+        action_adapter = PoseActionAdapter(embodiment)
+        assert action_adapter.embodiment is embodiment
         assert action_adapter.is_robot_action_space_supported(env)
+        for scene_key, body_name in (("other_robot", "base_link"), ("robot", "panda_link7")):
+            other_embodiment = SimpleNamespace(
+                get_scene_key=lambda: scene_key,
+                get_command_body_name=lambda: body_name,
+            )
+            assert not PoseActionAdapter(other_embodiment).is_robot_action_space_supported(env)
         states = [observation_adapter.extract_robot_state(env, obs, env_id) for env_id in range(base.num_envs)]
         actions = []
         for env_id, state in enumerate(states):
-            response = DroidPoseCommand(
+            response = PoseCommand(
                 position_root_m=state["position_root_m"],
                 quaternion_root_xyzw=state["quaternion_root_xyzw"],
                 gripper_closed=False,
@@ -91,7 +99,7 @@ def _test_droid_absolute_pose_adapters(simulation_app):
 
         generator = DroidPoseMotionGenerator()
         for env_id, state in enumerate(measured_states):
-            response = DroidPoseCommand(
+            response = PoseCommand(
                 position_root_m=state["position_root_m"],
                 quaternion_root_xyzw=state["quaternion_root_xyzw"],
                 gripper_closed=False,

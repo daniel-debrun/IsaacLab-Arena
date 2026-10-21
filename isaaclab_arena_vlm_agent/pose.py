@@ -3,16 +3,16 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""DROID base_link poses in the robot-root frame, in meters and XYZW quaternions."""
+"""Command-body poses in the robot-root frame, in meters and XYZW quaternions."""
 
 from pydantic import BaseModel, Field
 
 
-class DroidPoseCommand(BaseModel):
-    """Request absolute T_R_E (robot root R, Robotiq base_link E) and a binary gripper target."""
+class PoseCommand(BaseModel):
+    """Request absolute T_R_E (robot root R, embodiment command body E) and a binary gripper target."""
 
     position_root_m: list[float] = Field(min_length=3, max_length=3)
-    """Target translation t_R_E in meters for Robotiq base_link relative to robot root."""
+    """Target translation t_R_E in meters for the embodiment command body relative to robot root."""
 
     quaternion_root_xyzw: list[float] = Field(min_length=4, max_length=4)
     """Target rotation q_R_E as a unit quaternion in XYZW order."""
@@ -21,8 +21,8 @@ class DroidPoseCommand(BaseModel):
     """True closes the gripper; False opens it."""
 
 
-class DroidPoseChunk(BaseModel):
+class PoseChunk(BaseModel):
     """Ordered absolute pose commands, one per environment step."""
 
-    commands: list[DroidPoseCommand] = Field(min_length=1)
+    commands: list[PoseCommand] = Field(min_length=1)
     """Commands in execution order; the action adapter enforces its configured chunk length."""

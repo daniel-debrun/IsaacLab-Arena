@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Absolute DROID pose commands for single-step, chunk, and goal policies."""
+"""Embodiment-configured absolute pose commands for step, chunk, and goal policies."""
 
 from __future__ import annotations
 
@@ -11,26 +11,37 @@ import numpy as np
 from typing import TYPE_CHECKING
 
 from isaaclab_arena_vlm_agent.action_adapter import AgentActionAdapter, ChunkActionAdapter, GoalActionAdapter
-from isaaclab_arena_vlm_agent.droid_pose import DroidPoseChunk, DroidPoseCommand
+from isaaclab_arena_vlm_agent.motion_generator import MotionGenerator
+from isaaclab_arena_vlm_agent.pose import PoseChunk, PoseCommand
 
 if TYPE_CHECKING:
+    from isaaclab_arena.embodiments.embodiment_base import EmbodimentBase
     from isaaclab_arena.environments.arena_world import ArenaWorld
 
 
-def _pose_command(response: DroidPoseCommand) -> np.ndarray:
+def _pose_command(response: PoseCommand) -> np.ndarray:
     """Pack absolute position, XYZW rotation, and binary gripper closure."""
     return np.asarray(
         [*response.position_root_m, *response.quaternion_root_xyzw, float(response.gripper_closed)], dtype=np.float32
     )
 
 
-class DroidPoseActionAdapter(AgentActionAdapter):
-    """Convert absolute base_link targets into unscaled absolute DROID IK actions."""
+class PoseActionAdapter(AgentActionAdapter):
+    """Convert command-body targets into absolute IK actions for an embodiment."""
 
-    response_model = DroidPoseCommand
+    response_model = PoseCommand
+
+    def __init__(self, embodiment: EmbodimentBase):
+        """Bind pose commands to an embodiment's scene entity and command body.
+
+        Args:
+            embodiment: Robot using absolute, unscaled IK and zero-to-one binary gripper actions.
+        """
+        self.embodiment = embodiment
+        """Robot defining the scene key and command body for root-relative pose targets."""
 
     def is_robot_action_space_supported(self, env) -> bool:
-        """Return whether actions are absolute base_link IK followed by binary DROID gripper control.
+        """Return whether the live actions match the embodiment and supported pose/gripper conventions.
 
         Args:
             env: Arena environment, optionally gym-wrapped.
@@ -52,8 +63,8 @@ class DroidPoseActionAdapter(AgentActionAdapter):
         return bool(
             arm.action_dim == 7
             and gripper.action_dim == 1
-            and cfg.asset_name == gripper.cfg.asset_name == "robot"
-            and cfg.body_name == "base_link"
+            and cfg.asset_name == gripper.cfg.asset_name == self.embodiment.get_scene_key()
+            and cfg.body_name == self.embodiment.get_command_body_name()
             and cfg.controller.command_type == "pose"
             and not cfg.controller.use_relative_mode
             and np.all(np.asarray(cfg.scale) == 1.0)
@@ -62,7 +73,7 @@ class DroidPoseActionAdapter(AgentActionAdapter):
             and gripper.cfg.clip is None
         )
 
-    def decode_command(self, response: DroidPoseCommand, arena_world: ArenaWorld, env_id: int) -> np.ndarray:
+    def decode_command(self, response: PoseCommand, arena_world: ArenaWorld, env_id: int) -> np.ndarray:
         """Return the absolute target without applying the measured pose as an offset.
 
         Args:
@@ -89,12 +100,16 @@ class DroidPoseActionAdapter(AgentActionAdapter):
         )
 
 
-class DroidChunkActionAdapter(ChunkActionAdapter, DroidPoseActionAdapter):
-    """Execute a fixed-length sequence of absolute DROID poses, one per environment step."""
+class PoseChunkActionAdapter(ChunkActionAdapter, PoseActionAdapter):
+    """Execute absolute command-body poses, one per environment step."""
 
-    response_model = DroidPoseChunk
+    response_model = PoseChunk
 
-    def decode_command(self, response: DroidPoseChunk, arena_world: ArenaWorld, env_id: int) -> np.ndarray:
+    def __init__(self, embodiment: EmbodimentBase, chunk_size: int):
+        PoseActionAdapter.__init__(self, embodiment)
+        ChunkActionAdapter.__init__(self, chunk_size)
+
+    def decode_command(self, response: PoseChunk, arena_world: ArenaWorld, env_id: int) -> np.ndarray:
         """Pack each validated pose in execution order.
 
         Args:
@@ -115,9 +130,13 @@ class DroidChunkActionAdapter(ChunkActionAdapter, DroidPoseActionAdapter):
         """
         return bool(
             command.shape == (self.chunk_size, 8)
-            and all(DroidPoseActionAdapter.is_command_valid(self, row) for row in command)
+            and all(PoseActionAdapter.is_command_valid(self, row) for row in command)
         )
 
 
-class DroidGoalActionAdapter(GoalActionAdapter, DroidPoseActionAdapter):
-    """Decode absolute DROID pose goals for the supplied motion generator."""
+class PoseGoalActionAdapter(GoalActionAdapter, PoseActionAdapter):
+    """Decode absolute command-body goals for an embodiment and motion generator."""
+
+    def __init__(self, embodiment: EmbodimentBase, motion_generator: MotionGenerator):
+        PoseActionAdapter.__init__(self, embodiment)
+        GoalActionAdapter.__init__(self, motion_generator)
