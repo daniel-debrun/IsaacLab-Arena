@@ -22,19 +22,12 @@ from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from isaaclab_arena.inference.backend import InferenceBackend, build_strict_schema
-from isaaclab_arena_vlm_agent.embodiment_adapter.action_adapter import (
-    AgentActionAdapter,
-    ChunkActionAdapter,
-    GoalActionAdapter,
-)
-from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import (
-    CAMERA_OBSERVATION_GROUP,
-    VLMObservationAdapter,
-)
+from isaaclab_arena_vlm_agent.action_adapter import AgentActionAdapter, ChunkActionAdapter, GoalActionAdapter
 from isaaclab_arena_vlm_agent.image_utils import extract_rgb_images_from_camera_observations, image_to_jpeg_data_url
 from isaaclab_arena_vlm_agent.motion_generator import MotionGenerator
-from isaaclab_arena_vlm_agent.policy.vlm_agent_policy import VLMChunkPolicy, VLMGoalPolicy, VLMPolicyCfg, VLMStepPolicy
+from isaaclab_arena_vlm_agent.observation_adapter import CAMERA_OBSERVATION_GROUP, VLMObservationAdapter
 from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
+from isaaclab_arena_vlm_agent.vlm_agent_policy import VLMChunkPolicy, VLMGoalPolicy, VLMPolicyCfg, VLMStepPolicy
 
 
 class ObservationAdapter(VLMObservationAdapter):
@@ -512,7 +505,7 @@ def test_invalid_model_actions_are_rejected_with_python_optimization():
             ActionAdapter, ObservationAdapter,
         )
         from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
-        from isaaclab_arena_vlm_agent.policy.vlm_agent_policy import VLMStepPolicy, VLMPolicyCfg
+        from isaaclab_arena_vlm_agent.vlm_agent_policy import VLMStepPolicy, VLMPolicyCfg
 
         for command in (np.ones((1, 2)), np.empty(0), np.array([1, np.nan])):
             backend = SimpleNamespace(infer=Mock(return_value={"target": [1, 2]}))

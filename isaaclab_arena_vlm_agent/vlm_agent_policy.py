@@ -20,12 +20,8 @@ from pydantic import ValidationError
 
 from isaaclab_arena.inference.backend import InferenceBackend, InferenceRequest, build_strict_schema
 from isaaclab_arena.policy.policy_base import PolicyBase, PolicyCfg
-from isaaclab_arena_vlm_agent.embodiment_adapter.action_adapter import (
-    AgentActionAdapter,
-    ChunkActionAdapter,
-    GoalActionAdapter,
-)
-from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import VLMObservationAdapter
+from isaaclab_arena_vlm_agent.action_adapter import AgentActionAdapter, ChunkActionAdapter, GoalActionAdapter
+from isaaclab_arena_vlm_agent.observation_adapter import VLMObservationAdapter
 from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
 
 if TYPE_CHECKING:
