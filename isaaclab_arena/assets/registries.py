@@ -7,6 +7,7 @@ import random
 from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
+from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.utils.singleton import SingletonMeta
 
 if TYPE_CHECKING:
@@ -104,22 +105,28 @@ class AssetRegistry(Registry):
         ensure_assets_registered()
         return self.get_component_by_name(name)
 
-    def get_named_spawn_cfg(self, name: str, **kwargs: Any) -> tuple[str, "SpawnerCfg"]:
-        """Return the name and a copy of the spawn configuration of a registered rigid object.
+    def get_rigid_object_spawn_cfg(self, name: str) -> "SpawnerCfg":
+        """Return a copy of the spawn configuration of a registered rigid object.
 
         Args:
             name: Registered name of a rigid Object.
-            **kwargs: Constructor arguments for the registered object, for example ``scale``.
         """
+        # Imported here to avoid a cycle: object.py imports asset_selection_variation.py, which imports this module.
         from isaaclab_arena.assets.object import Object
-        from isaaclab_arena.assets.object_type import ObjectType
 
-        asset = self.get_asset_by_name(name)(**kwargs)
-        assert isinstance(
-            asset, Object
-        ), f"Asset '{name}' is a {type(asset).__name__}; get_named_spawn_cfg needs a rigid Object."
-        assert asset.object_type == ObjectType.RIGID, f"Asset '{name}' is {asset.object_type}, not rigid."
-        return name, deepcopy(asset.object_cfg.spawn)
+        assert self.is_registered(
+            name
+        ), f"'{name}' is not a registered asset. Use the name of a registered rigid object."
+        registered_asset = self.get_asset_by_name(name)()
+        assert isinstance(registered_asset, Object), (
+            f"Asset '{name}' is a {type(registered_asset).__name__}, not an Object. Use the name of a registered rigid"
+            " object."
+        )
+        assert registered_asset.object_type == ObjectType.RIGID, (
+            f"Asset '{name}' is a {registered_asset.object_type.value} Object, not a rigid one. Use the name of a"
+            " registered rigid object."
+        )
+        return deepcopy(registered_asset.object_cfg.spawn)
 
     def get_assets_by_tag(self, tag: str) -> list[type["Asset"]]:
         """Gets a list of assets by tag.

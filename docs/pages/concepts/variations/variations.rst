@@ -179,7 +179,7 @@ variations are sampled once and applied to asset configs before the environment 
      - Description
    * - ``AssetSelectionVariation``
      - build-time
-     - Chooses which of several candidate assets a rigid object spawns.
+     - Chooses which registered rigid object an object spawns.
    * - ``CameraExtrinsicsVariation``
      - run-time
      - Adds a small sampled offset to a camera's nominal local position on every reset.
@@ -210,37 +210,14 @@ variations are sampled once and applied to asset configs before the environment 
 Asset selection
 ---------------
 
-``AssetSelectionVariation`` chooses which asset a rigid ``Object`` spawns. It chooses one
-candidate per build, and every parallel environment of that build spawns it. Each rebuild can
-choose another candidate. For different objects in the environments of one build, use a
-:doc:`RigidObjectSet <../scene/concept_rigid_object_set>`.
+Every rigid ``Object`` has a disabled ``asset_selection`` variation. When it is enabled, each build
+chooses one name from its ``asset_names``, a list of registered rigid objects, and every parallel
+environment of that build spawns that object. While the selection is off, the object spawns the asset
+the environment declares. For different objects in the environments of one build, use a
+:doc:`RigidObjectSet <../scene/concept_rigid_object_set>`, which has no ``asset_selection``.
 
-The environment's Python code declares the candidates as ``(name, spawn configuration)`` pairs.
-``AssetRegistry.get_named_spawn_cfg()`` returns the pair for a registered rigid object:
-
-.. code-block:: python
-
-   from isaaclab_arena.assets.object import Object
-   from isaaclab_arena.assets.registries import AssetRegistry
-   from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariation
-
-   asset_registry = AssetRegistry()
-   cracker_box_asset = asset_registry.get_named_spawn_cfg("cracker_box")
-   sugar_box_asset = asset_registry.get_named_spawn_cfg("sugar_box")
-   mustard_bottle_asset = asset_registry.get_named_spawn_cfg("mustard_bottle")
-
-   pick_up_object = Object(name="pickup", asset=cracker_box_asset)
-   pick_up_object.add_variation(
-       AssetSelectionVariation(
-           pick_up_object,
-           asset_candidates=[cracker_box_asset, sugar_box_asset, mustard_bottle_asset],
-       )
-   )
-
-Like every variation, the selection starts disabled, so this object spawns the cracker box until
-the experiment enables the selection. An Object declared without an asset, such as
-``Object(name="pickup")``, fails to build until its selection is enabled. This run enables the
-selection and takes each candidate once:
+For example, these entries let the object ``pickup`` spawn another registered object in each of three
+rebuilds:
 
 .. code-block:: yaml
 
@@ -251,25 +228,23 @@ selection and takes each candidate once:
          pickup.asset_selection.enabled: true
          pickup.asset_selection.asset_names: [cracker_box, sugar_box, mustard_bottle]
 
-The command-line overrides for the same two entries are ``pickup.asset_selection.enabled=true``
-and ``"pickup.asset_selection.asset_names=[cracker_box,sugar_box,mustard_bottle]"``.
+By default, a build takes the name at zero-based index ``seed mod n`` of the ``n`` names, where
+``seed`` is ``--seed``. The Experiment Runner adds the rebuild index to the seed, so ``n`` rebuilds
+take each name once. In-order selections on two objects with the same number of names therefore
+change together. With ``random_choice: true``, each build draws a name at random, and a name can
+repeat across rebuilds.
 
-``asset_names`` lists the candidate names to choose from, in order. Empty means all candidates in
-declaration order, and one name pins that candidate. By default, a build takes the name at
-zero-based index ``seed mod n`` of the ``n`` names, where ``seed`` is ``--seed``. The Experiment
-Runner adds the rebuild index to the seed, so ``n`` rebuilds take each name once. This uses the
-seed alone, so in-order selections on two objects with the same number of names change together.
-Use ``random_choice: true`` to vary them independently. With it, each build draws a name at
-random, and a name can repeat across rebuilds.
-
-With the default seed 42, the three rebuilds spawn ``cracker_box``, ``sugar_box`` and
-``mustard_bottle``. Every episode row records the name, for example
-``"pickup.asset_selection": "sugar_box"``, and
+Every episode row records the chosen name, for example ``"pickup.asset_selection": "sugar_box"``, and
 :doc:`recorded variation replay <../experiment_record_replay>` spawns the recorded asset.
 
-Add the selection to a plain ``Object``, not to a library object such as ``Mug``, whose
-methods were written for its declared asset.
+Limitations:
 
-The task description does not name the selected asset: ``PickAndPlaceTask`` builds its default
-description from the Object's name when the task is built. For a language-conditioned policy, pin
-one name per run with ``asset_names`` and set ``environment_builder.language_instruction``.
+* The task description does not follow the selection: ``PickAndPlaceTask`` builds its default
+  description when the task is built, and a hand-written ``language_instruction`` applies to every
+  rebuild. For a language-conditioned policy, use one Run per object.
+* Only the spawn configuration changes. A library object such as ``Mug`` keeps the behavior written
+  for its own asset.
+* An Object with a ``bounding_box`` override cannot use the selection, because placement would use
+  that box for every selected asset.
+* ``Scene.export_to_usd()`` and ``ObjectReference`` read ``Object.usd_path``, which still names the
+  declared asset.

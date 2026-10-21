@@ -305,6 +305,25 @@ def test_get_assets_with_all_tags():
     assert result, "Test failed"
 
 
+def _test_get_rigid_object_spawn_cfg_returns_registered_spawn_cfg(simulation_app):
+    from isaaclab.sim import UsdFileCfg
+
+    from isaaclab_arena.assets.registries import AssetRegistry
+
+    asset_registry = AssetRegistry()
+    cracker_box_spawn_cfg = asset_registry.get_rigid_object_spawn_cfg("cracker_box")
+
+    assert isinstance(cracker_box_spawn_cfg, UsdFileCfg)
+    assert cracker_box_spawn_cfg.usd_path == asset_registry.get_asset_by_name("cracker_box").usd_path
+    assert cracker_box_spawn_cfg.activate_contact_sensors is True
+    return True
+
+
+def test_get_rigid_object_spawn_cfg_returns_registered_spawn_cfg():
+    result = run_function_with_persistent_simulation_app(_test_get_rigid_object_spawn_cfg_returns_registered_spawn_cfg)
+    assert result, "Test failed"
+
+
 if __name__ == "__main__":
     test_default_assets_registered()
     test_all_assets_in_registry()
@@ -312,3 +331,4 @@ if __name__ == "__main__":
     test_hdr_image_spawn()
     test_multi_light_in_scene()
     test_get_assets_with_all_tags()
+    test_get_rigid_object_spawn_cfg_returns_registered_spawn_cfg()

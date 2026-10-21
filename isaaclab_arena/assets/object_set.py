@@ -18,6 +18,9 @@ from isaaclab_arena.utils.usd.rigid_body_path_alignment import align_rigid_body_
 class RigidObjectSet(Object):
     """A set of rigid objects with one member selected per environment."""
 
+    # The set already spawns one of its members in each environment.
+    supports_asset_selection = False
+
     def __init__(
         self,
         name: str,

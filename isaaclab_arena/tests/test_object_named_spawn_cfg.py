@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for AssetRegistry.get_named_spawn_cfg() and for declaring an Object with asset= or without an asset."""
+"""Tests for declaring an Object with asset= or without an asset."""
 
 import re
 
@@ -23,44 +23,6 @@ def _make_box_spawn_cfg(size: tuple[float, float, float]):
         collision_props=sim_utils.CollisionPropertiesCfg(),
         activate_contact_sensors=True,
     )
-
-
-def _test_get_named_spawn_cfg_returns_registered_spawn_cfg(simulation_app) -> bool:
-    from isaaclab.sim import UsdFileCfg
-
-    from isaaclab_arena.assets.registries import AssetRegistry
-
-    asset_registry = AssetRegistry()
-    asset_name, cracker_box_spawn_cfg = asset_registry.get_named_spawn_cfg("cracker_box")
-    assert asset_name == "cracker_box"
-    assert isinstance(cracker_box_spawn_cfg, UsdFileCfg)
-    assert cracker_box_spawn_cfg.activate_contact_sensors is True
-
-    _, sugar_box_spawn_cfg = asset_registry.get_named_spawn_cfg("sugar_box", scale=(1.5, 1.5, 1.5))
-    assert sugar_box_spawn_cfg.scale == (1.5, 1.5, 1.5)
-    return True
-
-
-def test_get_named_spawn_cfg_returns_registered_spawn_cfg():
-    result = run_function_with_persistent_simulation_app(
-        _test_get_named_spawn_cfg_returns_registered_spawn_cfg, headless=HEADLESS
-    )
-    assert result, "Test failed"
-
-
-def _test_get_named_spawn_cfg_rejects_non_rigid_asset(simulation_app) -> bool:
-    from isaaclab_arena.assets.registries import AssetRegistry
-
-    with pytest.raises(AssertionError, match=re.escape("Asset 'ground_plane' is ObjectType.BASE, not rigid.")):
-        AssetRegistry().get_named_spawn_cfg("ground_plane")
-    return True
-
-
-def test_get_named_spawn_cfg_rejects_non_rigid_asset():
-    result = run_function_with_persistent_simulation_app(
-        _test_get_named_spawn_cfg_rejects_non_rigid_asset, headless=HEADLESS
-    )
-    assert result, "Test failed"
 
 
 def _test_object_declared_with_asset_or_without_asset(simulation_app) -> bool:

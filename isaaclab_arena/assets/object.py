@@ -24,19 +24,20 @@ from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 from isaaclab_arena.utils.pose import Pose
 from isaaclab_arena.utils.usd.helpers import has_light, open_stage
 from isaaclab_arena.utils.usd.rigid_bodies import read_asset_rigid_body_paths
+from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariation
 
 
 def assert_named_spawn_cfg(named_spawn_cfg: tuple[str, SpawnerCfg], argument_label: str) -> None:
     """Assert that ``named_spawn_cfg`` is a (name, spawn_cfg) pair whose spawn_cfg spawns a single asset.
 
     Args:
-        named_spawn_cfg: Pair to check, for example from AssetRegistry.get_named_spawn_cfg().
+        named_spawn_cfg: Pair to check.
         argument_label: Where the pair was passed, for example ``"Object 'pickup' asset="``. Starts each
             assert message.
     """
     assert (
         isinstance(named_spawn_cfg, tuple) and len(named_spawn_cfg) == 2
-    ), f"{argument_label}: pass a (name, spawn_cfg) tuple, such as AssetRegistry.get_named_spawn_cfg() returns."
+    ), f"{argument_label}: pass a (name, spawn_cfg) tuple."
     asset_name, spawn_cfg = named_spawn_cfg
     assert (
         isinstance(asset_name, str) and asset_name
@@ -49,6 +50,9 @@ def assert_named_spawn_cfg(named_spawn_cfg: tuple[str, SpawnerCfg], argument_lab
 
 class Object(RootedObjectBase):
     """Scene object spawned from a USD file or a spawn configuration, as a rigid, articulated or static (``BASE``) asset."""
+
+    supports_asset_selection: bool = True
+    """Whether a rigid Object of this class gets a disabled AssetSelectionVariation named ``asset_selection``."""
 
     def __init__(
         self,
@@ -93,6 +97,8 @@ class Object(RootedObjectBase):
             )
             object_type = detect_object_type(usd_path=usd_path, variants=spawn_cfg_addon.get("variants"))
         super().__init__(name=name, prim_path=prim_path, object_type=object_type, **kwargs)
+        if self.object_type == ObjectType.RIGID and self.supports_asset_selection:
+            self.add_variation(AssetSelectionVariation(self))
         self.usd_path = usd_path
         self.spawner_cfg = spawner_cfg
         self.scale = scale
@@ -186,8 +192,8 @@ class Object(RootedObjectBase):
     def _assert_has_asset(self, spawn_cfg: SpawnerCfg | None) -> None:
         """Assert that ``spawn_cfg`` is set; None means this Object has no asset."""
         assert spawn_cfg is not None, (
-            f"Object '{self.name}' has no asset. Declare it with asset=, or add an AssetSelectionVariation to it and"
-            f" enable it (for example '{self.name}.asset_selection.enabled=true')."
+            f"Object '{self.name}' has no asset. Declare it with asset=, or enable '{self.name}.asset_selection' and"
+            " set its asset_names."
         )
 
     def _get_spawn_cfg_geometry(self, spawn_cfg: SpawnerCfg | None) -> SpawnCfgGeometry:
