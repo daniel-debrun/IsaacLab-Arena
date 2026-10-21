@@ -62,11 +62,7 @@ class AgentActionAdapter(ABC):
 
 
 class ChunkActionAdapter(AgentActionAdapter):
-    """Decode fixed-length command sequences for VLMChunkPolicy.
-
-    Implement decode_command to return (chunk_size, command_dim) and response_model
-    to describe that response. command_to_action converts one row at a time.
-    """
+    """Decode fixed-length command sequences for VLMChunkPolicy."""
 
     def __init__(self, chunk_size: int):
         assert type(chunk_size) is int and chunk_size > 0, "chunk_size must be a positive integer"
