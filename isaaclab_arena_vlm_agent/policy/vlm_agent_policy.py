@@ -25,6 +25,7 @@ from isaaclab_arena_vlm_agent.embodiment_adapter.action_adapter import (
     GoalActionAdapter,
 )
 from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import VLMObservationAdapter
+from isaaclab_arena_vlm_agent.motion_generator import MotionGenerator
 from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
 
 if TYPE_CHECKING:
@@ -227,7 +228,7 @@ class VLMChunkPolicy(VLMPolicy):
 
 
 class VLMGoalPolicy(VLMPolicy):
-    """Use adapter-defined feedback to execute a goal until completion or its step limit."""
+    """Use a motion generator to execute decoded goals until completion or a step limit."""
 
     def __init__(
         self,
@@ -236,29 +237,37 @@ class VLMGoalPolicy(VLMPolicy):
         inference_backend: InferenceBackend,
         observation_adapter: VLMObservationAdapter,
         action_adapter: GoalActionAdapter,
+        motion_generator: MotionGenerator,
+        max_steps_per_goal: int,
     ):
         assert isinstance(action_adapter, GoalActionAdapter)
+        assert isinstance(motion_generator, MotionGenerator)
+        assert (
+            type(max_steps_per_goal) is int and max_steps_per_goal > 0
+        ), "max_steps_per_goal must be a positive integer"
         super().__init__(
             config,
             inference_backend=inference_backend,
             observation_adapter=observation_adapter,
             action_adapter=action_adapter,
         )
+        self.motion_generator = motion_generator
+        self.max_steps_per_goal = max_steps_per_goal
         self._goals: dict[int, tuple[np.ndarray, int]] = {}
 
     def _get_command(self, env, observation, env_id: int) -> np.ndarray:
         pending = self._goals.get(env_id)
         if (
             pending is None
-            or pending[1] >= self.action_adapter.max_steps
-            or self.action_adapter.goal_reached(pending[0], env.unwrapped.arena_world, env_id)
+            or pending[1] >= self.max_steps_per_goal
+            or self.motion_generator.goal_reached(pending[0], env.unwrapped.arena_world, env_id)
         ):
             goal = self._infer(self._request_content(env, observation, env_id), env.unwrapped.arena_world, env_id)
             executed = 0
         else:
             goal, executed = pending
         command = np.asarray(
-            self.action_adapter.compute_command(goal, env.unwrapped.arena_world, env_id), dtype=np.float32
+            self.motion_generator.compute_command(goal, env.unwrapped.arena_world, env_id), dtype=np.float32
         )
         if command.ndim != 1 or command.size == 0 or not np.isfinite(command).all():
             raise ValueError("Expected a finite goal command")

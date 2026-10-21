@@ -90,34 +90,4 @@ class ChunkActionAdapter(AgentActionAdapter):
 
 
 class GoalActionAdapter(AgentActionAdapter):
-    """Decode goals and provide closed-loop commands for VLMGoalPolicy."""
-
-    def __init__(self, max_steps: int):
-        assert type(max_steps) is int and max_steps > 0, "max_steps must be a positive integer"
-        self.max_steps = max_steps
-
-    @abstractmethod
-    def goal_reached(self, goal: np.ndarray, arena_world: ArenaWorld, env_id: int) -> bool:
-        """Check goal completion against the current measured state.
-
-        Args:
-            goal: Validated goal for one environment.
-            arena_world: Live Arena scene queries for feedback control.
-            env_id: Environment index within the batched world state.
-
-        Returns:
-            Whether to request a new goal before the next action.
-        """
-
-    @abstractmethod
-    def compute_command(self, goal: np.ndarray, arena_world: ArenaWorld, env_id: int) -> np.ndarray:
-        """Compute one command toward the goal using current measured state.
-
-        Args:
-            goal: Validated goal for one environment.
-            arena_world: Live Arena scene queries for feedback control.
-            env_id: Environment index within the batched world state.
-
-        Returns:
-            A finite command vector for command_to_action.
-        """
+    """Decode and validate goals for VLMGoalPolicy."""

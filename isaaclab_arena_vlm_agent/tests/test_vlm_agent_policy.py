@@ -32,6 +32,7 @@ from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import (
     VLMObservationAdapter,
 )
 from isaaclab_arena_vlm_agent.image_utils import extract_rgb_images_from_camera_observations, image_to_jpeg_data_url
+from isaaclab_arena_vlm_agent.motion_generator import MotionGenerator
 from isaaclab_arena_vlm_agent.policy.vlm_agent_policy import VLMChunkPolicy, VLMGoalPolicy, VLMPolicyCfg, VLMStepPolicy
 from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
 
@@ -283,8 +284,7 @@ class JointChunkAdapter(ChunkActionAdapter):
 class JointGoalAdapter(GoalActionAdapter):
     response_model = JointTargetResponse
 
-    def __init__(self, max_steps: int, action_dim=2):
-        super().__init__(max_steps)
+    def __init__(self, action_dim=2):
         self.joint_names = tuple(f"joint_{i}" for i in range(action_dim))
 
     def is_robot_action_space_supported(self, env):
@@ -297,22 +297,36 @@ class JointGoalAdapter(GoalActionAdapter):
             raise InvalidAgentResponseError("Wrong goal dimensions")
         return target
 
+
+class JointMotionGenerator(MotionGenerator):
+    def __init__(self, action_dim=2, max_step=0.25):
+        self.joint_names = tuple(f"joint_{i}" for i in range(action_dim))
+        self.max_step = max_step
+
     def goal_reached(self, goal, arena_world, env_id):
         positions = arena_world.get_joint_positions("robot", self.joint_names)[env_id].cpu().numpy()
         return np.allclose(goal, positions)
 
     def compute_command(self, goal, arena_world, env_id):
         positions = arena_world.get_joint_positions("robot", self.joint_names)[env_id].cpu().numpy()
-        return np.clip(goal - positions, -0.25, 0.25)
+        return np.clip(goal - positions, -self.max_step, self.max_step)
 
 
-def make_multi_step_policy(backend, adapter):
-    policy_type = VLMChunkPolicy if isinstance(adapter, ChunkActionAdapter) else VLMGoalPolicy
+def make_multi_step_policy(backend, adapter, *, motion_generator=None, max_steps_per_goal=2):
+    if isinstance(adapter, ChunkActionAdapter):
+        policy_type = VLMChunkPolicy
+        goal_kwargs = {}
+    else:
+        policy_type = VLMGoalPolicy
+        if motion_generator is None:
+            motion_generator = JointMotionGenerator(action_dim=len(adapter.joint_names))
+        goal_kwargs = {"motion_generator": motion_generator, "max_steps_per_goal": max_steps_per_goal}
     policy = policy_type(
         VLMPolicyCfg(system_prompt="Control these joints.", max_attempts=1),
         inference_backend=backend,
         observation_adapter=ObservationAdapter(),
         action_adapter=adapter,
+        **goal_kwargs,
     )
     policy.set_task_description("Move")
     policy.reset()  # Reset before the first observation must be harmless.
@@ -386,7 +400,7 @@ def test_goals_use_measured_feedback_step_limit_and_partial_reset(backend, actio
         return response(json.dumps({"target": (np.asarray(state["joint_positions"]) + 1).tolist()}))
 
     backend.client.chat.completions.create.side_effect = create
-    policy = make_multi_step_policy(backend, JointGoalAdapter(max_steps=2, action_dim=action_dim))
+    policy = make_multi_step_policy(backend, JointGoalAdapter(action_dim=action_dim))
     env, observation = inputs(action_dim)
     torch.testing.assert_close(policy.get_action(env, observation), torch.full((2, action_dim), 0.25))
     assert len(calls) == 2
@@ -413,7 +427,7 @@ def test_actions_use_live_world_without_joint_positions_in_prompt(backend, mode)
     if mode == "step":
         policy = make_policy(backend)
     else:
-        policy = make_multi_step_policy(backend, JointGoalAdapter(max_steps=5))
+        policy = make_multi_step_policy(backend, JointGoalAdapter(), max_steps_per_goal=5)
     policy.observation_adapter = ObservationAdapter(include_joint_positions=False)
     policy.observation_adapter.build_request_content = Mock(wraps=policy.observation_adapter.build_request_content)
     env, observation = inputs()
@@ -435,12 +449,35 @@ def test_actions_use_live_world_without_joint_positions_in_prompt(backend, mode)
     env.unwrapped.arena_world.get_joint_positions.assert_called_with("robot", ("joint_0", "joint_1"))
 
 
-def test_goal_controller_output_is_validated_before_conversion(backend):
+@pytest.mark.parametrize("max_step", [0.1, 0.25])
+def test_goal_decoder_can_use_different_motion_generators(backend, max_step):
     backend.client.chat.completions.create.return_value = response('{"target": [1, 2]}')
-    adapter = JointGoalAdapter(max_steps=2)
-    adapter.compute_command = Mock(return_value=np.array([np.inf, 0]))
+    policy = make_multi_step_policy(
+        backend, JointGoalAdapter(), motion_generator=JointMotionGenerator(max_step=max_step)
+    )
+    expected = torch.tensor([[max_step, max_step], [-max_step, -max_step]])
+    torch.testing.assert_close(policy.get_action(*inputs()), expected)
+    assert backend.client.chat.completions.create.call_count == 2
+
+
+def test_invalid_goals_are_rejected_before_motion_generation(backend):
+    backend.client.chat.completions.create.return_value = response('{"target": [1]}')
+    generator = JointMotionGenerator()
+    generator.compute_command = Mock()
+    policy = make_multi_step_policy(backend, JointGoalAdapter(), motion_generator=generator)
+    with pytest.raises(InvalidAgentResponseError, match="Wrong goal dimensions"):
+        policy.get_action(*inputs())
+    generator.compute_command.assert_not_called()
+    assert backend.client.chat.completions.create.call_count == 1
+
+
+def test_motion_generator_output_is_validated_before_conversion(backend):
+    backend.client.chat.completions.create.return_value = response('{"target": [1, 2]}')
+    adapter = JointGoalAdapter()
+    generator = JointMotionGenerator()
+    generator.compute_command = Mock(return_value=np.array([np.inf, 0]))
     adapter.command_to_action = Mock()
-    policy = make_multi_step_policy(backend, adapter)
+    policy = make_multi_step_policy(backend, adapter, motion_generator=generator)
     with pytest.raises(ValueError, match="finite goal command"):
         policy.get_action(*inputs())
     adapter.command_to_action.assert_not_called()
