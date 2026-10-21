@@ -24,11 +24,7 @@ from isaaclab_arena_vlm_agent.embodiment_adapter.action_adapter import (
     ChunkActionAdapter,
     GoalActionAdapter,
 )
-from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import (
-    CAMERA_OBSERVATION_GROUP,
-    VLMObservationAdapter,
-)
-from isaaclab_arena_vlm_agent.image_utils import image_to_jpeg_data_url
+from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import VLMObservationAdapter
 from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
 
 if TYPE_CHECKING:
@@ -64,7 +60,7 @@ class VLMPolicyCfg(PolicyCfg):
 class VLMPolicy(PolicyBase[VLMPolicyCfg]):
     """Share VLM request preparation and response validation across execution strategies.
 
-    Each request contains only the current images, selected prompt state, and task description.
+    Each request contains the observations selected by the adapter and the task description.
     """
 
     def __init__(
@@ -81,13 +77,12 @@ class VLMPolicy(PolicyBase[VLMPolicyCfg]):
             config: Prompt, image encoding, and action-validation settings.
             inference_backend: Caller-owned backend shared with other inference steps.
                 The caller is responsible for closing its client.
-            observation_adapter: Adapter selecting camera images and preparing prompt state.
+            observation_adapter: Adapter assembling observation content for the VLM.
             action_adapter: Adapter validating responses and converting commands to native actions.
         """
         super().__init__(config)
         assert isinstance(observation_adapter, VLMObservationAdapter)
         assert isinstance(action_adapter, AgentActionAdapter)
-        assert observation_adapter.camera_keys, "Configure at least one camera observation key"
         self.observation_adapter = observation_adapter
         self.action_adapter = action_adapter
         self._response_schema = build_strict_schema(action_adapter.response_model)
@@ -99,7 +94,7 @@ class VLMPolicy(PolicyBase[VLMPolicyCfg]):
 
         Args:
             env: Arena environment, optionally gym-wrapped.
-            observation: Batched observations with uint8 HWC images in camera_obs.
+            observation: Batched observations consumed by the observation adapter.
 
         Returns:
             Actions shaped (num_envs, action_dim) on the environment device.
@@ -123,23 +118,13 @@ class VLMPolicy(PolicyBase[VLMPolicyCfg]):
         """Return one command using the current observation and any pending prediction."""
 
     def _request_content(self, env, observation, env_id: int) -> list[dict]:
-        """Prepare current state and images for a new inference request."""
-        prompt_state = self.observation_adapter.extract_prompt_state(env, observation, env_id)
-        content = [{
-            "type": "text",
-            "text": json.dumps({"task": self.task_description, "state": prompt_state}, allow_nan=False),
-        }]
-        for key in self.observation_adapter.camera_keys:
-            images = observation[CAMERA_OBSERVATION_GROUP][key]
-            assert images.ndim == 4 and images.shape[0] == env.unwrapped.num_envs, "Expected batched HWC images"
-            image = images[env_id].detach().cpu().numpy()
-            content.extend([
-                {"type": "text", "text": f"camera={key}"},
-                {
-                    "type": "image_url",
-                    "image_url": {"url": image_to_jpeg_data_url(image, self.config.image_max_width_or_height)},
-                },
-            ])
+        """Combine the task description with adapter-built observation content."""
+        content = [{"type": "text", "text": json.dumps({"task": self.task_description})}]
+        content.extend(
+            self.observation_adapter.build_request_content(
+                env, observation, env_id, image_max_width_or_height=self.config.image_max_width_or_height
+            )
+        )
         return content
 
     def _infer(self, content: list[dict], arena_world: ArenaWorld, env_id: int) -> np.ndarray:

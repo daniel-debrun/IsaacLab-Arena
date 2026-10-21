@@ -31,6 +31,7 @@ from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import (
     CAMERA_OBSERVATION_GROUP,
     VLMObservationAdapter,
 )
+from isaaclab_arena_vlm_agent.image_utils import extract_rgb_images_from_camera_observations, image_to_jpeg_data_url
 from isaaclab_arena_vlm_agent.policy.vlm_agent_policy import VLMChunkPolicy, VLMGoalPolicy, VLMPolicyCfg, VLMStepPolicy
 from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
 
@@ -38,8 +39,30 @@ from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
 class ObservationAdapter(VLMObservationAdapter):
     camera_keys = ("front_view",)
 
-    def extract_prompt_state(self, env, observation, env_id: int) -> dict:
-        return {"joint_positions": observation["position"][env_id].tolist()}
+    def __init__(self, include_joint_positions=True):
+        self.include_joint_positions = include_joint_positions
+
+    def extract_joint_positions(self, observation, env_id):
+        return observation["position"][env_id].tolist()
+
+    def build_request_content(self, env, observation, env_id, *, image_max_width_or_height):
+        content = []
+        if self.include_joint_positions:
+            content.append({
+                "type": "text",
+                "text": json.dumps(
+                    {"joint_positions": self.extract_joint_positions(observation, env_id)}, allow_nan=False
+                ),
+            })
+        images = extract_rgb_images_from_camera_observations(
+            observation[CAMERA_OBSERVATION_GROUP], self.camera_keys, env_id
+        )
+        for key, image in images.items():
+            content.extend([
+                {"type": "text", "text": f"camera={key}"},
+                {"type": "image_url", "image_url": {"url": image_to_jpeg_data_url(image, image_max_width_or_height)}},
+            ])
+        return content
 
 
 class JointTargetResponse(BaseModel):
@@ -125,7 +148,7 @@ def test_policy_uses_adapter_actions_for_each_environment(backend, action_dim):
 
     def create(**kwargs):
         calls.append(copy.deepcopy(kwargs))
-        state = json.loads(kwargs["messages"][-1]["content"][0]["text"])["state"]
+        state = json.loads(kwargs["messages"][-1]["content"][1]["text"])
         return response(json.dumps({"target": (np.asarray(state["joint_positions"]) + 0.5).tolist()}))
 
     client.chat.completions.create.side_effect = create
@@ -149,11 +172,10 @@ def test_policy_uses_adapter_actions_for_each_environment(backend, action_dim):
             assert call["messages"][0] == {"role": "system", "content": config.system_prompt}
             assert call["response_format"]["json_schema"]["schema"] == build_strict_schema(ActionAdapter.response_model)
             content = call["messages"][1]["content"]
-            state = json.loads(content[0]["text"])
-            assert state["task"] == "Move each joint"
-            assert state["state"] == {"joint_positions": observation["position"][env_id].tolist()}
-            assert content[1]["text"] == "camera=front_view"
-            image = Image.open(io.BytesIO(base64.b64decode(content[2]["image_url"]["url"].split(",", 1)[1])))
+            assert json.loads(content[0]["text"]) == {"task": "Move each joint"}
+            assert json.loads(content[1]["text"]) == {"joint_positions": observation["position"][env_id].tolist()}
+            assert content[2]["text"] == "camera=front_view"
+            image = Image.open(io.BytesIO(base64.b64decode(content[3]["image_url"]["url"].split(",", 1)[1])))
             assert image.size == (8, 4)
             assert image.getpixel((0, 0))[env_id * 2] > 240
         observation["position"].add_(1)
@@ -322,7 +344,7 @@ def test_chunks_replay_in_order_and_reset_independently(backend, action_dim):
         policy.get_action(env, observation), torch.tensor([[7.0] * action_dim, [6.0] * action_dim])
     )
     assert len(calls) == 3
-    current_state = json.loads(calls[2]["messages"][1]["content"][0]["text"])["state"]
+    current_state = json.loads(calls[2]["messages"][1]["content"][1]["text"])
     assert current_state["joint_positions"] == observation["position"][0].tolist()
     torch.testing.assert_close(
         policy.get_action(env, observation), torch.tensor([[8.0] * action_dim, [10.0] * action_dim])
@@ -360,7 +382,7 @@ def test_goals_use_measured_feedback_step_limit_and_partial_reset(backend, actio
 
     def create(**kwargs):
         calls.append(copy.deepcopy(kwargs))
-        state = json.loads(kwargs["messages"][1]["content"][0]["text"])["state"]
+        state = json.loads(kwargs["messages"][1]["content"][1]["text"])
         return response(json.dumps({"target": (np.asarray(state["joint_positions"]) + 1).tolist()}))
 
     backend.client.chat.completions.create.side_effect = create
@@ -392,7 +414,8 @@ def test_actions_use_live_world_without_joint_positions_in_prompt(backend, mode)
         policy = make_policy(backend)
     else:
         policy = make_multi_step_policy(backend, JointGoalAdapter(max_steps=5))
-    policy.observation_adapter.extract_prompt_state = Mock(return_value={})
+    policy.observation_adapter = ObservationAdapter(include_joint_positions=False)
+    policy.observation_adapter.build_request_content = Mock(wraps=policy.observation_adapter.build_request_content)
     env, observation = inputs()
     world_positions = observation["position"]
     observation["position"] = world_positions.clone()  # Keep prompt observations stale.
@@ -404,9 +427,11 @@ def test_actions_use_live_world_without_joint_positions_in_prompt(backend, mode)
     torch.testing.assert_close(policy.get_action(env, observation), expected_step * 0.1)
     expected_calls = 4 if mode == "step" else 2
     assert backend.client.chat.completions.create.call_count == expected_calls
-    assert policy.observation_adapter.extract_prompt_state.call_count == expected_calls
+    assert policy.observation_adapter.build_request_content.call_count == expected_calls
     content = backend.client.chat.completions.create.call_args.kwargs["messages"][1]["content"]
-    assert json.loads(content[0]["text"])["state"] == {}
+    assert len(content) == 3  # Task, camera label, and image; no joint positions.
+    assert content[1] == {"type": "text", "text": "camera=front_view"}
+    assert content[2]["type"] == "image_url"
     env.unwrapped.arena_world.get_joint_positions.assert_called_with("robot", ("joint_0", "joint_1"))
 
 
@@ -501,14 +526,9 @@ def test_empty_choices_retry_without_correction_message(backend):
     assert calls[0].kwargs["messages"] == calls[1].kwargs["messages"]
 
 
-def test_missing_camera_keys_fail_at_construction(backend):
-    adapter = ObservationAdapter()
-    adapter.camera_keys = ()
+def test_missing_camera_keys_fail_before_inference(backend):
+    policy = make_policy(backend)
+    policy.observation_adapter.camera_keys = ()
     with pytest.raises(AssertionError, match="camera observation key"):
-        VLMStepPolicy(
-            VLMPolicyCfg(system_prompt="Control these joints."),
-            inference_backend=backend,
-            observation_adapter=adapter,
-            action_adapter=ActionAdapter(),
-        )
+        policy.get_action(*inputs())
     backend.client.chat.completions.create.assert_not_called()
