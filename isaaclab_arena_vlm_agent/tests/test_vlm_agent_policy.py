@@ -284,7 +284,10 @@ class JointChunkAdapter(ChunkActionAdapter):
 class JointGoalAdapter(GoalActionAdapter):
     response_model = JointTargetResponse
 
-    def __init__(self, action_dim=2):
+    def __init__(self, action_dim=2, *, motion_generator=None):
+        if motion_generator is None:
+            motion_generator = JointMotionGenerator(action_dim=action_dim)
+        super().__init__(motion_generator=motion_generator)
         self.joint_names = tuple(f"joint_{i}" for i in range(action_dim))
 
     def is_robot_action_space_supported(self, env):
@@ -312,15 +315,13 @@ class JointMotionGenerator(MotionGenerator):
         return np.clip(goal - positions, -self.max_step, self.max_step)
 
 
-def make_multi_step_policy(backend, adapter, *, motion_generator=None, max_steps_per_goal=2):
+def make_multi_step_policy(backend, adapter, *, max_steps_per_goal=2):
     if isinstance(adapter, ChunkActionAdapter):
         policy_type = VLMChunkPolicy
         goal_kwargs = {}
     else:
         policy_type = VLMGoalPolicy
-        if motion_generator is None:
-            motion_generator = JointMotionGenerator(action_dim=len(adapter.joint_names))
-        goal_kwargs = {"motion_generator": motion_generator, "max_steps_per_goal": max_steps_per_goal}
+        goal_kwargs = {"max_steps_per_goal": max_steps_per_goal}
     policy = policy_type(
         VLMPolicyCfg(system_prompt="Control these joints.", max_attempts=1),
         inference_backend=backend,
@@ -452,9 +453,7 @@ def test_actions_use_live_world_without_joint_positions_in_prompt(backend, mode)
 @pytest.mark.parametrize("max_step", [0.1, 0.25])
 def test_goal_decoder_can_use_different_motion_generators(backend, max_step):
     backend.client.chat.completions.create.return_value = response('{"target": [1, 2]}')
-    policy = make_multi_step_policy(
-        backend, JointGoalAdapter(), motion_generator=JointMotionGenerator(max_step=max_step)
-    )
+    policy = make_multi_step_policy(backend, JointGoalAdapter(motion_generator=JointMotionGenerator(max_step=max_step)))
     expected = torch.tensor([[max_step, max_step], [-max_step, -max_step]])
     torch.testing.assert_close(policy.get_action(*inputs()), expected)
     assert backend.client.chat.completions.create.call_count == 2
@@ -464,7 +463,7 @@ def test_invalid_goals_are_rejected_before_motion_generation(backend):
     backend.client.chat.completions.create.return_value = response('{"target": [1]}')
     generator = JointMotionGenerator()
     generator.compute_command = Mock()
-    policy = make_multi_step_policy(backend, JointGoalAdapter(), motion_generator=generator)
+    policy = make_multi_step_policy(backend, JointGoalAdapter(motion_generator=generator))
     with pytest.raises(InvalidAgentResponseError, match="Wrong goal dimensions"):
         policy.get_action(*inputs())
     generator.compute_command.assert_not_called()
@@ -473,11 +472,11 @@ def test_invalid_goals_are_rejected_before_motion_generation(backend):
 
 def test_motion_generator_output_is_validated_before_conversion(backend):
     backend.client.chat.completions.create.return_value = response('{"target": [1, 2]}')
-    adapter = JointGoalAdapter()
     generator = JointMotionGenerator()
     generator.compute_command = Mock(return_value=np.array([np.inf, 0]))
+    adapter = JointGoalAdapter(motion_generator=generator)
     adapter.command_to_action = Mock()
-    policy = make_multi_step_policy(backend, adapter, motion_generator=generator)
+    policy = make_multi_step_policy(backend, adapter)
     with pytest.raises(ValueError, match="finite goal command"):
         policy.get_action(*inputs())
     adapter.command_to_action.assert_not_called()

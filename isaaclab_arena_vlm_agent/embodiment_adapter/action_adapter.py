@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from isaaclab_arena_vlm_agent.motion_generator import MotionGenerator
+
 if TYPE_CHECKING:
     from isaaclab_arena.environments.arena_world import ArenaWorld
 
@@ -91,3 +93,8 @@ class ChunkActionAdapter(AgentActionAdapter):
 
 class GoalActionAdapter(AgentActionAdapter):
     """Decode and validate goals for VLMGoalPolicy."""
+
+    def __init__(self, motion_generator: MotionGenerator):
+        assert isinstance(motion_generator, MotionGenerator)
+        self.motion_generator = motion_generator
+        """Generate commands for this adapter's decoded goals."""
