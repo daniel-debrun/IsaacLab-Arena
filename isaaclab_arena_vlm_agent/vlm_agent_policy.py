@@ -13,19 +13,16 @@ import numpy as np
 import torch
 from abc import abstractmethod
 from collections import deque
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
 
 from isaaclab_arena.inference.backend import InferenceBackend, InferenceRequest, build_strict_schema
 from isaaclab_arena.policy.policy_base import PolicyBase, PolicyCfg
-from isaaclab_arena_vlm_agent.embodiment_adapter.action_adapter import (
-    AgentActionAdapter,
-    ChunkActionAdapter,
-    GoalActionAdapter,
-)
-from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import VLMObservationAdapter
+from isaaclab_arena_vlm_agent.action_adapter import AgentActionAdapter, ChunkActionAdapter, GoalActionAdapter
+from isaaclab_arena_vlm_agent.image_utils import image_to_jpeg_data_url
+from isaaclab_arena_vlm_agent.observation_adapter import VLMObservationAdapter
 from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
 
 if TYPE_CHECKING:
@@ -36,7 +33,7 @@ if TYPE_CHECKING:
 class VLMPolicyCfg(PolicyCfg):
     """Configure policy prompts, image encoding, and action-validation attempts."""
 
-    system_prompt: str = ""
+    system_prompt: str
     """Required system message defining the task, units, and response contract."""
 
     image_max_width_or_height: int = 384
@@ -44,7 +41,6 @@ class VLMPolicyCfg(PolicyCfg):
 
     For 16:9 images, 384 yields the 384x216 resolution used for all three camera views
     in Astranomy (Sections 2 and 3.4): https://research.nvidia.com/labs/srl/projects/astranomy/
-    The report documents an experimental setting; it does not establish an Astra image-size limit.
     """
 
     max_attempts: int = 3
@@ -56,6 +52,20 @@ class VLMPolicyCfg(PolicyCfg):
         ), "Set policy.system_prompt in the experiment"
         assert self.image_max_width_or_height > 0
         assert isinstance(self.max_attempts, int) and self.max_attempts >= 1
+
+
+@dataclass
+class VLMGoalPolicyCfg(VLMPolicyCfg):
+    """Configure VLM goal prediction and the execution budget for each goal."""
+
+    max_steps_per_goal: int = field(kw_only=True)
+    """Maximum commands to execute before requesting a new goal."""
+
+    def __post_init__(self):
+        super().__post_init__()
+        assert (
+            type(self.max_steps_per_goal) is int and self.max_steps_per_goal > 0
+        ), "max_steps_per_goal must be a positive integer"
 
 
 class VLMPolicy(PolicyBase[VLMPolicyCfg]):
@@ -78,7 +88,7 @@ class VLMPolicy(PolicyBase[VLMPolicyCfg]):
             config: Prompt, image encoding, and action-validation settings.
             inference_backend: Caller-owned backend shared with other inference steps.
                 The caller is responsible for closing its client.
-            observation_adapter: Adapter assembling observation content for the VLM.
+            observation_adapter: Adapter selecting camera images and prompt values for the VLM.
             action_adapter: Adapter validating responses and converting commands to native actions.
         """
         super().__init__(config)
@@ -119,13 +129,19 @@ class VLMPolicy(PolicyBase[VLMPolicyCfg]):
         """Return one command using the current observation and any pending prediction."""
 
     def _request_content(self, env: gym.Env, observation: dict[str, Any], env_id: int) -> list[dict[str, Any]]:
-        """Combine the task description with adapter-built observation content."""
+        """Encode selected images and assemble the task and observation values into chat content."""
+        images, prompt_values = self.observation_adapter.extract_vlm_input_from_observation(env, observation, env_id)
         content = [{"type": "text", "text": json.dumps({"task": self.task_description})}]
-        content.extend(
-            self.observation_adapter.build_request_content(
-                env, observation, env_id, image_max_width_or_height=self.config.image_max_width_or_height
-            )
-        )
+        if prompt_values:
+            content.append({"type": "text", "text": json.dumps(prompt_values, allow_nan=False)})
+        for camera_name, image in images.items():
+            content.extend([
+                {"type": "text", "text": f"camera={camera_name}"},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": image_to_jpeg_data_url(image, self.config.image_max_width_or_height)},
+                },
+            ])
         return content
 
     def _infer(self, content: list[dict], arena_world: ArenaWorld, env_id: int) -> np.ndarray:
@@ -147,7 +163,7 @@ class VLMPolicy(PolicyBase[VLMPolicyCfg]):
             try:
                 response = self.action_adapter.response_model.model_validate(payload)
             except ValidationError as exc:
-                rejection = InvalidAgentResponseError(str(exc), code="invalid_schema")
+                rejection = InvalidAgentResponseError(str(exc))
             else:
                 try:
                     command = np.asarray(
@@ -163,7 +179,7 @@ class VLMPolicy(PolicyBase[VLMPolicyCfg]):
             messages.append({"role": "assistant", "content": json.dumps(payload)})
             messages.append({
                 "role": "user",
-                "content": f"Invalid actions: {json.dumps(asdict(rejection.details))}. Return a corrected prediction.",
+                "content": f"Invalid actions: {rejection}. Return a corrected prediction.",
             })
         assert rejection is not None, "Expected a rejection after exhausting response-validation attempts"
         raise rejection
@@ -227,36 +243,31 @@ class VLMChunkPolicy(VLMPolicy):
                 self._chunks.pop(env_id, None)
 
 
-class VLMGoalPolicy(VLMPolicy):
+class VLMGoalPolicy(VLMPolicy, PolicyBase[VLMGoalPolicyCfg]):
     """Use a motion generator to execute decoded goals until completion or a step limit."""
 
     def __init__(
         self,
-        config: VLMPolicyCfg,
+        config: VLMGoalPolicyCfg,
         *,
         inference_backend: InferenceBackend,
         observation_adapter: VLMObservationAdapter,
         action_adapter: GoalActionAdapter,
-        max_steps_per_goal: int,
     ):
         assert isinstance(action_adapter, GoalActionAdapter)
-        assert (
-            type(max_steps_per_goal) is int and max_steps_per_goal > 0
-        ), "max_steps_per_goal must be a positive integer"
         super().__init__(
             config,
             inference_backend=inference_backend,
             observation_adapter=observation_adapter,
             action_adapter=action_adapter,
         )
-        self.max_steps_per_goal = max_steps_per_goal
         self._goals: dict[int, tuple[np.ndarray, int]] = {}
 
     def _get_command(self, env: gym.Env, observation: dict[str, Any], env_id: int) -> np.ndarray:
         pending = self._goals.get(env_id)
         if (
             pending is None
-            or pending[1] >= self.max_steps_per_goal
+            or pending[1] >= self.config.max_steps_per_goal
             or self.action_adapter.motion_generator.goal_reached(pending[0], env.unwrapped.arena_world, env_id)
         ):
             goal = self._infer(self._request_content(env, observation, env_id), env.unwrapped.arena_world, env_id)
@@ -267,8 +278,10 @@ class VLMGoalPolicy(VLMPolicy):
             self.action_adapter.motion_generator.compute_command(goal, env.unwrapped.arena_world, env_id),
             dtype=np.float32,
         )
-        if command.ndim != 1 or command.size == 0 or not np.isfinite(command).all():
-            raise ValueError("Expected a finite goal command")
+        expected_dim = env.unwrapped.action_dim
+        assert (
+            command.shape == (expected_dim,) and np.isfinite(command).all()
+        ), f"Expected a finite goal command with dimension {expected_dim}, got shape {command.shape}"
         self._goals[env_id] = (goal, executed + 1)
         return command
 

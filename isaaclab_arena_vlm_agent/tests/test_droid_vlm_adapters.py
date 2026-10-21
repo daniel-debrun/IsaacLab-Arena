@@ -20,15 +20,15 @@ from PIL import Image
 from pydantic import ValidationError
 
 from isaaclab_arena.inference.backend import build_strict_schema
-from isaaclab_arena_vlm_agent.embodiment_adapter.droid_action_adapter import (
+from isaaclab_arena_vlm_agent.droid_action_adapter import (
     DroidChunkActionAdapter,
     DroidGoalActionAdapter,
     DroidPoseActionAdapter,
 )
-from isaaclab_arena_vlm_agent.embodiment_adapter.droid_motion_generator import DroidPoseMotionGenerator
-from isaaclab_arena_vlm_agent.embodiment_adapter.droid_observation_adapter import DroidObservationAdapter
-from isaaclab_arena_vlm_agent.embodiment_adapter.droid_pose import DroidPoseChunk, DroidPoseCommand
-from isaaclab_arena_vlm_agent.policy.vlm_agent_policy import VLMChunkPolicy, VLMGoalPolicy, VLMPolicyCfg, VLMStepPolicy
+from isaaclab_arena_vlm_agent.droid_motion_generator import DroidPoseMotionGenerator
+from isaaclab_arena_vlm_agent.droid_observation_adapter import DroidObservationAdapter
+from isaaclab_arena_vlm_agent.droid_pose import DroidPoseChunk, DroidPoseCommand
+from isaaclab_arena_vlm_agent.vlm_agent_policy import VLMChunkPolicy, VLMGoalPolicy, VLMPolicyCfg, VLMStepPolicy
 
 
 def _target(x=0.4, closed=False):

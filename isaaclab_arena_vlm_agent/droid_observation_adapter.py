@@ -7,11 +7,8 @@
 
 import json
 
-from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import (
-    CAMERA_OBSERVATION_GROUP,
-    VLMObservationAdapter,
-)
 from isaaclab_arena_vlm_agent.image_utils import extract_rgb_images_from_camera_observations, image_to_jpeg_data_url
+from isaaclab_arena_vlm_agent.observation_adapter import CAMERA_OBSERVATION_GROUP, VLMObservationAdapter
 
 POLICY_OBSERVATION_GROUP = "policy"
 """Observation group containing measured DROID robot state."""

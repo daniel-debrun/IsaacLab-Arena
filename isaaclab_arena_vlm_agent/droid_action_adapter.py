@@ -10,12 +10,8 @@ from __future__ import annotations
 import numpy as np
 from typing import TYPE_CHECKING
 
-from isaaclab_arena_vlm_agent.embodiment_adapter.action_adapter import (
-    AgentActionAdapter,
-    ChunkActionAdapter,
-    GoalActionAdapter,
-)
-from isaaclab_arena_vlm_agent.embodiment_adapter.droid_pose import DroidPoseChunk, DroidPoseCommand
+from isaaclab_arena_vlm_agent.action_adapter import AgentActionAdapter, ChunkActionAdapter, GoalActionAdapter
+from isaaclab_arena_vlm_agent.droid_pose import DroidPoseChunk, DroidPoseCommand
 
 if TYPE_CHECKING:
     from isaaclab_arena.environments.arena_world import ArenaWorld

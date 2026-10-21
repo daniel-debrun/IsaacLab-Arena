@@ -5,7 +5,7 @@
 
 """Smoke tests with a live GR00T remote closed-loop server.
 
-This test intentionally checks runner plumbing, not task success. CI starts a
+These tests check runner integration with the remote policy server. CI starts a
 GR00T sidecar service, waits until it answers ping, then runs these tests
 against that service. Any runner, env, camera, RPC, observation conversion, or
 action conversion exception should surface as a nonzero subprocess exit.

@@ -5,25 +5,29 @@
 
 """Observation contracts for VLM policies."""
 
+import numpy as np
 from abc import ABC, abstractmethod
+from typing import Any
 
 CAMERA_OBSERVATION_GROUP = "camera_obs"
 """Observation group containing camera images indexed by camera key."""
 
 
 class VLMObservationAdapter(ABC):
-    """Assemble selected observation modalities into VLM request content."""
+    """Select observation modalities for VLM input independently of the chat format."""
 
     @abstractmethod
-    def build_request_content(self, env, observation, env_id: int, *, image_max_width_or_height: int) -> list[dict]:
-        """Build image and text content for one environment using modality-specific helpers.
+    def extract_vlm_input_from_observation(
+        self, env, observation, env_id: int
+    ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+        """Extract camera images and prompt values for one environment using modality-specific helpers.
 
         Args:
             env: Arena environment, optionally gym-wrapped.
             observation: Current batched environment observations.
             env_id: Environment index to prepare the request for.
-            image_max_width_or_height: Maximum encoded image width or height, in pixels.
 
         Returns:
-            Image and text inputs for the selected observations.
+            HWC uint8 RGB or RGBA images indexed by camera name in request order, and
+            JSON-serializable prompt values. The policy handles image encoding and message assembly.
         """

@@ -39,6 +39,8 @@ class AgentActionAdapter(ABC):
         """Decode a validated response into commands with adapter-defined dimensions and units.
 
         Use InvalidAgentResponseError to request a correction for robot-specific constraints.
+        Live state supports conversions such as absolute joint targets to joint deltas;
+        goal tracking and motion generation belong to MotionGenerator.
 
         Args:
             response: Model output validated against response_model.
