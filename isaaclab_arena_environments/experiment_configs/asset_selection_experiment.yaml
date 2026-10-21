@@ -1,0 +1,29 @@
+# Copyright (c) 2026, The Isaac Lab Arena Project Developers (https://github.com/isaac-sim/IsaacLab-Arena/blob/main/CONTRIBUTORS.md).
+# All rights reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# An Arena Experiment whose Run spawns another pick-up object in each rebuild of the environment.
+runs:
+  one_object_per_build:
+    environment:
+      type: pick_and_place_maple_table
+      # The default asset of the object "pick_up_object". It is spawned while the asset selection is off.
+      pick_up_object: rubiks_cube_hot3d_robolab
+      # Short demo timeout in simulated time, not wall-clock time.
+      episode_length_s: 1.5
+    policy:
+      type: zero_action
+    rollout_limit:
+      # Split across the rebuilds, so each rebuild runs one episode.
+      num_episodes: 3
+    # Each rebuild spawns the next name of asset_names in every environment.
+    # Set num_rebuilds to the number of names to spawn each name once.
+    num_rebuilds: 3
+    variations:
+      pick_up_object.asset_selection.enabled: true
+      # Registered rigid objects to spawn, in this order. Each episode row records the chosen name.
+      pick_up_object.asset_selection.asset_names:
+        - rubiks_cube_hot3d_robolab
+        - mustard_bottle_hot3d_robolab
+        - orange_01_fruits_veggies_robolab

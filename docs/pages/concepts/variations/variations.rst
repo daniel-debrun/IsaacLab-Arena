@@ -216,32 +216,38 @@ environment of that build spawns that object. While the selection is off, the ob
 the environment declares. For different objects in the environments of one build, use a
 :doc:`RigidObjectSet <../scene/concept_rigid_object_set>`, which has no ``asset_selection``.
 
-For example, these entries let the object ``pickup`` spawn another registered object in each of three
-rebuilds:
+The example config ``isaaclab_arena_environments/experiment_configs/asset_selection_experiment.yaml``
+spawns three pick-up objects in ``pick_and_place_maple_table``, one per rebuild:
 
-.. code-block:: yaml
+.. literalinclude:: ../../../../isaaclab_arena_environments/experiment_configs/asset_selection_experiment.yaml
+   :language: yaml
 
-   runs:
-     one_object_per_build:
-       num_rebuilds: 3
-       variations:
-         pickup.asset_selection.enabled: true
-         pickup.asset_selection.asset_names: [cracker_box, sugar_box, mustard_bottle]
+Run it with:
+
+.. code-block:: bash
+
+   python isaaclab_arena/evaluation/experiment_runner.py \
+     --viz kit \
+     --experiment_config isaaclab_arena_environments/experiment_configs/asset_selection_experiment.yaml
 
 By default, a build takes the name at zero-based index ``seed mod n`` of the ``n`` names, where
 ``seed`` is ``--seed``. The Experiment Runner adds the rebuild index to the seed, so ``n`` rebuilds
-take each name once. In-order selections on two objects with the same number of names therefore
+take each name once. With the default seed 42, the example's three rebuilds take the names in the
+listed order. In-order selections on two objects with the same number of names therefore
 change together. With ``random_choice: true``, each build draws a name at random, and a name can
 repeat across rebuilds.
 
-Every episode row records the chosen name, for example ``"pickup.asset_selection": "sugar_box"``, and
+Every episode row records the chosen name, for example
+``"pick_up_object.asset_selection": "mustard_bottle_hot3d_robolab"``, and
 :doc:`recorded variation replay <../experiment_record_replay>` spawns the recorded asset.
 
 Limitations:
 
 * A hand-written ``language_instruction`` applies to every rebuild. ``PickAndPlaceTask`` and
-  ``AssemblyTask`` build their default description from the selected asset, so for a
-  language-conditioned policy, leave ``language_instruction`` unset or use one Run per object.
+  ``AssemblyTask`` build their default description from the selected asset, for example
+  ``Pick up the mustard_bottle_hot3d_robolab, and place it into the bowl_ycb_robolab``. For a
+  language-conditioned policy, leave ``language_instruction`` unset to use that description, or use
+  one Run per object.
 * Only the spawn configuration changes. A library object such as ``Mug`` keeps the behavior written
   for its own asset.
 * An Object with a ``bounding_box`` override cannot use the selection, because placement would use
