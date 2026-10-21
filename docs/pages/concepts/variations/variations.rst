@@ -75,7 +75,7 @@ defaults:
        Fields:
          light.hdr_image.hdr_names = []
 
-   Asset: bowl_ycb_robolab
+   Asset: maple_table_robolab
      (no variations)
 
    ...
@@ -124,7 +124,7 @@ see :ref:`discovering-available-variations`.
 
 With Isaac Lab's ``record_demos.py`` and Arena's ``environment_registration_callback``,
 append the same variation overrides to the recording command, for example
-``rubiks_cube_hot3d_robolab.mass.enabled=true`` for ``pick_and_place_maple_table``.
+``pick_up_object.mass.enabled=true`` for ``pick_and_place_maple_table``.
 Arena consumes its variation overrides and returns the remaining arguments to the Isaac Lab script.
 See :doc:`Teleoperation Data Collection <../../example_workflows/static_manipulation/step_2_teleoperation>`
 for recording setup and the full command using the callback.
