@@ -20,14 +20,10 @@ from PIL import Image
 from pydantic import ValidationError
 
 from isaaclab_arena.inference.backend import build_strict_schema
+from isaaclab_arena_vlm_agent.action_adapter import AgentActionAdapter, ChunkActionAdapter, GoalActionAdapter
 from isaaclab_arena_vlm_agent.droid_motion_generator import DroidPoseMotionGenerator
 from isaaclab_arena_vlm_agent.droid_observation_adapter import DroidObservationAdapter
 from isaaclab_arena_vlm_agent.pose import PoseChunk, PoseCommand
-from isaaclab_arena_vlm_agent.pose_action_adapter import (
-    PoseActionAdapter,
-    PoseChunkActionAdapter,
-    PoseGoalActionAdapter,
-)
 from isaaclab_arena_vlm_agent.vlm_agent_policy import VLMChunkPolicy, VLMGoalPolicy, VLMPolicyCfg, VLMStepPolicy
 
 
@@ -118,7 +114,7 @@ def test_observation_returns_only_root_pose_and_measured_gripper():
 
 @pytest.mark.parametrize("closed", [False, True])
 def test_absolute_action_preserves_xyzw_and_binary_gripper(closed):
-    adapter = PoseActionAdapter(_embodiment())
+    adapter = AgentActionAdapter(_embodiment())
     response = PoseCommand.model_validate(_target(closed=closed))
     # A different current pose must not be added to an absolute command.
     command = adapter.decode_command(response, _world(_state(position_root_m=[9.0, 8.0, 7.0])), 0)
@@ -138,7 +134,7 @@ def test_absolute_action_preserves_xyzw_and_binary_gripper(closed):
 )
 def test_goal_completion_requires_measured_pose_and_gripper(field, value):
     generator = DroidPoseMotionGenerator()
-    adapter = PoseGoalActionAdapter(_embodiment(), generator)
+    adapter = GoalActionAdapter(_embodiment(), generator)
     world = _world(_state(), _state(**{field: value}), _state(quaternion_root_xyzw=[0.0, 0.0, 0.0, -1.0]))
     goal = adapter.decode_command(PoseCommand.model_validate(_target()), world, 0)
     assert generator.goal_reached(goal, world, 0)
@@ -153,7 +149,7 @@ def test_goal_completion_requires_measured_pose_and_gripper(field, value):
 
 @pytest.mark.parametrize("length", [1, 3])
 def test_chunk_length_is_checked_before_execution(length):
-    adapter = PoseChunkActionAdapter(_embodiment(), chunk_size=2)
+    adapter = ChunkActionAdapter(_embodiment(), chunk_size=2)
     command = adapter.decode_command(PoseChunk.model_validate({"commands": [_target()] * length}), _world(_state()), 0)
     assert not adapter.is_command_valid(command)
 
@@ -161,11 +157,11 @@ def test_chunk_length_is_checked_before_execution(length):
 @pytest.mark.parametrize("mode", ["single", "chunk", "goal"])
 def test_droid_adapters_integrate_with_policy_and_partial_resets(mode):
     if mode == "single":
-        policy_type, adapter = VLMStepPolicy, PoseActionAdapter(_embodiment())
+        policy_type, adapter = VLMStepPolicy, AgentActionAdapter(_embodiment())
     elif mode == "chunk":
-        policy_type, adapter = VLMChunkPolicy, PoseChunkActionAdapter(_embodiment(), chunk_size=2)
+        policy_type, adapter = VLMChunkPolicy, ChunkActionAdapter(_embodiment(), chunk_size=2)
     else:
-        policy_type, adapter = VLMGoalPolicy, PoseGoalActionAdapter(_embodiment(), DroidPoseMotionGenerator())
+        policy_type, adapter = VLMGoalPolicy, GoalActionAdapter(_embodiment(), DroidPoseMotionGenerator())
     # Real action-manager compatibility is covered by the simulation test.
     adapter.is_robot_action_space_supported = Mock(return_value=True)
     requests = []
@@ -204,7 +200,7 @@ def test_droid_adapters_integrate_with_policy_and_partial_resets(mode):
 
 
 def test_invalid_droid_chunk_is_corrected_before_any_action():
-    adapter = PoseChunkActionAdapter(_embodiment(), chunk_size=2)
+    adapter = ChunkActionAdapter(_embodiment(), chunk_size=2)
     adapter.is_robot_action_space_supported = Mock(return_value=True)
     backend = SimpleNamespace(
         infer=Mock(
@@ -239,11 +235,11 @@ def test_invalid_droid_chunk_is_corrected_before_any_action():
 )
 def test_invalid_droid_pose_is_corrected_before_any_action(mode, field, value):
     if mode == "single":
-        policy_type, adapter = VLMStepPolicy, PoseActionAdapter(_embodiment())
+        policy_type, adapter = VLMStepPolicy, AgentActionAdapter(_embodiment())
     elif mode == "chunk":
-        policy_type, adapter = VLMChunkPolicy, PoseChunkActionAdapter(_embodiment(), chunk_size=2)
+        policy_type, adapter = VLMChunkPolicy, ChunkActionAdapter(_embodiment(), chunk_size=2)
     else:
-        policy_type, adapter = VLMGoalPolicy, PoseGoalActionAdapter(_embodiment(), DroidPoseMotionGenerator())
+        policy_type, adapter = VLMGoalPolicy, GoalActionAdapter(_embodiment(), DroidPoseMotionGenerator())
     adapter.is_robot_action_space_supported = Mock(return_value=True)
     responses = [_target() | {field: value}, _target(0.6), _target(0.8)]
     if mode == "chunk":
@@ -287,7 +283,7 @@ def test_droid_motion_generator_uses_configured_gripper_close_position(close_pos
     world = _world(
         _state(gripper_closed_fraction=1.03), _state(gripper_closed_fraction=0.5), close_position=close_position
     )
-    goal = PoseActionAdapter(_embodiment()).decode_command(PoseCommand.model_validate(_target(closed=True)), world, 0)
+    goal = AgentActionAdapter(_embodiment()).decode_command(PoseCommand.model_validate(_target(closed=True)), world, 0)
     assert generator.goal_reached(goal, world, 0)
     assert not generator.goal_reached(goal, world, 1)
 
@@ -295,7 +291,7 @@ def test_droid_motion_generator_uses_configured_gripper_close_position(close_pos
 def test_droid_goal_completion_reads_live_world_without_prompt_state():
     env, _ = _inputs()
     world = env.unwrapped.arena_world
-    adapter = PoseGoalActionAdapter(_embodiment(), DroidPoseMotionGenerator())
+    adapter = GoalActionAdapter(_embodiment(), DroidPoseMotionGenerator())
     adapter.is_robot_action_space_supported = Mock(return_value=True)
     observation_adapter = DroidObservationAdapter()
     observation_adapter.build_request_content = Mock(return_value=[])
@@ -316,3 +312,22 @@ def test_droid_goal_completion_reads_live_world_without_prompt_state():
     policy.get_action(env, {})
     assert backend.infer.call_count == 3  # Only environment 0 reached its goal.
     assert observation_adapter.build_request_content.call_count == 3
+
+
+def test_chunk_adapter_accepts_an_embodiment_with_default_chunk_size():
+    embodiment = _embodiment()
+    adapter = ChunkActionAdapter(embodiment)
+    adapter.is_robot_action_space_supported = Mock(return_value=True)
+    backend = SimpleNamespace(infer=Mock(return_value={"commands": [_target(0.6)]}))
+    policy = VLMChunkPolicy(
+        VLMPolicyCfg(system_prompt="Return absolute pose commands."),
+        inference_backend=backend,
+        observation_adapter=DroidObservationAdapter(),
+        action_adapter=adapter,
+    )
+    policy.set_task_description("Move")
+    env, observation = _inputs()
+    for _ in range(2):
+        actions = policy.get_action(env, observation)
+        torch.testing.assert_close(actions[:, 0], torch.tensor([0.6, 0.6]))
+    assert backend.infer.call_count == 4

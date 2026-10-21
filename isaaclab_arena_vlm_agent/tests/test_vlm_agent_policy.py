@@ -64,6 +64,7 @@ class ActionAdapter(AgentActionAdapter):
     response_model = JointTargetResponse
 
     def __init__(self, scale=1.0, action_dim=2):
+        super().__init__(SimpleNamespace())
         self.scale = scale
         self.joint_names = tuple(f"joint_{i}" for i in range(action_dim))
 
@@ -76,6 +77,9 @@ class ActionAdapter(AgentActionAdapter):
         if target.shape != (len(positions),):
             raise InvalidAgentResponseError("Wrong command dimensions")
         return target - positions
+
+    def is_command_valid(self, command):
+        return bool(command.ndim == 1 and command.size > 0 and np.isfinite(command).all())
 
     def command_to_action(self, env, command):
         return super().command_to_action(env, command * self.scale)
@@ -268,7 +272,7 @@ class JointChunkAdapter(ChunkActionAdapter):
         return env.unwrapped.action_dim > 0
 
     def __init__(self, chunk_size: int, action_dim=2):
-        super().__init__(chunk_size)
+        super().__init__(SimpleNamespace(), chunk_size=chunk_size)
         self.joint_names = tuple(f"joint_{i}" for i in range(action_dim))
         self.response_model = create_model(
             "JointChunkResponse",
@@ -282,14 +286,25 @@ class JointChunkAdapter(ChunkActionAdapter):
             raise InvalidAgentResponseError("Wrong command dimensions")
         return np.asarray(response.actions, dtype=np.float32)
 
+    def is_command_valid(self, command):
+        return bool(
+            command.ndim == 2
+            and command.shape[0] == self.chunk_size
+            and command.shape[1] > 0
+            and np.isfinite(command).all()
+        )
+
 
 class JointGoalAdapter(GoalActionAdapter):
     response_model = JointTargetResponse
 
+    def is_command_valid(self, command):
+        return ActionAdapter.is_command_valid(self, command)
+
     def __init__(self, action_dim=2, *, motion_generator=None):
         if motion_generator is None:
             motion_generator = JointMotionGenerator(action_dim=action_dim)
-        super().__init__(motion_generator=motion_generator)
+        super().__init__(SimpleNamespace(), motion_generator=motion_generator)
         self.joint_names = tuple(f"joint_{i}" for i in range(action_dim))
 
     def is_robot_action_space_supported(self, env):

@@ -21,10 +21,10 @@ def _test_droid_absolute_pose_adapters(simulation_app):
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
     from isaaclab_arena.scene.scene import Scene
     from isaaclab_arena.utils.pose import Pose
+    from isaaclab_arena_vlm_agent.action_adapter import AgentActionAdapter
     from isaaclab_arena_vlm_agent.droid_motion_generator import DroidPoseMotionGenerator
     from isaaclab_arena_vlm_agent.droid_observation_adapter import DroidObservationAdapter
     from isaaclab_arena_vlm_agent.pose import PoseCommand
-    from isaaclab_arena_vlm_agent.pose_action_adapter import PoseActionAdapter
 
     # Use a translated, rotated root and separate environment origins to expose world/root confusion.
     embodiment = DroidDifferentialIKEmbodiment(
@@ -50,7 +50,7 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         obs, _ = env.reset()
         base = env.unwrapped
         observation_adapter = DroidObservationAdapter()
-        action_adapter = PoseActionAdapter(embodiment)
+        action_adapter = AgentActionAdapter(embodiment)
         assert action_adapter.embodiment is embodiment
         assert action_adapter.is_robot_action_space_supported(env)
         for scene_key, body_name in (("other_robot", "base_link"), ("robot", "panda_link7")):
@@ -58,7 +58,7 @@ def _test_droid_absolute_pose_adapters(simulation_app):
                 get_scene_key=lambda: scene_key,
                 get_command_body_name=lambda: body_name,
             )
-            assert not PoseActionAdapter(other_embodiment).is_robot_action_space_supported(env)
+            assert not AgentActionAdapter(other_embodiment).is_robot_action_space_supported(env)
         states = [observation_adapter.extract_robot_state(env, obs, env_id) for env_id in range(base.num_envs)]
         actions = []
         for env_id, state in enumerate(states):
