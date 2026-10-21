@@ -32,9 +32,6 @@ PACKAGE_ROOTS = (
 DISCOVERABLE_MODULES = (
     "isaaclab_arena.evaluation.policy_runner",
     "isaaclab_arena.tasks.sequential_composite_tasks.franka_put_and_close_door_task",
-    "isaaclab_arena_vlm_agent.embodiment_adapter.droid_action_adapter",
-    "isaaclab_arena_vlm_agent.embodiment_adapter.droid_observation_adapter",
-    "isaaclab_arena_vlm_agent.embodiment_adapter.droid_pose",
 )
 
 REPOSITORY_ROOT = Path(__file__).parents[2]
