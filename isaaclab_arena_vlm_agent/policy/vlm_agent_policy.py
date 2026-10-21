@@ -13,6 +13,7 @@ import torch
 from abc import abstractmethod
 from collections import deque
 from dataclasses import asdict, dataclass
+from typing import TYPE_CHECKING
 
 from pydantic import ValidationError
 
@@ -29,6 +30,9 @@ from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import (
 )
 from isaaclab_arena_vlm_agent.image_utils import image_to_jpeg_data_url
 from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
+
+if TYPE_CHECKING:
+    from isaaclab_arena.environments.arena_world import ArenaWorld
 
 
 @dataclass
@@ -60,7 +64,7 @@ class VLMPolicyCfg(PolicyCfg):
 class VLMPolicy(PolicyBase[VLMPolicyCfg]):
     """Share VLM request preparation and response validation across execution strategies.
 
-    Each request contains only the current images, robot state, and task description.
+    Each request contains only the current images, selected prompt state, and task description.
     """
 
     def __init__(
@@ -77,7 +81,7 @@ class VLMPolicy(PolicyBase[VLMPolicyCfg]):
             config: Prompt, image encoding, and action-validation settings.
             inference_backend: Caller-owned backend shared with other inference steps.
                 The caller is responsible for closing its client.
-            observation_adapter: Adapter selecting camera images and preparing robot state.
+            observation_adapter: Adapter selecting camera images and preparing prompt state.
             action_adapter: Adapter validating responses and converting commands to native actions.
         """
         super().__init__(config)
@@ -104,11 +108,9 @@ class VLMPolicy(PolicyBase[VLMPolicyCfg]):
         assert self.action_adapter.is_robot_action_space_supported(
             env
         ), "Robot action space is unsupported by this adapter"
-        states = self.observation_adapter.extract_policy_state(env, observation)
-        assert len(states) == env.unwrapped.num_envs, "Expected one state per environment"
         actions = []
-        for env_id, state in enumerate(states):
-            command = self._get_command(env, observation, env_id, state)
+        for env_id in range(env.unwrapped.num_envs):
+            command = self._get_command(env, observation, env_id)
             action = self.action_adapter.command_to_action(env, command)
             assert (
                 action.ndim == 1 and action.numel() > 0 and torch.isfinite(action).all()
@@ -117,14 +119,15 @@ class VLMPolicy(PolicyBase[VLMPolicyCfg]):
         return torch.stack(actions)
 
     @abstractmethod
-    def _get_command(self, env, observation, env_id: int, state: dict) -> np.ndarray:
+    def _get_command(self, env, observation, env_id: int) -> np.ndarray:
         """Return one command using the current observation and any pending prediction."""
 
-    def _request_content(self, env, observation, env_id: int, state: dict) -> list[dict]:
+    def _request_content(self, env, observation, env_id: int) -> list[dict]:
         """Prepare current state and images for a new inference request."""
+        prompt_state = self.observation_adapter.extract_prompt_state(env, observation, env_id)
         content = [{
             "type": "text",
-            "text": json.dumps({"task": self.task_description, "policy_state": state}, allow_nan=False),
+            "text": json.dumps({"task": self.task_description, "state": prompt_state}, allow_nan=False),
         }]
         for key in self.observation_adapter.camera_keys:
             images = observation[CAMERA_OBSERVATION_GROUP][key]
@@ -139,7 +142,7 @@ class VLMPolicy(PolicyBase[VLMPolicyCfg]):
             ])
         return content
 
-    def _infer(self, content: list[dict], state: dict) -> np.ndarray:
+    def _infer(self, content: list[dict], arena_world: ArenaWorld, env_id: int) -> np.ndarray:
         """Request a command, allowing the model to correct locally rejected responses."""
         messages = [
             {"role": "system", "content": self.config.system_prompt},
@@ -161,7 +164,9 @@ class VLMPolicy(PolicyBase[VLMPolicyCfg]):
                 rejection = InvalidAgentResponseError(str(exc), code="invalid_schema")
             else:
                 try:
-                    command = np.asarray(self.action_adapter.decode_command(response, state), dtype=np.float32)
+                    command = np.asarray(
+                        self.action_adapter.decode_command(response, arena_world, env_id), dtype=np.float32
+                    )
                 except InvalidAgentResponseError as exc:
                     rejection = exc
                 else:
@@ -197,8 +202,8 @@ class VLMStepPolicy(VLMPolicy):
             action_adapter=action_adapter,
         )
 
-    def _get_command(self, env, observation, env_id: int, state: dict) -> np.ndarray:
-        return self._infer(self._request_content(env, observation, env_id, state), state)
+    def _get_command(self, env, observation, env_id: int) -> np.ndarray:
+        return self._infer(self._request_content(env, observation, env_id), env.unwrapped.arena_world, env_id)
 
 
 class VLMChunkPolicy(VLMPolicy):
@@ -221,9 +226,9 @@ class VLMChunkPolicy(VLMPolicy):
         )
         self._chunks: dict[int, deque] = {}
 
-    def _get_command(self, env, observation, env_id: int, state: dict) -> np.ndarray:
+    def _get_command(self, env, observation, env_id: int) -> np.ndarray:
         if not self._chunks.get(env_id):
-            chunk = self._infer(self._request_content(env, observation, env_id, state), state)
+            chunk = self._infer(self._request_content(env, observation, env_id), env.unwrapped.arena_world, env_id)
             self._chunks[env_id] = deque(chunk)
         return self._chunks[env_id].popleft()
 
@@ -256,18 +261,20 @@ class VLMGoalPolicy(VLMPolicy):
         )
         self._goals: dict[int, tuple[np.ndarray, int]] = {}
 
-    def _get_command(self, env, observation, env_id: int, state: dict) -> np.ndarray:
+    def _get_command(self, env, observation, env_id: int) -> np.ndarray:
         pending = self._goals.get(env_id)
         if (
             pending is None
             or pending[1] >= self.action_adapter.max_steps
-            or self.action_adapter.goal_reached(pending[0], state)
+            or self.action_adapter.goal_reached(pending[0], env.unwrapped.arena_world, env_id)
         ):
-            goal = self._infer(self._request_content(env, observation, env_id, state), state)
+            goal = self._infer(self._request_content(env, observation, env_id), env.unwrapped.arena_world, env_id)
             executed = 0
         else:
             goal, executed = pending
-        command = np.asarray(self.action_adapter.compute_command(goal, state), dtype=np.float32)
+        command = np.asarray(
+            self.action_adapter.compute_command(goal, env.unwrapped.arena_world, env_id), dtype=np.float32
+        )
         if command.ndim != 1 or command.size == 0 or not np.isfinite(command).all():
             raise ValueError("Expected a finite goal command")
         self._goals[env_id] = (goal, executed + 1)

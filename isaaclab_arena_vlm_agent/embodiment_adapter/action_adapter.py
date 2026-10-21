@@ -5,11 +5,17 @@
 
 """Action contracts for VLM policies."""
 
+from __future__ import annotations
+
 import numpy as np
 import torch
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from isaaclab_arena.environments.arena_world import ArenaWorld
 
 
 class AgentActionAdapter(ABC):
@@ -27,14 +33,15 @@ class AgentActionAdapter(ABC):
         """
 
     @abstractmethod
-    def decode_command(self, response: BaseModel, policy_state: dict) -> np.ndarray:
+    def decode_command(self, response: BaseModel, arena_world: ArenaWorld, env_id: int) -> np.ndarray:
         """Decode a validated response into commands with adapter-defined dimensions and units.
 
         Use InvalidAgentResponseError to request a correction for robot-specific constraints.
 
         Args:
             response: Model output validated against response_model.
-            policy_state: Measured state sent with this inference request.
+            arena_world: Live Arena scene queries for decoding the response.
+            env_id: Environment index within the batched world state.
 
         Returns:
             A nonempty, finite command vector, or a chunk as defined by the adapter.
@@ -90,24 +97,26 @@ class GoalActionAdapter(AgentActionAdapter):
         self.max_steps = max_steps
 
     @abstractmethod
-    def goal_reached(self, goal: np.ndarray, policy_state: dict) -> bool:
+    def goal_reached(self, goal: np.ndarray, arena_world: ArenaWorld, env_id: int) -> bool:
         """Check goal completion against the current measured state.
 
         Args:
             goal: Validated goal for one environment.
-            policy_state: Current state from the observation adapter.
+            arena_world: Live Arena scene queries for feedback control.
+            env_id: Environment index within the batched world state.
 
         Returns:
             Whether to request a new goal before the next action.
         """
 
     @abstractmethod
-    def compute_command(self, goal: np.ndarray, policy_state: dict) -> np.ndarray:
+    def compute_command(self, goal: np.ndarray, arena_world: ArenaWorld, env_id: int) -> np.ndarray:
         """Compute one command toward the goal using current measured state.
 
         Args:
             goal: Validated goal for one environment.
-            policy_state: Current state from the observation adapter.
+            arena_world: Live Arena scene queries for feedback control.
+            env_id: Environment index within the batched world state.
 
         Returns:
             A finite command vector for command_to_action.
