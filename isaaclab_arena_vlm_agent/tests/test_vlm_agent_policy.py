@@ -19,7 +19,7 @@ from unittest.mock import Mock
 
 import pytest
 from PIL import Image
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
+from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from isaaclab_arena.inference.backend import InferenceBackend, build_strict_schema
 from isaaclab_arena_vlm_agent.embodiment_adapter.action_adapter import (
@@ -31,35 +31,15 @@ from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import (
     CAMERA_OBSERVATION_GROUP,
     VLMObservationAdapter,
 )
-from isaaclab_arena_vlm_agent.embodiment_adapter.policy_state import PolicyState
 from isaaclab_arena_vlm_agent.policy.vlm_agent_policy import VLMChunkPolicy, VLMGoalPolicy, VLMPolicyCfg, VLMStepPolicy
 from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
 
 
-class JointPositionState(PolicyState):
-    joint_positions: list[float]
-    """Measured joint positions in the same joint order and units as the target response."""
-
-
-class ObservationAdapter(VLMObservationAdapter[JointPositionState]):
-    state_model = JointPositionState
+class ObservationAdapter(VLMObservationAdapter):
     camera_keys = ("front_view",)
 
-    def extract_policy_state(self, env, observation) -> list[JointPositionState]:
-        return [JointPositionState(joint_positions=row.tolist()) for row in observation["position"]]
-
-
-@pytest.mark.parametrize(
-    "fields",
-    [
-        {},
-        {"joint_positions": [1.0], "unused_velocity": [0.0]},
-        {"joint_positions": [float("nan")]},
-    ],
-)
-def test_policy_state_rejects_missing_extra_and_nonfinite_fields(fields):
-    with pytest.raises(ValidationError):
-        JointPositionState.model_validate(fields)
+    def extract_policy_state(self, env, observation) -> list[dict]:
+        return [{"joint_positions": row.tolist()} for row in observation["position"]]
 
 
 class JointTargetResponse(BaseModel):
@@ -67,8 +47,7 @@ class JointTargetResponse(BaseModel):
     target: list[float]
 
 
-class ActionAdapter(AgentActionAdapter[JointPositionState]):
-    state_model = JointPositionState
+class ActionAdapter(AgentActionAdapter):
     response_model = JointTargetResponse
 
     def __init__(self, scale=1.0):
@@ -77,11 +56,11 @@ class ActionAdapter(AgentActionAdapter[JointPositionState]):
     def is_robot_action_space_supported(self, env):
         return env.unwrapped.action_dim > 0
 
-    def decode_command(self, response, policy_state: JointPositionState):
+    def decode_command(self, response, policy_state: dict):
         target = np.asarray(response.target, dtype=np.float32)
-        if target.shape != (len(policy_state.joint_positions),):
+        if target.shape != (len(policy_state["joint_positions"]),):
             raise InvalidAgentResponseError("Wrong command dimensions")
-        return target - np.asarray(policy_state.joint_positions)
+        return target - np.asarray(policy_state["joint_positions"])
 
     def command_to_action(self, env, command):
         return super().command_to_action(env, command * self.scale)
@@ -163,7 +142,7 @@ def test_policy_uses_adapter_actions_for_each_environment(backend, action_dim):
             content = call["messages"][1]["content"]
             state = json.loads(content[0]["text"])
             assert state["task"] == "Move each joint"
-            assert state["policy_state"]["joint_positions"] == observation["position"][env_id].tolist()
+            assert state["policy_state"] == {"joint_positions": observation["position"][env_id].tolist()}
             assert content[1]["text"] == "camera=front_view"
             image = Image.open(io.BytesIO(base64.b64decode(content[2]["image_url"]["url"].split(",", 1)[1])))
             assert image.size == (8, 4)
@@ -249,8 +228,7 @@ def test_missing_prompt_is_rejected(prompt):
         VLMPolicyCfg(system_prompt=prompt)
 
 
-class JointChunkAdapter(ChunkActionAdapter[JointPositionState]):
-    state_model = JointPositionState
+class JointChunkAdapter(ChunkActionAdapter):
 
     def is_robot_action_space_supported(self, env):
         return env.unwrapped.action_dim > 0
@@ -263,30 +241,29 @@ class JointChunkAdapter(ChunkActionAdapter[JointPositionState]):
             actions=(list[list[float]], Field(min_length=chunk_size, max_length=chunk_size)),
         )
 
-    def decode_command(self, response, policy_state: JointPositionState):
-        if any(len(row) != len(policy_state.joint_positions) for row in response.actions):
+    def decode_command(self, response, policy_state: dict):
+        if any(len(row) != len(policy_state["joint_positions"]) for row in response.actions):
             raise InvalidAgentResponseError("Wrong command dimensions")
         return np.asarray(response.actions, dtype=np.float32)
 
 
-class JointGoalAdapter(GoalActionAdapter[JointPositionState]):
-    state_model = JointPositionState
+class JointGoalAdapter(GoalActionAdapter):
     response_model = JointTargetResponse
 
     def is_robot_action_space_supported(self, env):
         return env.unwrapped.action_dim > 0
 
-    def decode_command(self, response, policy_state: JointPositionState):
+    def decode_command(self, response, policy_state: dict):
         target = np.asarray(response.target, dtype=np.float32)
-        if target.shape != (len(policy_state.joint_positions),):
+        if target.shape != (len(policy_state["joint_positions"]),):
             raise InvalidAgentResponseError("Wrong goal dimensions")
         return target
 
-    def goal_reached(self, goal, policy_state: JointPositionState):
-        return np.allclose(goal, policy_state.joint_positions)
+    def goal_reached(self, goal, policy_state: dict):
+        return np.allclose(goal, policy_state["joint_positions"])
 
-    def compute_command(self, goal, policy_state: JointPositionState):
-        return np.clip(goal - np.asarray(policy_state.joint_positions), -0.25, 0.25)
+    def compute_command(self, goal, policy_state: dict):
+        return np.clip(goal - np.asarray(policy_state["joint_positions"]), -0.25, 0.25)
 
 
 def make_multi_step_policy(backend, adapter):
@@ -428,7 +405,7 @@ def test_invalid_model_actions_are_rejected_with_python_optimization():
         from types import SimpleNamespace
         from unittest.mock import Mock
         from isaaclab_arena_vlm_agent.tests.test_vlm_agent_policy import (
-            ActionAdapter, ObservationAdapter, JointPositionState,
+            ActionAdapter, ObservationAdapter,
         )
         from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
         from isaaclab_arena_vlm_agent.policy.vlm_agent_policy import VLMStepPolicy, VLMPolicyCfg
@@ -442,7 +419,7 @@ def test_invalid_model_actions_are_rejected_with_python_optimization():
                 inference_backend=backend, observation_adapter=ObservationAdapter(), action_adapter=adapter,
             )
             try:
-                policy._infer([], JointPositionState(joint_positions=[0.0, 0.0]))
+                policy._infer([], {"joint_positions": [0.0, 0.0]})
             except InvalidAgentResponseError as error:
                 if error.details.code != "invalid_command" or backend.infer.call_count != 2:
                     raise RuntimeError("Incorrect rejection details or retry count")
@@ -491,28 +468,4 @@ def test_missing_camera_keys_fail_at_construction(backend):
             observation_adapter=adapter,
             action_adapter=ActionAdapter(),
         )
-    backend.client.chat.completions.create.assert_not_called()
-
-
-def test_incompatible_state_models_fail_before_inference(backend):
-    class OtherState(PolicyState):
-        velocity: list[float]
-
-    adapter = ActionAdapter()
-    adapter.state_model = OtherState
-    with pytest.raises(AssertionError, match="same state_model"):
-        VLMStepPolicy(
-            VLMPolicyCfg(system_prompt="Control these joints."),
-            inference_backend=backend,
-            observation_adapter=ObservationAdapter(),
-            action_adapter=adapter,
-        )
-    backend.client.chat.completions.create.assert_not_called()
-
-
-def test_untyped_observation_state_fails_before_inference(backend):
-    policy = make_policy(backend)
-    policy.observation_adapter.extract_policy_state = Mock(return_value=[{"joint_positions": [1.0]}] * 2)
-    with pytest.raises(AssertionError, match="declared state_model"):
-        policy.get_action(*inputs())
     backend.client.chat.completions.create.assert_not_called()

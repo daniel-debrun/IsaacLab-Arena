@@ -8,18 +8,12 @@
 import numpy as np
 import torch
 from abc import ABC, abstractmethod
-from typing import Generic
 
 from pydantic import BaseModel
 
-from isaaclab_arena_vlm_agent.embodiment_adapter.policy_state import PolicyStateT
 
-
-class AgentActionAdapter(ABC, Generic[PolicyStateT]):
+class AgentActionAdapter(ABC):
     """Validate model responses and convert commands into robot actions."""
-
-    state_model: type[PolicyStateT]
-    """Concrete measured-state model required for decoding responses into actions."""
 
     response_model: type[BaseModel]
     """Response model used to generate the requested schema and validate model output."""
@@ -33,14 +27,14 @@ class AgentActionAdapter(ABC, Generic[PolicyStateT]):
         """
 
     @abstractmethod
-    def decode_command(self, response: BaseModel, policy_state: PolicyStateT) -> np.ndarray:
+    def decode_command(self, response: BaseModel, policy_state: dict) -> np.ndarray:
         """Decode a validated response into commands with adapter-defined dimensions and units.
 
         Use InvalidAgentResponseError to request a correction for robot-specific constraints.
 
         Args:
             response: Model output validated against response_model.
-            policy_state: Typed state sent with this inference request.
+            policy_state: Measured state sent with this inference request.
 
         Returns:
             A nonempty, finite command vector, or a chunk as defined by the adapter.
@@ -67,7 +61,7 @@ class AgentActionAdapter(ABC, Generic[PolicyStateT]):
         return torch.as_tensor(command, dtype=torch.float32, device=env.unwrapped.device)
 
 
-class ChunkActionAdapter(AgentActionAdapter[PolicyStateT]):
+class ChunkActionAdapter(AgentActionAdapter):
     """Decode fixed-length command sequences for VLMChunkPolicy.
 
     Implement decode_command to return (chunk_size, command_dim) and response_model
@@ -92,7 +86,7 @@ class ChunkActionAdapter(AgentActionAdapter[PolicyStateT]):
         )
 
 
-class GoalActionAdapter(AgentActionAdapter[PolicyStateT]):
+class GoalActionAdapter(AgentActionAdapter):
     """Decode goals and provide closed-loop commands for VLMGoalPolicy.
 
     Goals are finite vectors with adapter-defined dimensions and units. A new goal
@@ -104,7 +98,7 @@ class GoalActionAdapter(AgentActionAdapter[PolicyStateT]):
         self.max_steps = max_steps
 
     @abstractmethod
-    def goal_reached(self, goal: np.ndarray, policy_state: PolicyStateT) -> bool:
+    def goal_reached(self, goal: np.ndarray, policy_state: dict) -> bool:
         """Check goal completion against the current measured state.
 
         Args:
@@ -116,7 +110,7 @@ class GoalActionAdapter(AgentActionAdapter[PolicyStateT]):
         """
 
     @abstractmethod
-    def compute_command(self, goal: np.ndarray, policy_state: PolicyStateT) -> np.ndarray:
+    def compute_command(self, goal: np.ndarray, policy_state: dict) -> np.ndarray:
         """Compute one command toward the goal using current measured state.
 
         Args:
