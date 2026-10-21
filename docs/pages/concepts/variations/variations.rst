@@ -231,11 +231,12 @@ Run it with:
      --experiment_config isaaclab_arena_environments/experiment_configs/asset_selection_experiment.yaml
 
 By default, a build takes the name at zero-based index ``seed mod n`` of the ``n`` names, where
-``seed`` is ``--seed``. The Experiment Runner adds the rebuild index to the seed, so ``n`` rebuilds
-take each name once. With the default seed 42, the example's three rebuilds take the names in the
-listed order. In-order selections on two objects with the same number of names therefore
-change together. With ``random_choice: true``, each build draws a name at random, and a name can
-repeat across rebuilds.
+``seed`` is the build seed: ``--seed`` for ``policy_runner.py``, or ``environment_builder.seed`` in
+an Experiment Run. The Experiment Runner adds the rebuild index to the seed, so ``n`` rebuilds take
+each name once. With the default seed 42, the example's three rebuilds take the names in the listed
+order. In-order selections on two objects with the same number of names therefore change together.
+With ``random_choice: true``, each build draws a name at random, and a name can repeat across
+rebuilds.
 
 Every episode row records the chosen name, for example
 ``"pick_up_object.asset_selection": "mustard_bottle_hot3d_robolab"``, and
