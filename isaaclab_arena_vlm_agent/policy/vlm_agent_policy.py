@@ -252,7 +252,7 @@ class VLMGoalPolicy(VLMPolicy):
         self.max_steps_per_goal = max_steps_per_goal
         self._goals: dict[int, tuple[np.ndarray, int]] = {}
 
-    def _get_command(self, env, observation, env_id: int) -> np.ndarray:
+    def _get_command(self, env: gym.Env, observation: dict[str, Any], env_id: int) -> np.ndarray:
         pending = self._goals.get(env_id)
         if (
             pending is None
