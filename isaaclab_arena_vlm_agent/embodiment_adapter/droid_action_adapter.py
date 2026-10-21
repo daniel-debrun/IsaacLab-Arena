@@ -13,11 +13,7 @@ from isaaclab_arena_vlm_agent.embodiment_adapter.action_adapter import (
     ChunkActionAdapter,
     GoalActionAdapter,
 )
-from isaaclab_arena_vlm_agent.embodiment_adapter.droid_pose import (
-    DroidEndEffectorPoseAndGripperState,
-    DroidPoseChunk,
-    DroidPoseCommand,
-)
+from isaaclab_arena_vlm_agent.embodiment_adapter.droid_pose import DroidPoseChunk, DroidPoseCommand
 
 
 def _pose_command(response: DroidPoseCommand) -> np.ndarray:
@@ -27,10 +23,9 @@ def _pose_command(response: DroidPoseCommand) -> np.ndarray:
     )
 
 
-class DroidPoseActionAdapter(AgentActionAdapter[DroidEndEffectorPoseAndGripperState]):
+class DroidPoseActionAdapter(AgentActionAdapter):
     """Convert absolute base_link targets into unscaled absolute DROID IK actions."""
 
-    state_model = DroidEndEffectorPoseAndGripperState
     response_model = DroidPoseCommand
 
     def is_robot_action_space_supported(self, env) -> bool:
@@ -66,9 +61,7 @@ class DroidPoseActionAdapter(AgentActionAdapter[DroidEndEffectorPoseAndGripperSt
             and gripper.cfg.clip is None
         )
 
-    def decode_command(
-        self, response: DroidPoseCommand, policy_state: DroidEndEffectorPoseAndGripperState
-    ) -> np.ndarray:
+    def decode_command(self, response: DroidPoseCommand, policy_state: dict) -> np.ndarray:
         """Return the absolute target without applying the measured pose as an offset.
 
         Args:
@@ -94,12 +87,12 @@ class DroidPoseActionAdapter(AgentActionAdapter[DroidEndEffectorPoseAndGripperSt
         )
 
 
-class DroidChunkActionAdapter(ChunkActionAdapter[DroidEndEffectorPoseAndGripperState], DroidPoseActionAdapter):
+class DroidChunkActionAdapter(ChunkActionAdapter, DroidPoseActionAdapter):
     """Execute a fixed-length sequence of absolute DROID poses, one per environment step."""
 
     response_model = DroidPoseChunk
 
-    def decode_command(self, response: DroidPoseChunk, policy_state: DroidEndEffectorPoseAndGripperState) -> np.ndarray:
+    def decode_command(self, response: DroidPoseChunk, policy_state: dict) -> np.ndarray:
         """Pack each validated pose in execution order.
 
         Args:
@@ -123,7 +116,7 @@ class DroidChunkActionAdapter(ChunkActionAdapter[DroidEndEffectorPoseAndGripperS
         )
 
 
-class DroidGoalActionAdapter(GoalActionAdapter[DroidEndEffectorPoseAndGripperState], DroidPoseActionAdapter):
+class DroidGoalActionAdapter(GoalActionAdapter, DroidPoseActionAdapter):
     """Hold an absolute IK target until measured pose and gripper tolerances are met.
 
     A blocked gripper can exhaust max_steps; issuing a close command alone does not
@@ -145,7 +138,7 @@ class DroidGoalActionAdapter(GoalActionAdapter[DroidEndEffectorPoseAndGripperSta
         self.rotation_tolerance_rad = rotation_tolerance_rad
         self.gripper_tolerance = gripper_tolerance
 
-    def goal_reached(self, goal: np.ndarray, policy_state: DroidEndEffectorPoseAndGripperState) -> bool:
+    def goal_reached(self, goal: np.ndarray, policy_state: dict) -> bool:
         """Compare the target to measured translation, rotation, and gripper closure.
 
         Args:
@@ -155,19 +148,19 @@ class DroidGoalActionAdapter(GoalActionAdapter[DroidEndEffectorPoseAndGripperSta
         Returns:
             Whether all three errors are within their configured tolerances.
         """
-        position_error = np.linalg.norm(goal[:3] - np.asarray(policy_state.position_root_m))
-        q_R_E = np.asarray(policy_state.quaternion_root_xyzw)
+        position_error = np.linalg.norm(goal[:3] - np.asarray(policy_state["position_root_m"]))
+        q_R_E = np.asarray(policy_state["quaternion_root_xyzw"])
         q_R_G = goal[3:7]
         cosine_half_angle = abs(np.dot(q_R_E, q_R_G) / (np.linalg.norm(q_R_E) * np.linalg.norm(q_R_G)))
         rotation_error = 2.0 * np.arccos(np.clip(cosine_half_angle, 0.0, 1.0))
-        gripper_error = abs(float(goal[7]) - policy_state.gripper_closed_fraction)
+        gripper_error = abs(float(goal[7]) - policy_state["gripper_closed_fraction"])
         return bool(
             position_error <= self.position_tolerance_m
             and rotation_error <= self.rotation_tolerance_rad
             and gripper_error <= self.gripper_tolerance
         )
 
-    def compute_command(self, goal: np.ndarray, policy_state: DroidEndEffectorPoseAndGripperState) -> np.ndarray:
+    def compute_command(self, goal: np.ndarray, policy_state: dict) -> np.ndarray:
         """Hold the absolute target while the environment's IK controller tracks measured state.
 
         Args:

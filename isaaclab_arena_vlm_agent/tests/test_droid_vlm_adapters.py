@@ -23,11 +23,7 @@ from isaaclab_arena_vlm_agent.embodiment_adapter.droid_action_adapter import (
     DroidPoseActionAdapter,
 )
 from isaaclab_arena_vlm_agent.embodiment_adapter.droid_observation_adapter import DroidObservationAdapter
-from isaaclab_arena_vlm_agent.embodiment_adapter.droid_pose import (
-    DroidEndEffectorPoseAndGripperState,
-    DroidPoseChunk,
-    DroidPoseCommand,
-)
+from isaaclab_arena_vlm_agent.embodiment_adapter.droid_pose import DroidPoseChunk, DroidPoseCommand
 from isaaclab_arena_vlm_agent.policy.vlm_agent_policy import VLMChunkPolicy, VLMGoalPolicy, VLMPolicyCfg, VLMStepPolicy
 
 
@@ -42,7 +38,7 @@ def _target(x=0.4, closed=False):
 def _state(**overrides):
     fields = _target()
     del fields["gripper_closed"]
-    return DroidEndEffectorPoseAndGripperState(**(fields | {"gripper_closed_fraction": 0.0} | overrides))
+    return fields | {"gripper_closed_fraction": 0.0} | overrides
 
 
 def _inputs():
@@ -91,15 +87,17 @@ def test_observation_returns_only_root_pose_and_measured_gripper():
     env, obs = _inputs()
     adapter = DroidObservationAdapter()
     states = adapter.extract_policy_state(env, obs)
+    assert all(type(state) is dict for state in states)
+    assert json.loads(json.dumps(states, allow_nan=False)) == states
     env.unwrapped.arena_world.get_body_pose_in_root.assert_called_once_with("robot", "base_link")
-    assert set(states[0].model_dump()) == {"position_root_m", "quaternion_root_xyzw", "gripper_closed_fraction"}
-    assert states[1].position_root_m == [0.5, 0.0, pytest.approx(0.3)]
-    assert states[1].quaternion_root_xyzw == [0.0, 0.0, 1.0, 0.0]
-    assert states[1].gripper_closed_fraction == pytest.approx(1.03)
+    assert set(states[0]) == {"position_root_m", "quaternion_root_xyzw", "gripper_closed_fraction"}
+    assert states[1]["position_root_m"] == [0.5, 0.0, pytest.approx(0.3)]
+    assert states[1]["quaternion_root_xyzw"] == [0.0, 0.0, 1.0, 0.0]
+    assert states[1]["gripper_closed_fraction"] == pytest.approx(1.03)
     env.unwrapped.arena_world.get_body_pose_in_root.return_value.add_(1)
     obs["policy"]["gripper_pos"].zero_()
-    assert states[1].position_root_m[0] == 0.5
-    assert states[1].gripper_closed_fraction == pytest.approx(1.03)
+    assert states[1]["position_root_m"][0] == 0.5
+    assert states[1]["gripper_closed_fraction"] == pytest.approx(1.03)
 
 
 @pytest.mark.parametrize("closed", [False, True])

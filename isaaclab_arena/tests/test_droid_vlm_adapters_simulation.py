@@ -54,8 +54,8 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         actions = []
         for state in states:
             response = DroidPoseCommand(
-                position_root_m=state.position_root_m,
-                quaternion_root_xyzw=state.quaternion_root_xyzw,
+                position_root_m=state["position_root_m"],
+                quaternion_root_xyzw=state["quaternion_root_xyzw"],
                 gripper_closed=False,
             )
             command = action_adapter.decode_command(response, state)
@@ -86,7 +86,7 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         measured_states = observation_adapter.extract_policy_state(env, obs)
         assert len(measured_states) == 2
         for env_id, state in enumerate(measured_states):
-            assert abs(state.gripper_closed_fraction - obs["policy"]["gripper_pos"][env_id, 0].item()) < 1e-6
+            assert abs(state["gripper_closed_fraction"] - obs["policy"]["gripper_pos"][env_id, 0].item()) < 1e-6
 
         # Reject configurations whose native action semantics differ from the response contract.
         for field, value in (("scale", 0.5), ("body_name", "panda_link7"), ("body_offset", object()), ("clip", {})):

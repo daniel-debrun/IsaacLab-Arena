@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from isaaclab_arena_vlm_agent.image import image_to_jpeg_data_url
+from isaaclab_arena_vlm_agent.image_utils import image_to_jpeg_data_url
 
 
 @pytest.mark.parametrize("max_width_or_height,expected_size", [(4, (4, 2)), (32, (16, 8))])

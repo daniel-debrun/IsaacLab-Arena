@@ -10,8 +10,6 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import PolicyState
-
 Position = Annotated[list[float], Field(min_length=3, max_length=3)]
 Quaternion = Annotated[list[float], Field(min_length=4, max_length=4)]
 
@@ -23,23 +21,8 @@ def _unit_quaternion(value: list[float]) -> list[float]:
     return value
 
 
-class DroidEndEffectorPoseAndGripperState(PolicyState):
-    """Measured T_R_E and gripper closure; R is robot root and E is Robotiq base_link."""
-
-    position_root_m: Position
-    """Translation t_R_E in meters, excluding grasp and controller offsets."""
-
-    quaternion_root_xyzw: Quaternion
-    """Rotation q_R_E as a unit quaternion in XYZW order."""
-
-    gripper_closed_fraction: float
-    """Measured finger position: zero is open, one is closed; physical overshoot is preserved."""
-
-    _validate_quaternion = field_validator("quaternion_root_xyzw")(_unit_quaternion)
-
-
 class DroidPoseCommand(BaseModel):
-    """Request absolute T_R_E and a binary gripper target."""
+    """Request absolute T_R_E (robot root R, Robotiq base_link E) and a binary gripper target."""
 
     model_config = ConfigDict(extra="forbid", strict=True, allow_inf_nan=False)
 
