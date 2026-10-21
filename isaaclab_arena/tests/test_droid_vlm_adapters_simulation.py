@@ -21,6 +21,7 @@ def _test_droid_absolute_pose_adapters(simulation_app):
     from isaaclab_arena.scene.scene import Scene
     from isaaclab_arena.utils.pose import Pose
     from isaaclab_arena_vlm_agent.embodiment_adapter.droid_action_adapter import DroidPoseActionAdapter
+    from isaaclab_arena_vlm_agent.embodiment_adapter.droid_motion_generator import DroidPoseMotionGenerator
     from isaaclab_arena_vlm_agent.embodiment_adapter.droid_observation_adapter import DroidObservationAdapter
     from isaaclab_arena_vlm_agent.embodiment_adapter.droid_pose import DroidPoseCommand
 
@@ -50,15 +51,15 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         observation_adapter = DroidObservationAdapter()
         action_adapter = DroidPoseActionAdapter()
         assert action_adapter.is_robot_action_space_supported(env)
-        states = observation_adapter.extract_policy_state(env, obs)
+        states = [observation_adapter.extract_robot_state(env, obs, env_id) for env_id in range(base.num_envs)]
         actions = []
-        for state in states:
+        for env_id, state in enumerate(states):
             response = DroidPoseCommand(
                 position_root_m=state["position_root_m"],
                 quaternion_root_xyzw=state["quaternion_root_xyzw"],
                 gripper_closed=False,
             )
-            command = action_adapter.decode_command(response, state)
+            command = action_adapter.decode_command(response, base.arena_world, env_id)
             actions.append(action_adapter.command_to_action(env, command))
         actions = torch.stack(actions)
         assert actions.shape == (2, 8)
@@ -83,10 +84,24 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         actions[:, 7] = 0.0
         for _ in range(5):
             obs, _, _, _, _ = env.step(actions)
-        measured_states = observation_adapter.extract_policy_state(env, obs)
+        measured_states = [observation_adapter.extract_robot_state(env, obs, env_id) for env_id in range(base.num_envs)]
         assert len(measured_states) == 2
         for env_id, state in enumerate(measured_states):
             assert abs(state["gripper_closed_fraction"] - obs["policy"]["gripper_pos"][env_id, 0].item()) < 1e-6
+
+        generator = DroidPoseMotionGenerator()
+        for env_id, state in enumerate(measured_states):
+            response = DroidPoseCommand(
+                position_root_m=state["position_root_m"],
+                quaternion_root_xyzw=state["quaternion_root_xyzw"],
+                gripper_closed=False,
+            )
+            goal = action_adapter.decode_command(response, base.arena_world, env_id)
+            assert generator.goal_reached(goal, base.arena_world, env_id) == (
+                abs(state["gripper_closed_fraction"]) <= generator.gripper_tolerance
+            )
+            goal[0] += 0.1
+            assert not generator.goal_reached(goal, base.arena_world, env_id)
 
         # Reject configurations whose native action semantics differ from the response contract.
         for field, value in (("scale", 0.5), ("body_name", "panda_link7"), ("body_offset", object()), ("clip", {})):

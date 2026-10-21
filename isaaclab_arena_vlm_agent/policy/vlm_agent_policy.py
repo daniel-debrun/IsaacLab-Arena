@@ -13,6 +13,7 @@ import torch
 from abc import abstractmethod
 from collections import deque
 from dataclasses import asdict, dataclass
+from typing import TYPE_CHECKING
 
 from pydantic import ValidationError
 
@@ -23,12 +24,11 @@ from isaaclab_arena_vlm_agent.embodiment_adapter.action_adapter import (
     ChunkActionAdapter,
     GoalActionAdapter,
 )
-from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import (
-    CAMERA_OBSERVATION_GROUP,
-    VLMObservationAdapter,
-)
-from isaaclab_arena_vlm_agent.image_utils import image_to_jpeg_data_url
+from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import VLMObservationAdapter
 from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
+
+if TYPE_CHECKING:
+    from isaaclab_arena.environments.arena_world import ArenaWorld
 
 
 @dataclass
@@ -60,7 +60,7 @@ class VLMPolicyCfg(PolicyCfg):
 class VLMPolicy(PolicyBase[VLMPolicyCfg]):
     """Share VLM request preparation and response validation across execution strategies.
 
-    Each request contains only the current images, robot state, and task description.
+    Each request contains the observations selected by the adapter and the task description.
     """
 
     def __init__(
@@ -77,13 +77,12 @@ class VLMPolicy(PolicyBase[VLMPolicyCfg]):
             config: Prompt, image encoding, and action-validation settings.
             inference_backend: Caller-owned backend shared with other inference steps.
                 The caller is responsible for closing its client.
-            observation_adapter: Adapter selecting camera images and preparing robot state.
+            observation_adapter: Adapter assembling observation content for the VLM.
             action_adapter: Adapter validating responses and converting commands to native actions.
         """
         super().__init__(config)
         assert isinstance(observation_adapter, VLMObservationAdapter)
         assert isinstance(action_adapter, AgentActionAdapter)
-        assert observation_adapter.camera_keys, "Configure at least one camera observation key"
         self.observation_adapter = observation_adapter
         self.action_adapter = action_adapter
         self._response_schema = build_strict_schema(action_adapter.response_model)
@@ -95,7 +94,7 @@ class VLMPolicy(PolicyBase[VLMPolicyCfg]):
 
         Args:
             env: Arena environment, optionally gym-wrapped.
-            observation: Batched observations with uint8 HWC images in camera_obs.
+            observation: Batched observations consumed by the observation adapter.
 
         Returns:
             Actions shaped (num_envs, action_dim) on the environment device.
@@ -104,11 +103,9 @@ class VLMPolicy(PolicyBase[VLMPolicyCfg]):
         assert self.action_adapter.is_robot_action_space_supported(
             env
         ), "Robot action space is unsupported by this adapter"
-        states = self.observation_adapter.extract_policy_state(env, observation)
-        assert len(states) == env.unwrapped.num_envs, "Expected one state per environment"
         actions = []
-        for env_id, state in enumerate(states):
-            command = self._get_command(env, observation, env_id, state)
+        for env_id in range(env.unwrapped.num_envs):
+            command = self._get_command(env, observation, env_id)
             action = self.action_adapter.command_to_action(env, command)
             assert (
                 action.ndim == 1 and action.numel() > 0 and torch.isfinite(action).all()
@@ -117,29 +114,20 @@ class VLMPolicy(PolicyBase[VLMPolicyCfg]):
         return torch.stack(actions)
 
     @abstractmethod
-    def _get_command(self, env, observation, env_id: int, state: dict) -> np.ndarray:
+    def _get_command(self, env, observation, env_id: int) -> np.ndarray:
         """Return one command using the current observation and any pending prediction."""
 
-    def _request_content(self, env, observation, env_id: int, state: dict) -> list[dict]:
-        """Prepare current state and images for a new inference request."""
-        content = [{
-            "type": "text",
-            "text": json.dumps({"task": self.task_description, "policy_state": state}, allow_nan=False),
-        }]
-        for key in self.observation_adapter.camera_keys:
-            images = observation[CAMERA_OBSERVATION_GROUP][key]
-            assert images.ndim == 4 and images.shape[0] == env.unwrapped.num_envs, "Expected batched HWC images"
-            image = images[env_id].detach().cpu().numpy()
-            content.extend([
-                {"type": "text", "text": f"camera={key}"},
-                {
-                    "type": "image_url",
-                    "image_url": {"url": image_to_jpeg_data_url(image, self.config.image_max_width_or_height)},
-                },
-            ])
+    def _request_content(self, env, observation, env_id: int) -> list[dict]:
+        """Combine the task description with adapter-built observation content."""
+        content = [{"type": "text", "text": json.dumps({"task": self.task_description})}]
+        content.extend(
+            self.observation_adapter.build_request_content(
+                env, observation, env_id, image_max_width_or_height=self.config.image_max_width_or_height
+            )
+        )
         return content
 
-    def _infer(self, content: list[dict], state: dict) -> np.ndarray:
+    def _infer(self, content: list[dict], arena_world: ArenaWorld, env_id: int) -> np.ndarray:
         """Request a command, allowing the model to correct locally rejected responses."""
         messages = [
             {"role": "system", "content": self.config.system_prompt},
@@ -161,7 +149,9 @@ class VLMPolicy(PolicyBase[VLMPolicyCfg]):
                 rejection = InvalidAgentResponseError(str(exc), code="invalid_schema")
             else:
                 try:
-                    command = np.asarray(self.action_adapter.decode_command(response, state), dtype=np.float32)
+                    command = np.asarray(
+                        self.action_adapter.decode_command(response, arena_world, env_id), dtype=np.float32
+                    )
                 except InvalidAgentResponseError as exc:
                     rejection = exc
                 else:
@@ -197,8 +187,8 @@ class VLMStepPolicy(VLMPolicy):
             action_adapter=action_adapter,
         )
 
-    def _get_command(self, env, observation, env_id: int, state: dict) -> np.ndarray:
-        return self._infer(self._request_content(env, observation, env_id, state), state)
+    def _get_command(self, env, observation, env_id: int) -> np.ndarray:
+        return self._infer(self._request_content(env, observation, env_id), env.unwrapped.arena_world, env_id)
 
 
 class VLMChunkPolicy(VLMPolicy):
@@ -221,9 +211,9 @@ class VLMChunkPolicy(VLMPolicy):
         )
         self._chunks: dict[int, deque] = {}
 
-    def _get_command(self, env, observation, env_id: int, state: dict) -> np.ndarray:
+    def _get_command(self, env, observation, env_id: int) -> np.ndarray:
         if not self._chunks.get(env_id):
-            chunk = self._infer(self._request_content(env, observation, env_id, state), state)
+            chunk = self._infer(self._request_content(env, observation, env_id), env.unwrapped.arena_world, env_id)
             self._chunks[env_id] = deque(chunk)
         return self._chunks[env_id].popleft()
 
@@ -237,7 +227,7 @@ class VLMChunkPolicy(VLMPolicy):
 
 
 class VLMGoalPolicy(VLMPolicy):
-    """Use adapter-defined feedback to execute a goal until completion or its step limit."""
+    """Use a motion generator to execute decoded goals until completion or a step limit."""
 
     def __init__(
         self,
@@ -246,28 +236,36 @@ class VLMGoalPolicy(VLMPolicy):
         inference_backend: InferenceBackend,
         observation_adapter: VLMObservationAdapter,
         action_adapter: GoalActionAdapter,
+        max_steps_per_goal: int,
     ):
         assert isinstance(action_adapter, GoalActionAdapter)
+        assert (
+            type(max_steps_per_goal) is int and max_steps_per_goal > 0
+        ), "max_steps_per_goal must be a positive integer"
         super().__init__(
             config,
             inference_backend=inference_backend,
             observation_adapter=observation_adapter,
             action_adapter=action_adapter,
         )
+        self.max_steps_per_goal = max_steps_per_goal
         self._goals: dict[int, tuple[np.ndarray, int]] = {}
 
-    def _get_command(self, env, observation, env_id: int, state: dict) -> np.ndarray:
+    def _get_command(self, env, observation, env_id: int) -> np.ndarray:
         pending = self._goals.get(env_id)
         if (
             pending is None
-            or pending[1] >= self.action_adapter.max_steps
-            or self.action_adapter.goal_reached(pending[0], state)
+            or pending[1] >= self.max_steps_per_goal
+            or self.action_adapter.motion_generator.goal_reached(pending[0], env.unwrapped.arena_world, env_id)
         ):
-            goal = self._infer(self._request_content(env, observation, env_id, state), state)
+            goal = self._infer(self._request_content(env, observation, env_id), env.unwrapped.arena_world, env_id)
             executed = 0
         else:
             goal, executed = pending
-        command = np.asarray(self.action_adapter.compute_command(goal, state), dtype=np.float32)
+        command = np.asarray(
+            self.action_adapter.motion_generator.compute_command(goal, env.unwrapped.arena_world, env_id),
+            dtype=np.float32,
+        )
         if command.ndim != 1 or command.size == 0 or not np.isfinite(command).all():
             raise ValueError("Expected a finite goal command")
         self._goals[env_id] = (goal, executed + 1)

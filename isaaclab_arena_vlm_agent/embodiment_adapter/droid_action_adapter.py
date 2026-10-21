@@ -5,8 +5,10 @@
 
 """Absolute DROID pose commands for single-step, chunk, and goal policies."""
 
-import math
+from __future__ import annotations
+
 import numpy as np
+from typing import TYPE_CHECKING
 
 from isaaclab_arena_vlm_agent.embodiment_adapter.action_adapter import (
     AgentActionAdapter,
@@ -14,6 +16,9 @@ from isaaclab_arena_vlm_agent.embodiment_adapter.action_adapter import (
     GoalActionAdapter,
 )
 from isaaclab_arena_vlm_agent.embodiment_adapter.droid_pose import DroidPoseChunk, DroidPoseCommand
+
+if TYPE_CHECKING:
+    from isaaclab_arena.environments.arena_world import ArenaWorld
 
 
 def _pose_command(response: DroidPoseCommand) -> np.ndarray:
@@ -61,12 +66,13 @@ class DroidPoseActionAdapter(AgentActionAdapter):
             and gripper.cfg.clip is None
         )
 
-    def decode_command(self, response: DroidPoseCommand, policy_state: dict) -> np.ndarray:
+    def decode_command(self, response: DroidPoseCommand, arena_world: ArenaWorld, env_id: int) -> np.ndarray:
         """Return the absolute target without applying the measured pose as an offset.
 
         Args:
             response: Validated target in meters, XYZW, and binary gripper closure.
-            policy_state: Measured pose and gripper state accompanying the request.
+            arena_world: Live Arena scene queries; absolute commands need no pose offset.
+            env_id: Environment index within the batched world state.
 
         Returns:
             Eight-element command: position, quaternion, and zero/open or one/closed.
@@ -92,12 +98,13 @@ class DroidChunkActionAdapter(ChunkActionAdapter, DroidPoseActionAdapter):
 
     response_model = DroidPoseChunk
 
-    def decode_command(self, response: DroidPoseChunk, policy_state: dict) -> np.ndarray:
+    def decode_command(self, response: DroidPoseChunk, arena_world: ArenaWorld, env_id: int) -> np.ndarray:
         """Pack each validated pose in execution order.
 
         Args:
             response: Validated sequence of absolute poses and gripper targets.
-            policy_state: Measured pose and gripper state accompanying the request.
+            arena_world: Live Arena scene queries; absolute commands need no pose offset.
+            env_id: Environment index within the batched world state.
 
         Returns:
             Array of shape (number of commands, 8), checked against chunk_size before execution.
@@ -117,62 +124,4 @@ class DroidChunkActionAdapter(ChunkActionAdapter, DroidPoseActionAdapter):
 
 
 class DroidGoalActionAdapter(GoalActionAdapter, DroidPoseActionAdapter):
-    """Hold an absolute IK target until measured pose and gripper tolerances are met.
-
-    A blocked gripper can exhaust max_steps; issuing a close command alone does not
-    establish that the fingers reached the requested closure or that a grasp succeeded.
-    """
-
-    def __init__(
-        self,
-        max_steps: int,
-        position_tolerance_m: float = 0.01,
-        rotation_tolerance_rad: float = 0.1,
-        gripper_tolerance: float = 0.1,
-    ):
-        super().__init__(max_steps)
-        assert math.isfinite(position_tolerance_m) and position_tolerance_m > 0
-        assert math.isfinite(rotation_tolerance_rad) and 0 < rotation_tolerance_rad <= math.pi
-        assert math.isfinite(gripper_tolerance) and 0 < gripper_tolerance < 0.5
-        self.position_tolerance_m = position_tolerance_m
-        self.rotation_tolerance_rad = rotation_tolerance_rad
-        self.gripper_tolerance = gripper_tolerance
-
-    def goal_reached(self, goal: np.ndarray, policy_state: dict) -> bool:
-        """Compare the target to measured translation, rotation, and gripper closure.
-
-        Args:
-            goal: Validated eight-element absolute target.
-            policy_state: Current measured pose and gripper closure.
-
-        Returns:
-            Whether all three errors are within their configured tolerances.
-        """
-        # Euclidean distance in meters; both positions are expressed in the robot-root frame R.
-        position_error = np.linalg.norm(goal[:3] - np.asarray(policy_state["position_root_m"]))
-        # E is the measured end-effector frame; G is its goal frame, both relative to R.
-        q_R_E = np.asarray(policy_state["quaternion_root_xyzw"])
-        q_R_G = goal[3:7]
-        # The normalized dot product gives cos(theta / 2); abs handles equivalent q and -q rotations.
-        cosine_half_angle = abs(np.dot(q_R_E, q_R_G) / (np.linalg.norm(q_R_E) * np.linalg.norm(q_R_G)))
-        # Recover the shortest rotation angle in radians; clipping prevents roundoff from invalidating arccos.
-        rotation_error = 2.0 * np.arccos(np.clip(cosine_half_angle, 0.0, 1.0))
-        # Compare the binary target (0 open, 1 closed) with measured closure, including physical overshoot.
-        gripper_error = abs(float(goal[7]) - policy_state["gripper_closed_fraction"])
-        return bool(
-            position_error <= self.position_tolerance_m
-            and rotation_error <= self.rotation_tolerance_rad
-            and gripper_error <= self.gripper_tolerance
-        )
-
-    def compute_command(self, goal: np.ndarray, policy_state: dict) -> np.ndarray:
-        """Hold the absolute target while the environment's IK controller tracks measured state.
-
-        Args:
-            goal: Validated eight-element absolute target.
-            policy_state: Current measured pose and gripper closure.
-
-        Returns:
-            An independent absolute pose command for the next environment step.
-        """
-        return goal.copy()
+    """Decode absolute DROID pose goals for the supplied motion generator."""

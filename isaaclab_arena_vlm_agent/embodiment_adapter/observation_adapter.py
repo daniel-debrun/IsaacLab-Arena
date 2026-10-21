@@ -12,20 +12,18 @@ CAMERA_OBSERVATION_GROUP = "camera_obs"
 
 
 class VLMObservationAdapter(ABC):
-    """Select camera observations and prepare robot state for each environment."""
-
-    camera_keys: tuple[str, ...] = ()
-    """Keys in camera_obs, in the order sent to the model; no naming convention is required."""
+    """Assemble selected observation modalities into VLM request content."""
 
     @abstractmethod
-    def extract_policy_state(self, env, observation) -> list[dict]:
-        """Return only the measured state needed for inference and command execution.
+    def build_request_content(self, env, observation, env_id: int, *, image_max_width_or_height: int) -> list[dict]:
+        """Build image and text content for one environment using modality-specific helpers.
 
         Args:
             env: Arena environment, optionally gym-wrapped.
             observation: Current batched environment observations.
+            env_id: Environment index to prepare the request for.
+            image_max_width_or_height: Maximum encoded image width or height, in pixels.
 
         Returns:
-            One JSON-serializable dictionary per environment, containing only fields used
-            by the prompt and paired action adapter. Define field units and frames in the adapter.
+            Image and text inputs for the selected observations.
         """

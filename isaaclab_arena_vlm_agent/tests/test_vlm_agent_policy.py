@@ -31,6 +31,8 @@ from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import (
     CAMERA_OBSERVATION_GROUP,
     VLMObservationAdapter,
 )
+from isaaclab_arena_vlm_agent.image_utils import extract_rgb_images_from_camera_observations, image_to_jpeg_data_url
+from isaaclab_arena_vlm_agent.motion_generator import MotionGenerator
 from isaaclab_arena_vlm_agent.policy.vlm_agent_policy import VLMChunkPolicy, VLMGoalPolicy, VLMPolicyCfg, VLMStepPolicy
 from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
 
@@ -38,8 +40,30 @@ from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
 class ObservationAdapter(VLMObservationAdapter):
     camera_keys = ("front_view",)
 
-    def extract_policy_state(self, env, observation) -> list[dict]:
-        return [{"joint_positions": row.tolist()} for row in observation["position"]]
+    def __init__(self, include_joint_positions=True):
+        self.include_joint_positions = include_joint_positions
+
+    def extract_joint_positions(self, observation, env_id):
+        return observation["position"][env_id].tolist()
+
+    def build_request_content(self, env, observation, env_id, *, image_max_width_or_height):
+        content = []
+        if self.include_joint_positions:
+            content.append({
+                "type": "text",
+                "text": json.dumps(
+                    {"joint_positions": self.extract_joint_positions(observation, env_id)}, allow_nan=False
+                ),
+            })
+        images = extract_rgb_images_from_camera_observations(
+            observation[CAMERA_OBSERVATION_GROUP], self.camera_keys, env_id
+        )
+        for key, image in images.items():
+            content.extend([
+                {"type": "text", "text": f"camera={key}"},
+                {"type": "image_url", "image_url": {"url": image_to_jpeg_data_url(image, image_max_width_or_height)}},
+            ])
+        return content
 
 
 class JointTargetResponse(BaseModel):
@@ -50,17 +74,19 @@ class JointTargetResponse(BaseModel):
 class ActionAdapter(AgentActionAdapter):
     response_model = JointTargetResponse
 
-    def __init__(self, scale=1.0):
+    def __init__(self, scale=1.0, action_dim=2):
         self.scale = scale
+        self.joint_names = tuple(f"joint_{i}" for i in range(action_dim))
 
     def is_robot_action_space_supported(self, env):
         return env.unwrapped.action_dim > 0
 
-    def decode_command(self, response, policy_state: dict):
+    def decode_command(self, response, arena_world, env_id):
+        positions = arena_world.get_joint_positions("robot", self.joint_names)[env_id].cpu().numpy()
         target = np.asarray(response.target, dtype=np.float32)
-        if target.shape != (len(policy_state["joint_positions"]),):
+        if target.shape != (len(positions),):
             raise InvalidAgentResponseError("Wrong command dimensions")
-        return target - np.asarray(policy_state["joint_positions"])
+        return target - positions
 
     def command_to_action(self, env, command):
         return super().command_to_action(env, command * self.scale)
@@ -103,6 +129,13 @@ def make_policy(backend, **kwargs):
 def inputs(action_dim=2):
     env = SimpleNamespace(unwrapped=SimpleNamespace(num_envs=2, device="cpu", action_dim=action_dim))
     positions = torch.arange(2 * action_dim, dtype=torch.float32).reshape(2, action_dim)
+
+    def get_joint_positions(scene_key, joint_names):
+        assert scene_key == "robot"
+        indices = [int(name.removeprefix("joint_")) for name in joint_names]
+        return positions[:, indices].clone()
+
+    env.unwrapped.arena_world = SimpleNamespace(get_joint_positions=Mock(side_effect=get_joint_positions))
     images = torch.zeros((2, 8, 16, 3), dtype=torch.uint8)
     images[0, ..., 0] = 255
     images[1, ..., 2] = 255
@@ -116,7 +149,7 @@ def test_policy_uses_adapter_actions_for_each_environment(backend, action_dim):
 
     def create(**kwargs):
         calls.append(copy.deepcopy(kwargs))
-        state = json.loads(kwargs["messages"][-1]["content"][0]["text"])["policy_state"]
+        state = json.loads(kwargs["messages"][-1]["content"][1]["text"])
         return response(json.dumps({"target": (np.asarray(state["joint_positions"]) + 0.5).tolist()}))
 
     client.chat.completions.create.side_effect = create
@@ -128,7 +161,7 @@ def test_policy_uses_adapter_actions_for_each_environment(backend, action_dim):
         config,
         inference_backend=backend,
         observation_adapter=ObservationAdapter(),
-        action_adapter=ActionAdapter(scale=2),
+        action_adapter=ActionAdapter(scale=2, action_dim=action_dim),
     )
     env, observation = inputs(action_dim)
     try:
@@ -140,11 +173,10 @@ def test_policy_uses_adapter_actions_for_each_environment(backend, action_dim):
             assert call["messages"][0] == {"role": "system", "content": config.system_prompt}
             assert call["response_format"]["json_schema"]["schema"] == build_strict_schema(ActionAdapter.response_model)
             content = call["messages"][1]["content"]
-            state = json.loads(content[0]["text"])
-            assert state["task"] == "Move each joint"
-            assert state["policy_state"] == {"joint_positions": observation["position"][env_id].tolist()}
-            assert content[1]["text"] == "camera=front_view"
-            image = Image.open(io.BytesIO(base64.b64decode(content[2]["image_url"]["url"].split(",", 1)[1])))
+            assert json.loads(content[0]["text"]) == {"task": "Move each joint"}
+            assert json.loads(content[1]["text"]) == {"joint_positions": observation["position"][env_id].tolist()}
+            assert content[2]["text"] == "camera=front_view"
+            image = Image.open(io.BytesIO(base64.b64decode(content[3]["image_url"]["url"].split(",", 1)[1])))
             assert image.size == (8, 4)
             assert image.getpixel((0, 0))[env_id * 2] > 240
         observation["position"].add_(1)
@@ -233,16 +265,18 @@ class JointChunkAdapter(ChunkActionAdapter):
     def is_robot_action_space_supported(self, env):
         return env.unwrapped.action_dim > 0
 
-    def __init__(self, chunk_size: int):
+    def __init__(self, chunk_size: int, action_dim=2):
         super().__init__(chunk_size)
+        self.joint_names = tuple(f"joint_{i}" for i in range(action_dim))
         self.response_model = create_model(
             "JointChunkResponse",
             __config__=ConfigDict(extra="forbid", strict=True),
             actions=(list[list[float]], Field(min_length=chunk_size, max_length=chunk_size)),
         )
 
-    def decode_command(self, response, policy_state: dict):
-        if any(len(row) != len(policy_state["joint_positions"]) for row in response.actions):
+    def decode_command(self, response, arena_world, env_id):
+        positions = arena_world.get_joint_positions("robot", self.joint_names)[env_id].cpu().numpy()
+        if any(len(row) != len(positions) for row in response.actions):
             raise InvalidAgentResponseError("Wrong command dimensions")
         return np.asarray(response.actions, dtype=np.float32)
 
@@ -250,29 +284,50 @@ class JointChunkAdapter(ChunkActionAdapter):
 class JointGoalAdapter(GoalActionAdapter):
     response_model = JointTargetResponse
 
+    def __init__(self, action_dim=2, *, motion_generator=None):
+        if motion_generator is None:
+            motion_generator = JointMotionGenerator(action_dim=action_dim)
+        super().__init__(motion_generator=motion_generator)
+        self.joint_names = tuple(f"joint_{i}" for i in range(action_dim))
+
     def is_robot_action_space_supported(self, env):
         return env.unwrapped.action_dim > 0
 
-    def decode_command(self, response, policy_state: dict):
+    def decode_command(self, response, arena_world, env_id):
+        positions = arena_world.get_joint_positions("robot", self.joint_names)[env_id].cpu().numpy()
         target = np.asarray(response.target, dtype=np.float32)
-        if target.shape != (len(policy_state["joint_positions"]),):
+        if target.shape != (len(positions),):
             raise InvalidAgentResponseError("Wrong goal dimensions")
         return target
 
-    def goal_reached(self, goal, policy_state: dict):
-        return np.allclose(goal, policy_state["joint_positions"])
 
-    def compute_command(self, goal, policy_state: dict):
-        return np.clip(goal - np.asarray(policy_state["joint_positions"]), -0.25, 0.25)
+class JointMotionGenerator(MotionGenerator):
+    def __init__(self, action_dim=2, max_step=0.25):
+        self.joint_names = tuple(f"joint_{i}" for i in range(action_dim))
+        self.max_step = max_step
+
+    def goal_reached(self, goal, arena_world, env_id):
+        positions = arena_world.get_joint_positions("robot", self.joint_names)[env_id].cpu().numpy()
+        return np.allclose(goal, positions)
+
+    def compute_command(self, goal, arena_world, env_id):
+        positions = arena_world.get_joint_positions("robot", self.joint_names)[env_id].cpu().numpy()
+        return np.clip(goal - positions, -self.max_step, self.max_step)
 
 
-def make_multi_step_policy(backend, adapter):
-    policy_type = VLMChunkPolicy if isinstance(adapter, ChunkActionAdapter) else VLMGoalPolicy
+def make_multi_step_policy(backend, adapter, *, max_steps_per_goal=2):
+    if isinstance(adapter, ChunkActionAdapter):
+        policy_type = VLMChunkPolicy
+        goal_kwargs = {}
+    else:
+        policy_type = VLMGoalPolicy
+        goal_kwargs = {"max_steps_per_goal": max_steps_per_goal}
     policy = policy_type(
         VLMPolicyCfg(system_prompt="Control these joints.", max_attempts=1),
         inference_backend=backend,
         observation_adapter=ObservationAdapter(),
         action_adapter=adapter,
+        **goal_kwargs,
     )
     policy.set_task_description("Move")
     policy.reset()  # Reset before the first observation must be harmless.
@@ -289,7 +344,7 @@ def test_chunks_replay_in_order_and_reset_independently(backend, action_dim):
         return response(json.dumps({"actions": [[value] * action_dim for value in range(start, start + 3)]}))
 
     backend.client.chat.completions.create.side_effect = create
-    policy = make_multi_step_policy(backend, JointChunkAdapter(chunk_size=3))
+    policy = make_multi_step_policy(backend, JointChunkAdapter(chunk_size=3, action_dim=action_dim))
     env, observation = inputs(action_dim)
     torch.testing.assert_close(
         policy.get_action(env, observation), torch.tensor([[1.0] * action_dim, [4.0] * action_dim])
@@ -304,7 +359,7 @@ def test_chunks_replay_in_order_and_reset_independently(backend, action_dim):
         policy.get_action(env, observation), torch.tensor([[7.0] * action_dim, [6.0] * action_dim])
     )
     assert len(calls) == 3
-    current_state = json.loads(calls[2]["messages"][1]["content"][0]["text"])["policy_state"]
+    current_state = json.loads(calls[2]["messages"][1]["content"][1]["text"])
     assert current_state["joint_positions"] == observation["position"][0].tolist()
     torch.testing.assert_close(
         policy.get_action(env, observation), torch.tensor([[8.0] * action_dim, [10.0] * action_dim])
@@ -342,11 +397,11 @@ def test_goals_use_measured_feedback_step_limit_and_partial_reset(backend, actio
 
     def create(**kwargs):
         calls.append(copy.deepcopy(kwargs))
-        state = json.loads(kwargs["messages"][1]["content"][0]["text"])["policy_state"]
+        state = json.loads(kwargs["messages"][1]["content"][1]["text"])
         return response(json.dumps({"target": (np.asarray(state["joint_positions"]) + 1).tolist()}))
 
     backend.client.chat.completions.create.side_effect = create
-    policy = make_multi_step_policy(backend, JointGoalAdapter(max_steps=2))
+    policy = make_multi_step_policy(backend, JointGoalAdapter(action_dim=action_dim))
     env, observation = inputs(action_dim)
     torch.testing.assert_close(policy.get_action(env, observation), torch.full((2, action_dim), 0.25))
     assert len(calls) == 2
@@ -367,10 +422,59 @@ def test_goals_use_measured_feedback_step_limit_and_partial_reset(backend, actio
     assert len(calls) == 7
 
 
-def test_goal_controller_output_is_validated_before_conversion(backend):
+@pytest.mark.parametrize("mode", ["step", "goal"])
+def test_actions_use_live_world_without_joint_positions_in_prompt(backend, mode):
     backend.client.chat.completions.create.return_value = response('{"target": [1, 2]}')
-    adapter = JointGoalAdapter(max_steps=2)
-    adapter.compute_command = Mock(return_value=np.array([np.inf, 0]))
+    if mode == "step":
+        policy = make_policy(backend)
+    else:
+        policy = make_multi_step_policy(backend, JointGoalAdapter(), max_steps_per_goal=5)
+    policy.observation_adapter = ObservationAdapter(include_joint_positions=False)
+    policy.observation_adapter.build_request_content = Mock(wraps=policy.observation_adapter.build_request_content)
+    env, observation = inputs()
+    world_positions = observation["position"]
+    observation["position"] = world_positions.clone()  # Keep prompt observations stale.
+    first = policy.get_action(env, observation)
+    expected_step = torch.tensor([[1.0, 1.0], [-1.0, -1.0]])
+    torch.testing.assert_close(first, expected_step if mode == "step" else expected_step * 0.25)
+    world_positions[0].add_(0.9)
+    world_positions[1].sub_(0.9)
+    torch.testing.assert_close(policy.get_action(env, observation), expected_step * 0.1)
+    expected_calls = 4 if mode == "step" else 2
+    assert backend.client.chat.completions.create.call_count == expected_calls
+    assert policy.observation_adapter.build_request_content.call_count == expected_calls
+    content = backend.client.chat.completions.create.call_args.kwargs["messages"][1]["content"]
+    assert len(content) == 3  # Task, camera label, and image; no joint positions.
+    assert content[1] == {"type": "text", "text": "camera=front_view"}
+    assert content[2]["type"] == "image_url"
+    env.unwrapped.arena_world.get_joint_positions.assert_called_with("robot", ("joint_0", "joint_1"))
+
+
+@pytest.mark.parametrize("max_step", [0.1, 0.25])
+def test_goal_decoder_can_use_different_motion_generators(backend, max_step):
+    backend.client.chat.completions.create.return_value = response('{"target": [1, 2]}')
+    policy = make_multi_step_policy(backend, JointGoalAdapter(motion_generator=JointMotionGenerator(max_step=max_step)))
+    expected = torch.tensor([[max_step, max_step], [-max_step, -max_step]])
+    torch.testing.assert_close(policy.get_action(*inputs()), expected)
+    assert backend.client.chat.completions.create.call_count == 2
+
+
+def test_invalid_goals_are_rejected_before_motion_generation(backend):
+    backend.client.chat.completions.create.return_value = response('{"target": [1]}')
+    generator = JointMotionGenerator()
+    generator.compute_command = Mock()
+    policy = make_multi_step_policy(backend, JointGoalAdapter(motion_generator=generator))
+    with pytest.raises(InvalidAgentResponseError, match="Wrong goal dimensions"):
+        policy.get_action(*inputs())
+    generator.compute_command.assert_not_called()
+    assert backend.client.chat.completions.create.call_count == 1
+
+
+def test_motion_generator_output_is_validated_before_conversion(backend):
+    backend.client.chat.completions.create.return_value = response('{"target": [1, 2]}')
+    generator = JointMotionGenerator()
+    generator.compute_command = Mock(return_value=np.array([np.inf, 0]))
+    adapter = JointGoalAdapter(motion_generator=generator)
     adapter.command_to_action = Mock()
     policy = make_multi_step_policy(backend, adapter)
     with pytest.raises(ValueError, match="finite goal command"):
@@ -419,7 +523,7 @@ def test_invalid_model_actions_are_rejected_with_python_optimization():
                 inference_backend=backend, observation_adapter=ObservationAdapter(), action_adapter=adapter,
             )
             try:
-                policy._infer([], {"joint_positions": [0.0, 0.0]})
+                policy._infer([], SimpleNamespace(), 0)
             except InvalidAgentResponseError as error:
                 if error.details.code != "invalid_command" or backend.infer.call_count != 2:
                     raise RuntimeError("Incorrect rejection details or retry count")
@@ -458,14 +562,9 @@ def test_empty_choices_retry_without_correction_message(backend):
     assert calls[0].kwargs["messages"] == calls[1].kwargs["messages"]
 
 
-def test_missing_camera_keys_fail_at_construction(backend):
-    adapter = ObservationAdapter()
-    adapter.camera_keys = ()
+def test_missing_camera_keys_fail_before_inference(backend):
+    policy = make_policy(backend)
+    policy.observation_adapter.camera_keys = ()
     with pytest.raises(AssertionError, match="camera observation key"):
-        VLMStepPolicy(
-            VLMPolicyCfg(system_prompt="Control these joints."),
-            inference_backend=backend,
-            observation_adapter=adapter,
-            action_adapter=ActionAdapter(),
-        )
+        policy.get_action(*inputs())
     backend.client.chat.completions.create.assert_not_called()
