@@ -6,21 +6,12 @@
 """Observation contracts for VLM policies."""
 
 from abc import ABC, abstractmethod
-from typing import Generic, TypeVar
+from typing import Generic
 
-from pydantic import BaseModel, ConfigDict
+from isaaclab_arena_vlm_agent.embodiment_adapter.policy_state import PolicyStateT
 
 CAMERA_OBSERVATION_GROUP = "camera_obs"
 """Observation group containing camera images indexed by camera key."""
-
-
-class PolicyState(BaseModel):
-    """Declare only the measured fields needed for inference and command execution."""
-
-    model_config = ConfigDict(extra="forbid", strict=True, allow_inf_nan=False)
-
-
-PolicyStateT = TypeVar("PolicyStateT", bound=PolicyState)
 
 
 class VLMObservationAdapter(ABC, Generic[PolicyStateT]):

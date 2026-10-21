@@ -25,11 +25,11 @@ from isaaclab_arena_vlm_agent.embodiment_adapter.action_adapter import (
 )
 from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import (
     CAMERA_OBSERVATION_GROUP,
-    PolicyState,
     VLMObservationAdapter,
 )
-from isaaclab_arena_vlm_agent.errors import InvalidAgentResponseError
-from isaaclab_arena_vlm_agent.image import image_to_jpeg_data_url
+from isaaclab_arena_vlm_agent.embodiment_adapter.policy_state import PolicyState
+from isaaclab_arena_vlm_agent.image_utils import image_to_jpeg_data_url
+from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
 
 
 @dataclass

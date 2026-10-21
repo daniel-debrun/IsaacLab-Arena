@@ -29,11 +29,11 @@ from isaaclab_arena_vlm_agent.embodiment_adapter.action_adapter import (
 )
 from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import (
     CAMERA_OBSERVATION_GROUP,
-    PolicyState,
     VLMObservationAdapter,
 )
-from isaaclab_arena_vlm_agent.errors import InvalidAgentResponseError
+from isaaclab_arena_vlm_agent.embodiment_adapter.policy_state import PolicyState
 from isaaclab_arena_vlm_agent.policy.vlm_agent_policy import VLMChunkPolicy, VLMGoalPolicy, VLMPolicyCfg, VLMStepPolicy
+from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
 
 
 class JointPositionState(PolicyState):
@@ -430,7 +430,7 @@ def test_invalid_model_actions_are_rejected_with_python_optimization():
         from isaaclab_arena_vlm_agent.tests.test_vlm_agent_policy import (
             ActionAdapter, ObservationAdapter, JointPositionState,
         )
-        from isaaclab_arena_vlm_agent.errors import InvalidAgentResponseError
+        from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
         from isaaclab_arena_vlm_agent.policy.vlm_agent_policy import VLMStepPolicy, VLMPolicyCfg
 
         for command in (np.ones((1, 2)), np.empty(0), np.array([1, np.nan])):

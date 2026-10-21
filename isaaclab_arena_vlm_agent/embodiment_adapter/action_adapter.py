@@ -12,7 +12,7 @@ from typing import Generic
 
 from pydantic import BaseModel
 
-from isaaclab_arena_vlm_agent.embodiment_adapter.observation_adapter import PolicyStateT
+from isaaclab_arena_vlm_agent.embodiment_adapter.policy_state import PolicyStateT
 
 
 class AgentActionAdapter(ABC, Generic[PolicyStateT]):
