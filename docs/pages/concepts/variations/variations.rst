@@ -227,14 +227,6 @@ environments:
 .. literalinclude:: ../../../../isaaclab_arena_environments/experiment_configs/asset_selection_experiment.yaml
    :language: yaml
 
-Run it with:
-
-.. code-block:: bash
-
-   python isaaclab_arena/evaluation/experiment_runner.py \
-     --viz kit \
-     --experiment_config isaaclab_arena_environments/experiment_configs/asset_selection_experiment.yaml
-
 By default, the first rebuild of an Experiment Run takes the first name of ``asset_names``, the
 second rebuild the second name, and so on, starting over after the last name. The seed does not
 change this order, so ``n`` rebuilds take each of the ``n`` names once, in list order. With
