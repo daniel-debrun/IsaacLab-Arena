@@ -693,16 +693,24 @@ class ProgressTracker:
         """
         from isaaclab_arena.tasks.predicates.object_settling import objects_settled
 
+        # Start with no pending wait, preserving the per-environment shape and device.
         pending = torch.zeros_like(self._task_success)
+        # Later sequential subtasks must not delay policy startup for the first subtask.
         runners = self._subtask_runners[0] if self.subtasks_are_sequential else self.runners
         for runner in runners:
+            # Any sequence can impose an initial settling requirement.
             for sequence_name, chain in runner.predicate_chains.items():
+                # Only the first predicate gates startup; later predicates need policy execution.
                 predicate = chain[0][0]
+                # Inspect the wrapped predicate without advancing its consecutive-step counter.
                 if isinstance(predicate, _TrueForConsecutiveSteps):
                     predicate = predicate.predicate
+                # Remove bound arguments so function identity identifies objects_settled.
                 while isinstance(predicate, functools.partial):
                     predicate = predicate.func
                 if predicate is objects_settled:
+                    # Index zero means settling has not completed in that environment.
+                    # OR combines requirements so any pending sequence keeps the wait active.
                     pending |= runner.current_predicate_index[sequence_name] == 0
         return pending
 
