@@ -65,7 +65,7 @@ class ActionAdapter(AgentActionAdapter):
     response_model = JointTargetResponse
 
     def __init__(self, scale=1.0, action_dim=2):
-        super().__init__(SimpleNamespace(), CommandType.JOINT_POSITION)
+        super().__init__(SimpleNamespace(), CommandType.ABS_JOINT_POSITION)
         self.response_model = JointTargetResponse
         self.scale = scale
         self.joint_names = tuple(f"joint_{i}" for i in range(action_dim))
@@ -278,7 +278,7 @@ class JointChunkAdapter(ChunkActionAdapter):
         )
 
     def __init__(self, chunk_size: int, action_dim=2):
-        super().__init__(SimpleNamespace(), CommandType.JOINT_POSITION, chunk_size=chunk_size)
+        super().__init__(SimpleNamespace(), CommandType.ABS_JOINT_POSITION, chunk_size=chunk_size)
         self.joint_names = tuple(f"joint_{i}" for i in range(action_dim))
         self.response_model = create_model(
             "JointChunkResponse",
@@ -305,7 +305,7 @@ class JointGoalAdapter(GoalActionAdapter):
     def __init__(self, action_dim=2, *, motion_generator=None):
         if motion_generator is None:
             motion_generator = JointMotionGenerator(action_dim=action_dim)
-        super().__init__(SimpleNamespace(), CommandType.JOINT_POSITION, motion_generator=motion_generator)
+        super().__init__(SimpleNamespace(), CommandType.ABS_JOINT_POSITION, motion_generator=motion_generator)
         self.response_model = JointTargetResponse
         self.joint_names = tuple(f"joint_{i}" for i in range(action_dim))
 
@@ -318,7 +318,7 @@ class JointGoalAdapter(GoalActionAdapter):
 
 
 class JointMotionGenerator(MotionGenerator):
-    command_type = CommandType.JOINT_POSITION
+    command_type = CommandType.ABS_JOINT_POSITION
 
     def __init__(self, action_dim=2, max_step=0.25):
         self.joint_names = tuple(f"joint_{i}" for i in range(action_dim))
@@ -594,7 +594,7 @@ def test_missing_camera_keys_fail_before_inference(backend):
 
 def test_action_adapter_requires_controller_compatibility_override():
     with pytest.raises(TypeError, match="is_robot_action_space_supported"):
-        AgentActionAdapter(SimpleNamespace(), CommandType.JOINT_POSITION)
+        AgentActionAdapter(SimpleNamespace(), CommandType.ABS_JOINT_POSITION)
 
 
 def test_action_adapter_requires_decode_override():
@@ -603,4 +603,4 @@ def test_action_adapter_requires_decode_override():
             return True
 
     with pytest.raises(TypeError, match="decode_command"):
-        CompatibilityOnlyAdapter(SimpleNamespace(), CommandType.JOINT_POSITION)
+        CompatibilityOnlyAdapter(SimpleNamespace(), CommandType.ABS_JOINT_POSITION)

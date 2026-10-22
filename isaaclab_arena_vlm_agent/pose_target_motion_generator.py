@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 class PoseTargetMotionGenerator(MotionGenerator):
     """Hold an absolute IK target until measured pose and gripper tolerances are met."""
 
-    command_type = CommandType.EE_POSE
+    command_type = CommandType.ABS_EE_POSE
 
     def __init__(
         self,
@@ -59,32 +59,31 @@ class PoseTargetMotionGenerator(MotionGenerator):
             Whether every pose and binary control is within its configured tolerance.
         """
         assert self.embodiment.get_command_type() == self.command_type, "Expected absolute pose controllers"
-        manager = env.unwrapped.action_manager
+        assert goal.shape == (env.unwrapped.action_manager.total_action_dim,)
+        return self._poses_reached(goal, env, env_id) and self._grippers_reached(goal, env, env_id)
+
+    def _poses_reached(self, goal: np.ndarray, env, env_id: int) -> bool:
+        """Check every measured command-body pose against translation and rotation tolerances."""
         quaternion_offsets = self.embodiment.get_quaternion_indices()
-        binary_values = self.embodiment.get_binary_action_values(env)
         poses = (
             self.embodiment.get_measured_command_body_pose_in_root(env)[env_id].detach().cpu().numpy().reshape(-1, 7)
         )
-        assert goal.shape == (manager.total_action_dim,)
         assert poses.shape == (len(quaternion_offsets), 7)
         if not np.isfinite(poses).all():
             return False
         for pose, offset in zip(poses, quaternion_offsets):
             pose_start = offset - 3
-            # Euclidean distance in meters; both positions are expressed in the robot-root frame R.
-            position_error = np.linalg.norm(goal[pose_start:offset] - pose[:3])
-            # E is the measured end-effector frame; G is its goal frame, both relative to R.
-            q_R_E = pose[3:7]
-            q_R_G = goal[offset : offset + 4]
-            norm_product = np.linalg.norm(q_R_E) * np.linalg.norm(q_R_G)
-            if norm_product == 0:
+            target_pose = goal[pose_start : offset + 4]
+            if _position_error_m(pose[:3], target_pose[:3]) > self.position_tolerance_m:
                 return False
-            # The normalized dot product gives cos(theta / 2); abs handles equivalent q and -q rotations.
-            cosine_half_angle = abs(np.dot(q_R_E, q_R_G) / norm_product)
-            # Recover the shortest angle in radians; clipping protects arccos from roundoff.
-            rotation_error = 2.0 * np.arccos(np.clip(cosine_half_angle, 0.0, 1.0))
-            if position_error > self.position_tolerance_m or rotation_error > self.rotation_tolerance_rad:
+            if _rotation_error_rad(pose[3:7], target_pose[3:7]) > self.rotation_tolerance_rad:
                 return False
+        return True
+
+    def _grippers_reached(self, goal: np.ndarray, env, env_id: int) -> bool:
+        """Check every gripper against its normalized joint-travel tolerance."""
+        manager = env.unwrapped.action_manager
+        binary_values = self.embodiment.get_binary_action_values(env)
         action_names = {}
         action_index = 0
         for name, dimension in zip(manager.active_terms, manager.action_term_dim):
@@ -120,3 +119,21 @@ class PoseTargetMotionGenerator(MotionGenerator):
             An independent absolute pose command for the next environment step.
         """
         return goal.copy()
+
+
+def _position_error_m(measured: np.ndarray, target: np.ndarray) -> float:
+    """Return Euclidean translation error in meters."""
+    # Both positions are expressed in the robot-root frame R.
+    return float(np.linalg.norm(target - measured))
+
+
+def _rotation_error_rad(q_R_E: np.ndarray, q_R_G: np.ndarray) -> float:
+    """Return the shortest rotation error in radians, or infinity for a zero quaternion."""
+    # E is the measured end-effector frame; G is its goal frame, both relative to root R.
+    norm_product = np.linalg.norm(q_R_E) * np.linalg.norm(q_R_G)
+    if norm_product == 0:
+        return math.inf
+    # The normalized dot product gives cos(theta / 2); abs handles equivalent q and -q rotations.
+    cosine_half_angle = abs(np.dot(q_R_E, q_R_G) / norm_product)
+    # Recover the shortest angle in radians; clipping protects arccos from roundoff.
+    return float(2.0 * np.arccos(np.clip(cosine_half_angle, 0.0, 1.0)))

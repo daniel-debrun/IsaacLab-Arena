@@ -11,8 +11,8 @@ from enum import Enum
 class CommandType(str, Enum):
     """Coordinate space of absolute commands, independent of execution strategy."""
 
-    EE_POSE = "ee_pose"
-    """Command-body pose in the robot-root frame, in meters and XYZW quaternions."""
+    ABS_EE_POSE = "abs_ee_pose"
+    """Absolute command-body pose in the robot-root frame, in meters and XYZW quaternions."""
 
-    JOINT_POSITION = "joint_position"
-    """Joint positions in controller order, in radians or meters for prismatic joints."""
+    ABS_JOINT_POSITION = "abs_joint_position"
+    """Absolute joint positions in controller order, in radians or meters for prismatic joints."""

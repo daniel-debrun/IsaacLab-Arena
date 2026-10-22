@@ -37,7 +37,7 @@ def test_completion_checks_every_pose_and_unclamped_binary_state(binary_values, 
                 get_open_close_joint_positions=Mock(return_value=joint_targets),
             )
         ),
-        get_command_type=Mock(return_value=CommandType.EE_POSE),
+        get_command_type=Mock(return_value=CommandType.ABS_EE_POSE),
         get_quaternion_indices=Mock(return_value=(3, 11)),
         get_binary_action_values=Mock(return_value={7: binary_values, 15: binary_values}),
     )
@@ -73,7 +73,7 @@ def test_pose_only_layout_rejects_invalid_measured_rotation(invalid_state):
     measured = torch.tensor([[0, 0, 0, 0, 0, 0, 1]], dtype=torch.float32)
     embodiment = SimpleNamespace(
         get_measured_command_body_pose_in_root=Mock(return_value=measured),
-        get_command_type=Mock(return_value=CommandType.EE_POSE),
+        get_command_type=Mock(return_value=CommandType.ABS_EE_POSE),
         get_quaternion_indices=Mock(return_value=(3,)),
         get_binary_action_values=Mock(return_value={}),
     )

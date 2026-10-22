@@ -22,15 +22,15 @@ def _env(dimension):
 @pytest.fixture
 def embodiment():
     return SimpleNamespace(
-        get_command_type=Mock(return_value=CommandType.EE_POSE),
+        get_command_type=Mock(return_value=CommandType.ABS_EE_POSE),
         get_quaternion_indices=Mock(return_value=(3,)),
         get_binary_action_values=Mock(return_value={7: (0.0, 1.0)}),
     )
 
 
-@pytest.mark.parametrize("command_type", [None, CommandType.JOINT_POSITION])
+@pytest.mark.parametrize("command_type", [None, CommandType.ABS_JOINT_POSITION])
 def test_unsupported_controllers_clear_previous_validation(command_type, embodiment):
-    adapter = StepActionAdapter(embodiment, CommandType.EE_POSE)
+    adapter = StepActionAdapter(embodiment, CommandType.ABS_EE_POSE)
     assert adapter.is_robot_action_space_supported(_env(8))
     embodiment.get_command_type.return_value = command_type
     assert not adapter.is_robot_action_space_supported(_env(8))
@@ -39,10 +39,10 @@ def test_unsupported_controllers_clear_previous_validation(command_type, embodim
 
 @pytest.mark.parametrize("dimension", [7, 29])
 def test_joint_commands_use_controller_dimension_without_gripper(dimension, embodiment):
-    embodiment.get_command_type.return_value = CommandType.JOINT_POSITION
+    embodiment.get_command_type.return_value = CommandType.ABS_JOINT_POSITION
     embodiment.get_quaternion_indices.return_value = ()
     embodiment.get_binary_action_values.return_value = {}
-    adapter = ChunkActionAdapter(embodiment, CommandType.JOINT_POSITION, chunk_size=2)
+    adapter = ChunkActionAdapter(embodiment, CommandType.ABS_JOINT_POSITION, chunk_size=2)
     assert adapter.is_robot_action_space_supported(_env(dimension))
     assert adapter.is_command_valid(np.zeros((2, dimension)))
     assert not adapter.is_command_valid(np.zeros((2, dimension + 1)))
@@ -53,7 +53,7 @@ def test_joint_commands_use_controller_dimension_without_gripper(dimension, embo
 def test_bimanual_pose_layout_and_binary_conventions(binary_values, embodiment):
     embodiment.get_quaternion_indices.return_value = (3, 11)
     embodiment.get_binary_action_values.return_value = {7: binary_values, 15: binary_values}
-    adapter = ChunkActionAdapter(embodiment, CommandType.EE_POSE, chunk_size=2)
+    adapter = ChunkActionAdapter(embodiment, CommandType.ABS_EE_POSE, chunk_size=2)
     env = _env(16)
     assert adapter.is_robot_action_space_supported(env)
     embodiment.get_command_type.assert_called_once_with()

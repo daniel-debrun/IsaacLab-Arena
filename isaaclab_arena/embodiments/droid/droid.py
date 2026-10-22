@@ -282,7 +282,7 @@ class DroidDifferentialIKEmbodiment(DroidEmbodimentBase):
 
     def get_command_type(self) -> CommandType:
         """Return the end-effector pose command type."""
-        return CommandType.EE_POSE
+        return CommandType.ABS_EE_POSE
 
     def get_quaternion_indices(self) -> tuple[int, ...]:
         """Return the XYZW quaternion start index in the pose command."""
@@ -386,7 +386,7 @@ class DroidAbsoluteJointPositionEmbodiment(DroidEmbodimentBase):
 
     def get_command_type(self) -> CommandType:
         """Return the absolute joint-position command type."""
-        return CommandType.JOINT_POSITION
+        return CommandType.ABS_JOINT_POSITION
 
     def get_quaternion_indices(self) -> tuple[int, ...]:
         """Return no quaternion indices for joint commands."""

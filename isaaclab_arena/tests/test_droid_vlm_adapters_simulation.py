@@ -50,13 +50,13 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         obs, _ = env.reset()
         base = env.unwrapped
         observation_adapter = StateObservationAdapter(embodiment)
-        action_adapter = StepActionAdapter(embodiment, CommandType.EE_POSE)
-        assert embodiment.get_command_type() == CommandType.EE_POSE
+        action_adapter = StepActionAdapter(embodiment, CommandType.ABS_EE_POSE)
+        assert embodiment.get_command_type() == CommandType.ABS_EE_POSE
         assert embodiment.get_quaternion_indices() == (3,)
         assert embodiment.get_binary_action_values(env) == {7: (0.0, 1.0)}
         assert action_adapter.embodiment is embodiment
         assert action_adapter.is_robot_action_space_supported(env)
-        assert not StepActionAdapter(embodiment, CommandType.JOINT_POSITION).is_robot_action_space_supported(env)
+        assert not StepActionAdapter(embodiment, CommandType.ABS_JOINT_POSITION).is_robot_action_space_supported(env)
         states = [observation_adapter.extract_robot_state(env, obs, env_id) for env_id in range(base.num_envs)]
         actions = []
         for env_id, state in enumerate(states):
@@ -170,9 +170,9 @@ def _test_droid_joint_position_adapters(simulation_app):
     try:
         env.reset()
         base = env.unwrapped
-        assert not StepActionAdapter(embodiment, CommandType.EE_POSE).is_robot_action_space_supported(env)
+        assert not StepActionAdapter(embodiment, CommandType.ABS_EE_POSE).is_robot_action_space_supported(env)
         arm = base.action_manager.get_term("arm_action")
-        assert embodiment.get_command_type() == CommandType.JOINT_POSITION
+        assert embodiment.get_command_type() == CommandType.ABS_JOINT_POSITION
         assert embodiment.get_quaternion_indices() == ()
         assert embodiment.get_binary_action_values(env) == {arm.action_dim: (0.0, 1.0)}
         joint_names = tuple(f"panda_joint{i}" for i in range(1, 8))
@@ -183,10 +183,10 @@ def _test_droid_joint_position_adapters(simulation_app):
         observation_adapter = StateObservationAdapter(embodiment)
         observation_adapter.build_request_content = Mock(return_value=[])
         for policy_type, adapter in (
-            (VLMStepPolicy, StepActionAdapter(embodiment, CommandType.JOINT_POSITION)),
+            (VLMStepPolicy, StepActionAdapter(embodiment, CommandType.ABS_JOINT_POSITION)),
             (
                 VLMChunkPolicy,
-                ChunkActionAdapter(embodiment, CommandType.JOINT_POSITION, chunk_size=2),
+                ChunkActionAdapter(embodiment, CommandType.ABS_JOINT_POSITION, chunk_size=2),
             ),
         ):
             assert adapter.is_robot_action_space_supported(env)
