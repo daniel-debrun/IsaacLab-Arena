@@ -174,6 +174,7 @@ def _build_environment_from_cfg(
 def build_arena_builder_from_run_cfg(cfg: ArenaRunCfg) -> ArenaEnvBuilder:
     """Build an Arena environment builder from one typed run config."""
     hydra_overrides = overrides_from_dict(cfg.variations)
+    policy_image_size = policy_image_size_from_run_cfg(cfg)
     # TODO(cvolk, 2026-07-07): [typed-config-migration] Remove the legacy branch when graph environments
     # have typed configs and no longer require the argparse construction path.
     return (
@@ -181,13 +182,26 @@ def build_arena_builder_from_run_cfg(cfg: ArenaRunCfg) -> ArenaEnvBuilder:
             cfg.environment,
             environment_builder=cfg.environment_builder,
             hydra_overrides=hydra_overrides,
+            policy_image_size=policy_image_size,
         )
         if isinstance(cfg.environment, LegacyGraphEnvironmentCfg)
-        else _build_arena_builder_from_cfg(cfg, hydra_overrides)
+        else _build_arena_builder_from_cfg(cfg, hydra_overrides, policy_image_size)
     )
 
 
-def _build_arena_builder_from_cfg(cfg: ArenaRunCfg, hydra_overrides: list[str]) -> ArenaEnvBuilder:
+def policy_image_size_from_run_cfg(cfg: ArenaRunCfg) -> tuple[int, int] | None:
+    """Return the (height, width) the run's policy consumes when its cameras are fitted to the policy."""
+    if not cfg.environment_builder.camera_resolution_is_auto:
+        return None
+    policy_type = PolicyRegistry().get_policy_type_for_cfg(cfg.policy)
+    return policy_type.required_image_size(cfg.policy)
+
+
+def _build_arena_builder_from_cfg(
+    cfg: ArenaRunCfg,
+    hydra_overrides: list[str],
+    policy_image_size: tuple[int, int] | None,
+) -> ArenaEnvBuilder:
     """Build an Arena environment builder from a registered typed config."""
     # ArenaEnvBuilder imports pxr modules that must not load before SimulationApp.
     # Keep this runtime import deferred even though the type-only import is at the top.
@@ -199,6 +213,7 @@ def _build_arena_builder_from_cfg(cfg: ArenaRunCfg, hydra_overrides: list[str]) 
         arena_environment,
         cfg.environment_builder,
         hydra_overrides=hydra_overrides,
+        policy_image_size=policy_image_size,
     )
 
 
