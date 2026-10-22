@@ -53,7 +53,7 @@ class PickAndPlaceTask(TaskBase):
         destination_object: Destination asset used by the default Mimic configuration.
         episode_length_s: Maximum episode duration in seconds.
         task_description: Natural-language task instruction. When omitted, get_task_description() names the
-            assets that the pick-up object and the destination spawn.
+            pick-up object and the destination by their registry_name, or by their name when they have none.
         force_threshold: Minimum filtered normal force exerted on the object by the destination, in newtons.
         velocity_threshold: Object linear-speed threshold in meters per second. Speed must be below it.
         mimic_env_cfg_factory: Optional factory for a custom Mimic environment configuration.
@@ -106,14 +106,13 @@ class PickAndPlaceTask(TaskBase):
         self.events_cfg = None
 
     def get_task_description(self) -> str:
-        """Return the task description passed to the task, or one that names the spawned assets.
+        """Return the task description passed to the task, or one that names the pick-up object and the destination.
 
         Each object is named by its registry_name, or by its name when it has none.
         """
         if self.task_description is not None:
             return self.task_description
         pick_up_object_label = self.pick_up_object.registry_name or self.pick_up_object.name
-        # An ObjectReference destination has no registry name.
         destination_label = self.destination_location.registry_name or self.destination_location.name
         return f"Pick up the {pick_up_object_label}, and place it into the {destination_label}"
 
