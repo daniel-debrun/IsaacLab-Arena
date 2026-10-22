@@ -56,6 +56,7 @@ def compose_pick_and_place_with_selection(
     *,
     selection_cfg=None,
     seed=42,
+    rebuild_index=0,
     hydra_overrides=None,
     recorded_variation_samples_path=None,
     solve_relations=False,
@@ -65,6 +66,7 @@ def compose_pick_and_place_with_selection(
     Args:
         selection_cfg: Settings applied to the pickup's asset selection. None keeps the disabled default.
         seed: Build seed.
+        rebuild_index: Index of the build among the rebuilds of an Experiment Run.
         hydra_overrides: Variation overrides for the build.
         recorded_variation_samples_path: Record to replay, if any.
         solve_relations: Whether to solve the pickup's placement on the table.
@@ -106,6 +108,7 @@ def compose_pick_and_place_with_selection(
     builder_cfg = ArenaEnvBuilderCfg(
         num_envs=NUM_ENVS,
         seed=seed,
+        rebuild_index=rebuild_index,
         solve_relations=solve_relations,
         placement_seed=0,
         resolve_on_reset=False,
@@ -153,19 +156,25 @@ def _test_disabled_selection_keeps_default_asset(simulation_app):
     return True
 
 
-def _test_in_order_selection_follows_build_seed(simulation_app):
+def _test_in_order_selection_follows_rebuild_index(simulation_app):
     from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariationCfg
 
     asset_names = ["mustard_bottle", "sugar_box", "tomato_soup_can"]
-    spawned_usd_paths = []
-    for seed in (42, 43, 44):
-        _, env_cfg, _ = compose_pick_and_place_with_selection(
-            selection_cfg=AssetSelectionVariationCfg(enabled=True, asset_names=asset_names), seed=seed
-        )
-        spawned_usd_paths.append(env_cfg.scene.pickup.spawn.usd_path)
 
-    # 42 % 3 == 0, so seed 42 takes the first of asset_names and each next seed the next one.
-    assert spawned_usd_paths == [get_registered_usd_path(asset_name) for asset_name in asset_names]
+    def compose_in_order_selection(seed, rebuild_index):
+        _, env_cfg, _ = compose_pick_and_place_with_selection(
+            selection_cfg=AssetSelectionVariationCfg(enabled=True, asset_names=asset_names),
+            seed=seed,
+            rebuild_index=rebuild_index,
+        )
+        return env_cfg.scene.pickup.spawn.usd_path
+
+    # Rebuild k takes name k % 3, so the fourth rebuild starts over at the first name.
+    usd_paths_over_rebuilds = [compose_in_order_selection(seed=42, rebuild_index=k) for k in range(4)]
+    expected_names = asset_names + asset_names[:1]
+    assert usd_paths_over_rebuilds == [get_registered_usd_path(asset_name) for asset_name in expected_names]
+    # Another seed takes the same name at the same rebuild index.
+    assert compose_in_order_selection(seed=44, rebuild_index=1) == usd_paths_over_rebuilds[1]
     return True
 
 
@@ -188,8 +197,7 @@ def _test_random_selection_draws_from_seeded_generator(simulation_app):
     second_usd_path = compose_random_selection(seed=7)
     assert first_usd_path == second_usd_path
 
-    # These seeds share seed % 3, so in-order selection would take one name for all of them.
-    usd_paths_over_seeds = {compose_random_selection(seed) for seed in range(0, 15, 3)}
+    usd_paths_over_seeds = {compose_random_selection(seed) for seed in range(5)}
     assert len(usd_paths_over_seeds) > 1
     return True
 
@@ -200,10 +208,9 @@ def _test_recorded_asset_name_is_replayed(simulation_app, tmp_path):
     recorded_samples_path = tmp_path / "asset_selection_replay.jsonl"
     recorded_row = json.dumps({"variations": {SELECTION_KEY: "mustard_bottle"}})
     recorded_samples_path.write_text(f"{recorded_row}\n" * NUM_ENVS)
-    # In order with seed 42, a live draw takes "sugar_box" (42 % 2 == 0).
+    # In order, a live draw in the first rebuild takes "sugar_box".
     _, env_cfg, _ = compose_pick_and_place_with_selection(
         selection_cfg=AssetSelectionVariationCfg(enabled=True, asset_names=["sugar_box", "mustard_bottle"]),
-        seed=42,
         recorded_variation_samples_path=str(recorded_samples_path),
     )
 
@@ -277,7 +284,7 @@ def _test_placement_replay_needs_recorded_asset_selection(simulation_app, tmp_pa
     with pytest.raises(AssertionError, match=r"no 'pickup\.asset_selection' value"):
         build_replaying(layout_row, "layout_without_selection")
 
-    # In order with seed 42, a live draw would take "mustard_bottle" (42 % 2 == 0).
+    # In order, a live draw in the first rebuild would take "mustard_bottle".
     layout_row_with_selection = {**layout_row, "variations": {SELECTION_KEY: "sugar_box"}}
     env_cfg = build_replaying(layout_row_with_selection, "layout_with_selection")
     assert env_cfg.scene.pickup.spawn.usd_path == get_registered_usd_path("sugar_box")
@@ -311,8 +318,10 @@ def test_disabled_selection_keeps_default_asset():
     assert run_function_with_persistent_simulation_app(_test_disabled_selection_keeps_default_asset, headless=HEADLESS)
 
 
-def test_in_order_selection_follows_build_seed():
-    assert run_function_with_persistent_simulation_app(_test_in_order_selection_follows_build_seed, headless=HEADLESS)
+def test_in_order_selection_follows_rebuild_index():
+    assert run_function_with_persistent_simulation_app(
+        _test_in_order_selection_follows_rebuild_index, headless=HEADLESS
+    )
 
 
 def test_random_selection_draws_from_seeded_generator():

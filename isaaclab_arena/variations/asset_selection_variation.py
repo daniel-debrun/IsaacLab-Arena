@@ -29,8 +29,8 @@ class AssetSelectionVariationCfg(VariationBaseCfg):
     """Configuration for AssetSelectionVariation."""
 
     random_choice: bool = False
-    """False takes the name at index ``seed % n`` of the ``n`` names to choose from, so consecutive build seeds
-    take the names in order. True draws a name at random, seeded by the build seed and the variation key."""
+    """False takes the names in list order, one per rebuild, starting over after the last name. True draws a name at
+    random, seeded by the build seed and the variation key."""
 
     asset_names: list[str] = field(default_factory=list)
     """Registered names of the rigid objects to choose from, in this order. Required when enabled."""
@@ -59,7 +59,7 @@ class AssetSelectionVariation(BuildTimeVariationBase):
         # Set before super().__init__(), whose apply_cfg call reads it.
         self._rigid_object = rigid_object
         super().__init__(cfg=cfg if cfg is not None else AssetSelectionVariationCfg(), name=name)
-        self._build_seed: int | None = None
+        self._rebuild_index: int | None = None
 
     @property
     def _variation_key(self) -> str:
@@ -78,8 +78,8 @@ class AssetSelectionVariation(BuildTimeVariationBase):
         super().apply_cfg(cfg)
 
     def configure_at_build_time(self, seed: int, variation_key: str, rebuild_index: int = 0) -> None:
-        # VariationBase does not keep the seed, and in-order selection needs it.
-        self._build_seed = seed
+        # VariationBase does not keep the rebuild index, and in-order selection needs it.
+        self._rebuild_index = rebuild_index
         super().configure_at_build_time(seed, variation_key, rebuild_index)
 
     def _realize_at_build_time(self) -> None:
@@ -100,7 +100,7 @@ class AssetSelectionVariation(BuildTimeVariationBase):
         if self.cfg.random_choice:
             selected_name = self.sampler.sample(1, asset_names)[0]
         else:
-            in_order_index = self._build_seed % len(asset_names)
+            in_order_index = self._rebuild_index % len(asset_names)
             selected_name = self.sampler.sample(1, asset_names, index=in_order_index)[0]
         self._rigid_object.set_asset(selected_name, spawn_cfgs_by_name[selected_name])
 

@@ -234,9 +234,11 @@ Run it with:
      --viz kit \
      --experiment_config isaaclab_arena_environments/experiment_configs/asset_selection_experiment.yaml
 
-By default, a build takes the name at index ``seed % n`` of the ``n`` names. The Experiment Runner
-adds the rebuild index to ``environment_builder.seed``, so ``n`` rebuilds take each name once. With
-``random_choice: true``, each build draws a name at random, and names can repeat.
+By default, the first rebuild of an Experiment Run takes the first name of ``asset_names``, the
+second rebuild the second name, and so on, starting over after the last name. The seed does not
+change this order, so ``n`` rebuilds take each of the ``n`` names once, in list order. With
+``random_choice: true``, each build draws a name at random, seeded from ``environment_builder.seed``
+and the variation key, and names can repeat.
 
 Every episode row records the chosen name, for example
 ``"pick_up_object.asset_selection": "mustard_bottle_hot3d_robolab"``, and
