@@ -77,7 +77,6 @@ class VLMPolicy(PolicyBase[VLMPolicyCfg]):
     def __init__(
         self,
         config: VLMPolicyCfg,
-        *,
         inference_backend: InferenceBackend,
         observation_adapter: VLMObservationAdapter,
         action_adapter: AgentActionAdapter,
@@ -191,7 +190,6 @@ class VLMStepPolicy(VLMPolicy):
     def __init__(
         self,
         config: VLMPolicyCfg,
-        *,
         inference_backend: InferenceBackend,
         observation_adapter: VLMObservationAdapter,
         action_adapter: AgentActionAdapter,
@@ -214,7 +212,6 @@ class VLMChunkPolicy(VLMPolicy):
     def __init__(
         self,
         config: VLMPolicyCfg,
-        *,
         inference_backend: InferenceBackend,
         observation_adapter: VLMObservationAdapter,
         action_adapter: ChunkActionAdapter,
@@ -249,7 +246,6 @@ class VLMGoalPolicy(VLMPolicy, PolicyBase[VLMGoalPolicyCfg]):
     def __init__(
         self,
         config: VLMGoalPolicyCfg,
-        *,
         inference_backend: InferenceBackend,
         observation_adapter: VLMObservationAdapter,
         action_adapter: GoalActionAdapter,
