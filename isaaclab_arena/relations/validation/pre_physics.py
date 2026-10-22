@@ -362,16 +362,14 @@ class NoOverlapValidator(PrePhysicsPlacementValidator):
         skip_mesh_pairs: bool = False,
     ) -> list[bool]:
         """Check each box pair across candidates, excluding On and fixed-fixed pairs."""
-        if not batch.candidates:
-            return []
         positions = batch.candidates[0].positions
         assert all(
             candidate.positions.keys() == positions.keys() for candidate in batch.candidates
         ), "No-overlap validation requires the same assets in every candidate."
         world_boxes = {}
         for obj, bounds in batch.stacked_collision_bboxes().items():
-            offsets = torch.tensor([candidate.positions[obj] for candidate in batch.candidates], dtype=torch.float32)
-            world_boxes[obj] = bounds.to("cpu").translated(offsets)
+            origins_W = torch.tensor([candidate.positions[obj] for candidate in batch.candidates], dtype=torch.float32)
+            world_boxes[obj] = bounds.to("cpu").translated(origins_W)
 
         valid = torch.ones(len(batch), dtype=torch.bool)
         margin = max(0.0, self._params.solver_params.clearance_m - 1e-6)

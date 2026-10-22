@@ -50,8 +50,8 @@ class RelationSolverState:
             collision_objects: Optional fixed background obstacles that participate in
                 no-overlap collision only (never in relation constraints). They keep a
                 constant world bounding box and are not optimized. Must be disjoint from objects.
-            collision_bboxes: Oriented bounds relative to each movable object origin;
-                omitted entries use the supplied env_bboxes or object bounds.
+            collision_bboxes: Collision bounds, oriented or axis-aligned, relative to each movable object origin;
+                omitted entries use the supplied env_bboxes or object bounds, and anchor entries are ignored.
         """
         assert len(initial_positions) >= 1, "initial_positions must contain at least one dict."
         anchor_objects = get_anchor_objects(objects)
@@ -137,15 +137,15 @@ class RelationSolverState:
         self._collision_boxes_axis_aligned = all(
             isinstance(box, AxisAlignedBoundingBox) for box in self._collision_bboxes.values()
         )
-        """Whether every collision box uses environment-aligned min/max bounds."""
         self._collision_geometry = {}
         """Fixed center offsets (B, 3), half-lengths (B, 3), and axes (B, 3, 3), with B = batch size."""
         if not self.collision_boxes_axis_aligned:
             for obj in self._collision_bboxes:
                 self.get_collision_geometry(obj)
         self._no_overlap_pair_cache: NoOverlapPairCache | None = None
-        """Pair routing and fixed projections for the current collision configuration."""
+        """Pair routing and the prepared upper bound for the current collision configuration."""
         self._no_overlap_pair_cache_key: tuple[WarpMeshAndSphereCache | None, CollisionMode, bool] | None = None
+        """Collision configuration that the pair cache was prepared for."""
 
     @property
     def collision_boxes_axis_aligned(self) -> bool:
@@ -158,7 +158,7 @@ class RelationSolverState:
         default_collision_mode: CollisionMode,
         skip_mesh_pairs: bool,
     ) -> NoOverlapPairCache:
-        """Return pair routing and projections for this solve's fixed collision configuration.
+        """Return pair routing and the overlap-volume upper bound for this solve's fixed collision configuration.
 
         Args:
             mesh_manager: Collision mesh cache, or None.
@@ -166,7 +166,7 @@ class RelationSolverState:
             skip_mesh_pairs: Exclude pairs represented by the mesh collision loss.
 
         Returns:
-            Ordered pair groups and fixed face projections, independent of live positions.
+            Ordered pair groups and the prepared upper bound, independent of live positions.
         """
         from isaaclab_arena.relations.no_overlap_bbox import prepare_no_overlap_pair_cache
 

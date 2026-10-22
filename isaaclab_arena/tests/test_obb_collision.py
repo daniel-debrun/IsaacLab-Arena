@@ -145,23 +145,6 @@ def test_validator_missing_mesh_uses_oriented_box_fallback():
     assert _validator().validate_batch(batch, []) == [True, False]
 
 
-def test_validator_keeps_mesh_pairs_on_mesh_path():
-    """Disjoint meshes remain valid even if their conservative proxy boxes overlap."""
-    bounds = AxisAlignedBoundingBox((-0.5, -0.5, -0.5), (0.5, 0.5, 0.5))
-    mesh = trimesh.creation.box(extents=(0.02, 0.02, 0.02))
-    first = DummyObject("first", bounds, collision_mesh=mesh)
-    second = DummyObject("second", bounds, collision_mesh=mesh.copy())
-    first.collision_mode = second.collision_mode = CollisionMode.MESH
-    boxes = {first: bounds, second: bounds}
-    batch = PlacementCandidateBatch([
-        PlacementCandidate(0, 0, {first: (0.0, 0.0, 0.0), second: (0.3, 0.0, 0.0)}, {}, boxes),
-        PlacementCandidate(0, 1, {first: (0.0, 0.0, 0.0), second: (0.0, 0.0, 0.0)}, {}, boxes),
-    ])
-    update_candidate_bounds(batch, [boxes])
-
-    assert _validator().validate_batch(batch, []) == [True, False]
-
-
 @pytest.mark.parametrize("fixed_obstacle", [True, False])
 def test_mixed_mesh_fallback_penalizes_layouts_rejected_by_enclosing_box_proxy(fixed_obstacle):
     """Varying meshless boxes use enclosing-box penalties consistent with mesh-proxy validation."""

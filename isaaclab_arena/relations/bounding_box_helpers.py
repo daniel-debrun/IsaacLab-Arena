@@ -135,23 +135,19 @@ def update_candidate_bounds(
         for obj in objects
     }
     rotated = rotate_candidate_bboxes(objects, base_bounds, [candidate.orientations for candidate in batch.candidates])
-    collision_bboxes = orient_candidate_bboxes(
+    batch.collision_bboxes = get_candidate_collision_bboxes(
         objects, base_bounds, [candidate.orientations for candidate in batch.candidates]
     )
-    for obj, bounds in collision_bboxes.items():
-        if isinstance(bounds, AxisAlignedBoundingBox):
-            collision_bboxes[obj] = rotated[obj]
-    batch.collision_bboxes = collision_bboxes
     for index, candidate in enumerate(batch.candidates):
         candidate.bboxes = {obj: bounds[index] for obj, bounds in rotated.items()}
 
 
-def orient_candidate_bboxes(
+def get_candidate_collision_bboxes(
     objects: list[PlaceableAsset],
     candidate_bboxes: dict[PlaceableAsset, AxisAlignedBoundingBox],
     orientations_per_candidate: list[dict[PlaceableAsset, float]],
 ) -> dict[PlaceableAsset, BoundingBox]:
-    """Return rotation-preserving bounds relative to object origins.
+    """Return collision bounds relative to object origins that keep each candidate's rotation.
 
     Args:
         objects: Objects whose bounds are rotated.
@@ -165,7 +161,7 @@ def orient_candidate_bboxes(
     for obj in objects:
         bounds = candidate_bboxes[obj]
         rotations = _candidate_rotations(obj, orientations_per_candidate)
-        if obj.is_anchor or all(rotation == (0.0, 0.0, 0.0, 1.0) for rotation in rotations):
+        if all(rotation == (0.0, 0.0, 0.0, 1.0) for rotation in rotations):
             result[obj] = bounds
         else:
             quaternion = torch.tensor(rotations, dtype=torch.float32, device=bounds.min_point.device)

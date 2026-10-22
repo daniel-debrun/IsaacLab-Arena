@@ -22,6 +22,9 @@ if TYPE_CHECKING:
     from isaaclab_arena.relations.placement_asset import PlaceableAsset
     from isaaclab_arena.relations.warp_mesh_manager import WarpMeshAndSphereCache
 
+_MIN_LOSS_HALF_EXTENT_M = 1e-3
+"""Smallest box half-extent in the oriented loss, so a zero-thickness box inside an obstacle has an overlap to reduce."""
+
 
 @dataclass(frozen=True)
 class NoOverlapPair:
@@ -35,14 +38,15 @@ class NoOverlapPair:
 
 @dataclass(frozen=True)
 class NoOverlapPairCache:
-    """Fixed pair routing and face projections for one solve and collision configuration."""
+    """Fixed pair routing and overlap-volume upper bound for one solve and collision configuration."""
 
     box_pairs: list[NoOverlapPair]
     """Pairs whose collision geometry matches box validation, in directed penalty order."""
     mesh_fallback_pairs: list[NoOverlapPair]
     """Pairs using enclosing-box mesh proxies, in directed penalty order."""
-    projections: OverlapVolumeUpperBound | None
-    """Prepared projections for box_pairs, or None when every collision box is an AxisAlignedBoundingBox."""
+    overlap_bound: OverlapVolumeUpperBound | None
+    """Upper bound prepared for box_pairs, or None when there are no box pairs or every collision box is an
+    AxisAlignedBoundingBox."""
 
 
 def compute_no_overlap_loss_bbox(
@@ -80,7 +84,7 @@ def compute_no_overlap_loss_bbox(
             pair_loss = _compute_aabb_pair_losses(state, group, no_collision_strategy, clearance_m, enclosing_bounds)
         else:
             pair_loss = _compute_oriented_pair_losses(
-                state, group, cache.projections, no_collision_strategy, clearance_m
+                state, group, cache.overlap_bound, no_collision_strategy, clearance_m
             )
         total = total + pair_loss.sum(dim=0)
         if debug:
@@ -95,7 +99,7 @@ def prepare_no_overlap_pair_cache(
     default_collision_mode: CollisionMode,
     skip_mesh_pairs: bool,
 ) -> NoOverlapPairCache:
-    """Prepare fixed pair routing and projections after mesh geometry is available.
+    """Prepare fixed pair routing and the overlap-volume upper bound after mesh geometry is available.
 
     Args:
         state: Solver state with fixed collision bounds and object relations.
@@ -104,7 +108,7 @@ def prepare_no_overlap_pair_cache(
         skip_mesh_pairs: Exclude pairs represented by the mesh collision loss.
 
     Returns:
-        Ordered pair groups and prepared projections for this solve.
+        Ordered pair groups and the prepared upper bound for this solve.
     """
     movable = state.optimizable_objects
     anchors = list(state.anchor_objects)
@@ -166,20 +170,20 @@ def prepare_no_overlap_pair_cache(
         else:
             box_pairs.append(pair)
 
-    projections = None
+    overlap_bound = None
     if box_pairs and not state.collision_boxes_axis_aligned:
         geometry = {}
         for pair in box_pairs:
             for obj in (pair.subject, pair.obstacle):
                 if obj not in geometry:
                     geometry[obj] = state.get_collision_geometry(obj)
-        projections = OverlapVolumeUpperBound(
-            torch.stack([geometry[p.subject][1] for p in box_pairs]),
+        overlap_bound = OverlapVolumeUpperBound(
+            torch.stack([geometry[p.subject][1] for p in box_pairs]).clamp_min(_MIN_LOSS_HALF_EXTENT_M),
             torch.stack([geometry[p.subject][2] for p in box_pairs]),
-            torch.stack([geometry[p.obstacle][1].detach() for p in box_pairs]),
+            torch.stack([geometry[p.obstacle][1].detach() for p in box_pairs]).clamp_min(_MIN_LOSS_HALF_EXTENT_M),
             torch.stack([geometry[p.obstacle][2].detach() for p in box_pairs]),
         )
-    return NoOverlapPairCache(box_pairs, mesh_fallback_pairs, projections)
+    return NoOverlapPairCache(box_pairs, mesh_fallback_pairs, overlap_bound)
 
 
 def _compute_aabb_pair_losses(
@@ -189,14 +193,14 @@ def _compute_aabb_pair_losses(
     clearance_m: float,
     enclosing_bounds: bool,
 ) -> torch.Tensor:
-    """Return (P, B) interval-volume penalties, keeping each obstacle detached."""
+    """Return (P, B) interval-volume penalties for P directed pairs and B candidates, keeping obstacles detached."""
     extents = {}
     for obj in state.optimizable_objects:
         box = state.get_enclosing_collision_bbox(obj) if enclosing_bounds else state.get_collision_bbox(obj)
-        offset = state.get_position(obj)
+        origin_W = state.get_position(obj)
         extents[obj] = (
-            (box.min_point + offset).expand(state.batch_size, 3),
-            (box.max_point + offset).expand(state.batch_size, 3),
+            (box.min_point + origin_W).expand(state.batch_size, 3),
+            (box.max_point + origin_W).expand(state.batch_size, 3),
         )
     for obj in [*state.anchor_objects, *state.collision_objects]:
         box = state.get_enclosing_collision_bbox(obj) if enclosing_bounds else state.get_collision_bbox(obj)
@@ -213,20 +217,20 @@ def _compute_aabb_pair_losses(
 def _compute_oriented_pair_losses(
     state: RelationSolverState,
     pairs: list[NoOverlapPair],
-    projections: OverlapVolumeUpperBound,
+    overlap_bound: OverlapVolumeUpperBound,
     strategy: NoCollisionLossStrategy,
     clearance_m: float,
 ) -> torch.Tensor:
-    """Return (P, B) face-projection penalties from cached rotations and current positions."""
-    centers = {}
+    """Return (P, B) overlap-volume penalties for P directed pairs and B candidates at the current positions."""
+    centers_W = {}
     for obj in [*state.optimizable_objects, *state.anchor_objects, *state.collision_objects]:
-        center, _, _ = state.get_collision_geometry(obj)
+        center_W, _, _ = state.get_collision_geometry(obj)
         if obj in state.optimizable_objects:
-            center = center + state.get_position(obj)
-        centers[obj] = center
-    subject_centers = torch.stack([centers[p.subject] for p in pairs])
-    obstacle_centers = torch.stack([centers[p.obstacle].detach() for p in pairs])
-    return strategy.slope * projections.compute(subject_centers, obstacle_centers, margin=clearance_m)
+            center_W = center_W + state.get_position(obj)
+        centers_W[obj] = center_W
+    subject_centers_W = torch.stack([centers_W[p.subject] for p in pairs])
+    obstacle_centers_W = torch.stack([centers_W[p.obstacle].detach() for p in pairs])
+    return strategy.slope * overlap_bound.compute(subject_centers_W, obstacle_centers_W, margin=clearance_m)
 
 
 def _fixed_pair_is_covered_by_mesh_collision(

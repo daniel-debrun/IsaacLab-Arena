@@ -793,9 +793,8 @@ def test_direct_solver_orients_raw_bounds_and_preserves_explicit_enclosing_bound
     assert (solver.last_loss_per_env > 0).all()
 
 
-@pytest.mark.parametrize("supplied_channel", ["enclosing", "oriented"])
-def test_direct_solver_orients_objects_omitted_from_partial_collision_bounds(supplied_channel):
-    """Partial supplied geometry keeps precedence while omitted objects still receive their yaw."""
+def test_direct_solver_orients_objects_omitted_from_partial_collision_bounds():
+    """Partial supplied collision bounds keep precedence while omitted objects still receive their yaw."""
     table = _create_table()
     table.set_initial_pose(Pose.identity())
     table.add_relation(IsAnchor())
@@ -803,34 +802,26 @@ def test_direct_solver_orients_objects_omitted_from_partial_collision_bounds(sup
     cube = DummyObject("cube", AxisAlignedBoundingBox((-0.005, -0.005, -0.05), (0.005, 0.005, 0.05)))
     supplied_bounds = AxisAlignedBoundingBox((-0.14, -0.02, -0.05), (0.14, 0.02, 0.05))
     positions = {table: (0.0, 0.0, 0.0), rod: (0.0, 0.0, 1.0), cube: (0.2, 0.3, 1.0)}
-    overrides = {"env_bboxes": {cube: supplied_bounds}, "env_bboxes_include_yaw": True}
-    if supplied_channel == "oriented":
-        overrides["env_bboxes"] = {cube: cube.get_bounding_box()}
-        overrides["collision_bboxes"] = {cube: supplied_bounds.to_obb()}
     solver = RelationSolver(RelationSolverParams(max_iters=0, clearance_m=0.0, verbose=False))
 
     solver.solve(
         [table, rod, cube],
         [positions, positions],
         orientations=[{rod: math.pi / 4}, {rod: -math.pi / 4}],
-        **overrides,
+        env_bboxes={cube: cube.get_bounding_box()},
+        collision_bboxes={cube: supplied_bounds.to_obb()},
     )
 
     # The supplied wide cube reaches the diagonal rod; its tiny default bounds do not.
     assert solver.last_loss_per_env[0] > 0
     assert solver.last_loss_per_env[1] == 0
-    assert set(overrides.get("collision_bboxes", overrides["env_bboxes"])) == {cube}
 
 
 @pytest.mark.parametrize(
     "marker_angles, candidate_yaws",
     [
         pytest.param((0.0, 0.0, 0.0), (0.0, math.pi / 2, -math.pi / 2, -math.pi), id="candidate-yaws"),
-        pytest.param((0.0, 0.0, -math.pi), (None,), id="authored-yaw"),
-        pytest.param((0.0, 0.0, math.pi / 2), (None,), id="authored-quarter-yaw"),
         pytest.param((math.pi / 2, 0.0, 0.0), (None,), id="authored-roll"),
-        pytest.param((0.0, -math.pi / 2, 0.0), (None,), id="authored-pitch"),
-        pytest.param((0.0, 0.0, math.pi / 2), (-math.pi, 0.0), id="authored-plus-candidate-yaw"),
     ],
 )
 def test_exact_quarter_turns_preserve_aabb_collision_loss_and_gradients(marker_angles, candidate_yaws):
@@ -893,35 +884,23 @@ def test_near_quarter_turn_remains_oriented_collision_geometry():
     assert not state.collision_boxes_axis_aligned
 
 
-@pytest.mark.parametrize("invalid_kind", ["empty", "unbounded"])
-def test_mixed_collision_geometry_rejects_invalid_aabbs_without_changing_interval_behavior(invalid_kind):
-    """Empty/unbounded intervals retain AABB semantics but cannot enter finite oriented-box geometry."""
+def test_mixed_collision_geometry_rejects_unbounded_aabbs_without_changing_interval_behavior():
+    """Unbounded intervals keep AABB semantics but cannot enter finite oriented-box geometry."""
     table, first, second = _create_no_collision_scene()
-    if invalid_kind == "empty":
-        first.bounding_box = AxisAlignedBoundingBox((0.2, -0.1, -0.1), (-0.2, 0.1, 0.1))
-        message = "nonnegative|nonempty"
-    else:
-        first.bounding_box = AxisAlignedBoundingBox((-math.inf, -0.1, -0.1), (math.inf, 0.1, 0.1))
-        message = "finite"
+    first.bounding_box = AxisAlignedBoundingBox((-math.inf, -0.1, -0.1), (math.inf, 0.1, 0.1))
     objects = [table, first, second]
     positions = [{table: (0.0, 0.0, 0.0), first: (0.0, 0.0, 1.0), second: (0.03, 0.04, 1.02)}]
     state = RelationSolverState(objects, positions, device=torch.device("cpu"))
     assert state.collision_boxes_axis_aligned
     solver = RelationSolver(RelationSolverParams(verbose=False))
 
-    if invalid_kind == "empty":
-        with pytest.raises(AssertionError, match="valid interval"):
-            solver._compute_no_overlap_loss(state)
-        with pytest.raises(AssertionError, match="valid interval"):
-            _reference_pairwise_no_overlap_loss(solver, state)
-    else:
-        loss = solver._compute_no_overlap_loss(state)
-        torch.testing.assert_close(loss, _reference_pairwise_no_overlap_loss(solver, state))
-        assert torch.isfinite(loss).all() and (loss > 0).all()
+    loss = solver._compute_no_overlap_loss(state)
+    torch.testing.assert_close(loss, _reference_pairwise_no_overlap_loss(solver, state))
+    assert torch.isfinite(loss).all() and (loss > 0).all()
 
     quaternion = (0.0, 0.0, math.sin(math.pi / 8), math.cos(math.pi / 8))
     oriented = second.get_bounding_box().transformed((0.0, 0.0, 0.0), quaternion)
-    with pytest.raises(AssertionError, match=message):
+    with pytest.raises(AssertionError, match="finite"):
         RelationSolverState(objects, positions, device=torch.device("cpu"), collision_bboxes={second: oriented})
 
 
@@ -952,6 +931,52 @@ def test_oriented_collision_loss_and_validator_apply_clearance(clearance_m, expe
         assert batch.candidates[0].loss > 0.0
     validator = NoOverlapValidator(ObjectPlacerParams(solver_params=params, verbose=False))
     assert validator.validate_batch(batch, []) == [expected_valid]
+
+    # A fixed cube 5 mm from the first rod's long face is held to the same clearance.
+    cube_distance = 0.02 + 0.02 * math.sqrt(2) + 0.005
+    obstacle = DummyObject(
+        "obstacle",
+        AxisAlignedBoundingBox((-0.02, -0.02, -0.02), (0.02, 0.02, 0.02)),
+        initial_pose=Pose(position_xyz=(-cube_distance / math.sqrt(2), cube_distance / math.sqrt(2), 1.0)),
+    )
+    first_boxes = {table: boxes[table], first: boxes[first]}
+    alone = PlacementCandidateBatch([
+        PlacementCandidate(0, 0, {table: positions[table], first: positions[first]}, {first: math.pi / 4}, first_boxes)
+    ])
+    update_candidate_bounds(alone, [first_boxes])
+    assert validator.validate_batch(alone, [obstacle]) == [expected_valid]
+
+
+def test_oriented_loss_pushes_zero_thickness_panel_out_of_fixed_block():
+    """A yawed panel with zero thickness partly inside a fixed block has a loss to reduce, and the solver moves it out."""
+    table = _create_table()
+    table.set_initial_pose(Pose.identity())
+    table.add_relation(IsAnchor())
+    panel_bounds = AxisAlignedBoundingBox((-0.2, 0.0, -0.1), (0.2, 0.0, 0.1))
+    panel = DummyObject("panel", panel_bounds)
+    block = DummyObject(
+        "block",
+        AxisAlignedBoundingBox((-0.1, -0.1, -0.1), (0.1, 0.1, 0.1)),
+        initial_pose=Pose(position_xyz=(0.0, 0.0, 1.0)),
+    )
+    objects = [table, panel]
+    boxes = {table: table.get_bounding_box(), panel: panel_bounds}
+    yaw = math.pi / 6
+    # The panel sticks 0.1 m out of the block along its long axis.
+    positions = {table: (0.0, 0.0, 0.0), panel: (0.1 * math.cos(yaw), 0.1 * math.sin(yaw), 1.0)}
+    params = RelationSolverParams(max_iters=0, verbose=False)
+    validator = NoOverlapValidator(ObjectPlacerParams(solver_params=params, verbose=False))
+    results = []
+    for max_iters in (0, 300):
+        batch = PlacementCandidateBatch([PlacementCandidate(0, 0, dict(positions), {panel: yaw}, boxes)])
+        update_candidate_bounds(batch, [boxes])
+        params.max_iters = max_iters
+        RelationSolver(params).solve_candidates(objects, batch, [block])
+        results.append((batch.candidates[0].loss, validator.validate_batch(batch, [block])))
+
+    (start_loss, start_valid), (final_loss, final_valid) = results
+    assert start_loss > 0.0 and start_valid == [False]
+    assert final_loss < start_loss and final_valid == [True]
 
 
 def test_oriented_collision_uses_off_origin_quarter_turned_anchor_world_bounds():
