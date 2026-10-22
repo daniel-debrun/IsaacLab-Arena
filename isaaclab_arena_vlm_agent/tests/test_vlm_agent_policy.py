@@ -606,3 +606,12 @@ def test_wrappers_delegate_custom_schema_decoding_validation_and_conversion(mode
     assert not adapter.is_command_valid(command)
     env.unwrapped.action_dim = 0
     assert not adapter.is_robot_action_space_supported(env)
+
+
+def test_action_adapter_requires_decode_override():
+    class CompatibilityOnlyAdapter(AgentActionAdapter):
+        def is_robot_action_space_supported(self, env):
+            return True
+
+    with pytest.raises(TypeError, match="decode_command"):
+        CompatibilityOnlyAdapter(SimpleNamespace(), CommandType.JOINT_POSITION)

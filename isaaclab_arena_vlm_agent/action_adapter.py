@@ -49,18 +49,20 @@ class AgentActionAdapter(ABC):
             env: Arena environment, optionally gym-wrapped.
         """
 
-    def decode_command(self, response: Command, arena_world: ArenaWorld, env_id: int) -> np.ndarray:
-        """Return command values in the adapter-defined order.
+    @abstractmethod
+    def decode_command(self, response: BaseModel, arena_world: ArenaWorld, env_id: int) -> np.ndarray:
+        """Decode a validated response into commands with adapter-defined dimensions and units.
+
+        Use InvalidAgentResponseError to request correction of robot-specific constraints.
 
         Args:
-            response: Validated response in the configured command space.
-            arena_world: Live Arena scene queries; absolute commands need no measured offset.
+            response: Model output validated against response_model.
+            arena_world: Live Arena scene queries for command decoding.
             env_id: Environment index within the batched world state.
 
         Returns:
-            One command vector in the configured coordinate space.
+            A command vector, or a chunk as defined by the adapter.
         """
-        return np.asarray(response.values, dtype=np.float32)
 
     def is_command_valid(self, command: np.ndarray) -> bool:
         """Return whether a decoded command is a nonempty, finite vector.

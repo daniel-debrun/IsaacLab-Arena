@@ -11,10 +11,11 @@ import numpy as np
 from typing import TYPE_CHECKING
 
 from isaaclab_arena_vlm_agent.action_adapter import AgentActionAdapter
-from isaaclab_arena_vlm_agent.commands import CommandType
+from isaaclab_arena_vlm_agent.commands import Command, CommandType
 
 if TYPE_CHECKING:
     from isaaclab_arena.embodiments.embodiment_base import EmbodimentBase
+    from isaaclab_arena.environments.arena_world import ArenaWorld
 
 
 class DroidActionAdapter(AgentActionAdapter):
@@ -68,6 +69,19 @@ class DroidActionAdapter(AgentActionAdapter):
         supported = bool(arm.action_dim > 0 and not cfg.use_default_offset and np.all(np.asarray(cfg.offset) == 0.0))
         self._command_dim = arm.action_dim + 1 if supported else None
         return supported
+
+    def decode_command(self, response: Command, arena_world: ArenaWorld, env_id: int) -> np.ndarray:
+        """Return command values in the adapter-defined order.
+
+        Args:
+            response: Validated response in the configured command space.
+            arena_world: Live Arena scene queries; absolute commands need no measured offset.
+            env_id: Environment index within the batched world state.
+
+        Returns:
+            One command vector in the configured coordinate space.
+        """
+        return np.asarray(response.values, dtype=np.float32)
 
     def is_command_valid(self, command: np.ndarray) -> bool:
         """Check dimensions, finite values, and constraints for the selected command type.
