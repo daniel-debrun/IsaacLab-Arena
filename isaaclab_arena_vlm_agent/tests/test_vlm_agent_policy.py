@@ -23,11 +23,17 @@ from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from isaaclab_arena.inference.backend import InferenceBackend, build_strict_schema
 from isaaclab_arena_vlm_agent.action_adapter import AgentActionAdapter, ChunkActionAdapter, GoalActionAdapter
-from isaaclab_arena_vlm_agent.image_utils import extract_rgb_images_from_camera_observations, image_to_jpeg_data_url
+from isaaclab_arena_vlm_agent.image_utils import extract_rgb_images_from_camera_observations
 from isaaclab_arena_vlm_agent.motion_generator import MotionGenerator
 from isaaclab_arena_vlm_agent.observation_adapter import CAMERA_OBSERVATION_GROUP, VLMObservationAdapter
 from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
-from isaaclab_arena_vlm_agent.vlm_agent_policy import VLMChunkPolicy, VLMGoalPolicy, VLMPolicyCfg, VLMStepPolicy
+from isaaclab_arena_vlm_agent.vlm_agent_policy import (
+    VLMChunkPolicy,
+    VLMGoalPolicy,
+    VLMGoalPolicyCfg,
+    VLMPolicyCfg,
+    VLMStepPolicy,
+)
 
 
 class ObservationAdapter(VLMObservationAdapter):
@@ -39,24 +45,14 @@ class ObservationAdapter(VLMObservationAdapter):
     def extract_joint_positions(self, observation, env_id):
         return observation["position"][env_id].tolist()
 
-    def build_request_content(self, env, observation, env_id, *, image_max_width_or_height):
-        content = []
+    def extract_vlm_input_from_observation(self, env, observation, env_id):
+        prompt_values = {}
         if self.include_joint_positions:
-            content.append({
-                "type": "text",
-                "text": json.dumps(
-                    {"joint_positions": self.extract_joint_positions(observation, env_id)}, allow_nan=False
-                ),
-            })
+            prompt_values["joint_positions"] = self.extract_joint_positions(observation, env_id)
         images = extract_rgb_images_from_camera_observations(
             observation[CAMERA_OBSERVATION_GROUP], self.camera_keys, env_id
         )
-        for key, image in images.items():
-            content.extend([
-                {"type": "text", "text": f"camera={key}"},
-                {"type": "image_url", "image_url": {"url": image_to_jpeg_data_url(image, image_max_width_or_height)}},
-            ])
-        return content
+        return images, prompt_values
 
 
 class JointTargetResponse(BaseModel):
@@ -253,6 +249,19 @@ def test_missing_prompt_is_rejected(prompt):
         VLMPolicyCfg(system_prompt=prompt)
 
 
+def test_policy_configs_require_prompt_and_goal_budget():
+    with pytest.raises(TypeError, match="system_prompt"):
+        VLMPolicyCfg()
+    with pytest.raises(TypeError, match="max_steps_per_goal"):
+        VLMGoalPolicyCfg(system_prompt="Control joints")
+
+
+@pytest.mark.parametrize("max_steps", [0, -1, 1.5, True, None])
+def test_goal_config_rejects_invalid_step_budget(max_steps):
+    with pytest.raises(AssertionError, match="max_steps_per_goal"):
+        VLMGoalPolicyCfg(system_prompt="Control joints", max_steps_per_goal=max_steps)
+
+
 class JointChunkAdapter(ChunkActionAdapter):
 
     def is_robot_action_space_supported(self, env):
@@ -311,16 +320,17 @@ class JointMotionGenerator(MotionGenerator):
 def make_multi_step_policy(backend, adapter, *, max_steps_per_goal=2):
     if isinstance(adapter, ChunkActionAdapter):
         policy_type = VLMChunkPolicy
-        goal_kwargs = {}
+        config = VLMPolicyCfg(system_prompt="Control these joints.", max_attempts=1)
     else:
         policy_type = VLMGoalPolicy
-        goal_kwargs = {"max_steps_per_goal": max_steps_per_goal}
+        config = VLMGoalPolicyCfg(
+            system_prompt="Control these joints.", max_attempts=1, max_steps_per_goal=max_steps_per_goal
+        )
     policy = policy_type(
-        VLMPolicyCfg(system_prompt="Control these joints.", max_attempts=1),
+        config,
         inference_backend=backend,
         observation_adapter=ObservationAdapter(),
         action_adapter=adapter,
-        **goal_kwargs,
     )
     policy.set_task_description("Move")
     policy.reset()  # Reset before the first observation must be harmless.
@@ -423,7 +433,9 @@ def test_actions_use_live_world_without_joint_positions_in_prompt(backend, mode)
     else:
         policy = make_multi_step_policy(backend, JointGoalAdapter(), max_steps_per_goal=5)
     policy.observation_adapter = ObservationAdapter(include_joint_positions=False)
-    policy.observation_adapter.build_request_content = Mock(wraps=policy.observation_adapter.build_request_content)
+    policy.observation_adapter.extract_vlm_input_from_observation = Mock(
+        wraps=policy.observation_adapter.extract_vlm_input_from_observation
+    )
     env, observation = inputs()
     world_positions = observation["position"]
     observation["position"] = world_positions.clone()  # Keep prompt observations stale.
@@ -435,7 +447,7 @@ def test_actions_use_live_world_without_joint_positions_in_prompt(backend, mode)
     torch.testing.assert_close(policy.get_action(env, observation), expected_step * 0.1)
     expected_calls = 4 if mode == "step" else 2
     assert backend.client.chat.completions.create.call_count == expected_calls
-    assert policy.observation_adapter.build_request_content.call_count == expected_calls
+    assert policy.observation_adapter.extract_vlm_input_from_observation.call_count == expected_calls
     content = backend.client.chat.completions.create.call_args.kwargs["messages"][1]["content"]
     assert len(content) == 3  # Task, camera label, and image; no joint positions.
     assert content[1] == {"type": "text", "text": "camera=front_view"}
@@ -463,35 +475,34 @@ def test_invalid_goals_are_rejected_before_motion_generation(backend):
     assert backend.client.chat.completions.create.call_count == 1
 
 
-def test_motion_generator_output_is_validated_before_conversion(backend):
+@pytest.mark.parametrize("command", [np.array([np.inf, 0]), np.zeros(1), np.zeros((1, 2)), np.empty(0)])
+def test_motion_generator_output_is_validated_before_conversion(backend, command):
     backend.client.chat.completions.create.return_value = response('{"target": [1, 2]}')
     generator = JointMotionGenerator()
-    generator.compute_command = Mock(return_value=np.array([np.inf, 0]))
+    generator.compute_command = Mock(return_value=command)
     adapter = JointGoalAdapter(motion_generator=generator)
     adapter.command_to_action = Mock()
     policy = make_multi_step_policy(backend, adapter)
-    with pytest.raises(ValueError, match="finite goal command"):
+    with pytest.raises(AssertionError, match="finite goal command"):
         policy.get_action(*inputs())
     adapter.command_to_action.assert_not_called()
 
 
 @pytest.mark.parametrize(
-    "payload,code",
+    "payload,message",
     [
-        ({"wrong_field": [1, 2]}, "invalid_schema"),
-        ({"target": [1]}, "invalid_command"),
-        ({"target": [1, float("nan")]}, "invalid_command"),
+        ({"wrong_field": [1, 2]}, "validation errors"),
+        ({"target": [1]}, "Wrong command dimensions"),
+        ({"target": [1, float("nan")]}, "Expected finite commands"),
     ],
 )
-def test_response_rejection_exposes_structured_details(backend, payload, code):
+def test_response_rejection_sends_correction_message(backend, payload, message):
     backend.client.chat.completions.create.return_value = response(json.dumps(payload))
     policy = make_policy(backend, max_attempts=2)
-    with pytest.raises(InvalidAgentResponseError) as caught:
+    with pytest.raises(InvalidAgentResponseError, match=message) as caught:
         policy.get_action(*inputs())
-    assert caught.value.details.code == code
-    assert caught.value.details.message == str(caught.value)
     correction = backend.client.chat.completions.create.call_args.kwargs["messages"][-1]["content"]
-    assert f'"code": "{code}"' in correction
+    assert correction == f"Invalid actions: {caught.value}. Return a corrected prediction."
     assert backend.client.chat.completions.create.call_count == 2
 
 
@@ -518,8 +529,8 @@ def test_invalid_model_actions_are_rejected_with_python_optimization():
             try:
                 policy._infer([], SimpleNamespace(), 0)
             except InvalidAgentResponseError as error:
-                if error.details.code != "invalid_command" or backend.infer.call_count != 2:
-                    raise RuntimeError("Incorrect rejection details or retry count")
+                if "Expected finite commands" not in str(error) or backend.infer.call_count != 2:
+                    raise RuntimeError("Incorrect rejection message or retry count")
             else:
                 raise RuntimeError("Invalid model actions were accepted with assertions disabled")
         print("optimized rejection checks passed")

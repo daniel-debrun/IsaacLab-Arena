@@ -34,14 +34,12 @@ def extract_rgb_images_from_camera_observations(
     return images
 
 
-def image_to_jpeg_data_url(image: np.ndarray, max_width_or_height: int = 384) -> str:
+def image_to_jpeg_data_url(image: np.ndarray, max_width_or_height: int) -> str:
     """Encode an RGB or RGBA image as JPEG, preserving aspect ratio without upscaling.
 
     Args:
         image: HWC uint8 pixels; the alpha channel, if present, is discarded.
-        max_width_or_height: Maximum encoded image width or height, in pixels. For 16:9 images,
-            the 384 default matches Astranomy's 384x216 camera inputs (Section 2):
-            https://research.nvidia.com/labs/srl/projects/astranomy/
+        max_width_or_height: Maximum encoded image width or height, in pixels.
 
     Returns:
         A JPEG data URL for an image-capable chat-completion endpoint.
