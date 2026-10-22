@@ -35,7 +35,7 @@ def test_merge_does_not_modify_inputs():
     assert override == {"objects": [{"id": "b"}], "env_cfg_override": {"sim": {"render_interval": 2}}}
 
 
-def test_merge_combines_different_leaves_under_the_same_mapping():
+def test_merge_combines_different_leaves_under_the_same_dict():
     first = {"env_cfg_override": {"sim": {"physics": {"max_position_iteration_count": 32}}}}
     second = {"env_cfg_override": {"sim": {"physics": {"max_velocity_iteration_count": 1}, "dt": 0.01}}}
     merged = _merge_env_graph_dicts([("first.yaml", first), ("second.yaml", second)])

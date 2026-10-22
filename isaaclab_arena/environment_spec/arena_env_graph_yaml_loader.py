@@ -24,7 +24,7 @@ def load_env_graph_spec_dict(path: str | Path) -> dict[str, Any]:
         path: Path to the root YAML file.
 
     Returns:
-        A merged mapping ready for :class:`ArenaEnvGraphSpec` validation.
+        A merged dict ready for :class:`ArenaEnvGraphSpec` validation.
     """
     path = Path(path).resolve()
     raw = _load_yaml_dict(path)
@@ -58,7 +58,7 @@ def load_env_graph_spec_dict(path: str | Path) -> dict[str, Any]:
 
 
 def _load_yaml_dict(path: str | Path) -> dict[str, Any]:
-    """Read a single YAML file that must parse to a mapping."""
+    """Read a single YAML file that must parse to a dict."""
     path = Path(path).resolve()
     if not path.is_file():
         raise FileNotFoundError(f"Env graph spec YAML not found: {path}")
@@ -72,7 +72,7 @@ def _load_yaml_dict(path: str | Path) -> dict[str, Any]:
 def _merge_env_graph_dicts(named_dicts: list[tuple[str, dict[str, Any]]]) -> dict[str, Any]:
     """Merge env-graph dicts so that no value is defined by more than one dict.
 
-    Mappings merge recursively. Lists whose elements are all mappings with an ``id`` concatenate, and an
+    Dicts merge recursively. Lists whose elements are all dicts with an ``id`` concatenate, and an
     ``id`` may appear only once. Every other value (scalar, ``null``, any other list) may be defined by
     only one dict, even if the dicts agree. A conflict fails with the path of the value and the names of both dicts.
 
@@ -86,49 +86,55 @@ def _merge_env_graph_dicts(named_dicts: list[tuple[str, dict[str, Any]]]) -> dic
     merger = _ConflictFreeMerger()
     for source_name, source_dict in named_dicts:
         merger.merge(source_name, source_dict)
-    return merger.merged
+    return merger.merged_dict
 
 
 class _ConflictFreeMerger:
     """Accumulates dicts into one, remembering which source defined each value so conflicts can name it."""
 
     def __init__(self):
-        self.merged: dict[str, Any] = {}
+        self.merged_dict: dict[str, Any] = {}
         """The dict merged so far."""
         self._source_name_by_value_path: dict[str, str] = {}
         """Name of the source that defined each value, keyed by value path such as ``a.b`` or ``objects[id=x]``."""
-        self._current_source_name: str = ""
-        """Name of the source being added."""
 
     def merge(self, source_name: str, source_dict: dict[str, Any]) -> None:
-        """Merge ``source_dict`` into ``merged``, failing if it redefines a value."""
-        self._current_source_name = source_name
-        self._merge_mapping_recurse(self.merged, source_dict, parent_path="")
+        """Merge ``source_dict`` into ``merged_dict``, failing if it redefines a value."""
+        self._merge_dict_recurse(source_name, source_dict)
 
-    def _merge_mapping_recurse(
-        self, merged_mapping: dict[str, Any], new_mapping: dict[str, Any], parent_path: str
+    def _merge_dict_recurse(
+        self,
+        source_name: str,
+        new_dict: dict[str, Any],
+        merged_dict: dict[str, Any] | None = None,
+        parent_path: str = "",
     ) -> None:
-        """Merge ``new_mapping`` into ``merged_mapping`` in place, descending into nested mappings and id lists."""
-        for key, new_value in new_mapping.items():
+        """Merge ``new_dict`` into ``merged_dict`` in place, descending into nested dicts and id lists.
+
+        ``merged_dict`` defaults to the top-level dict merged so far.
+        """
+        if merged_dict is None:
+            merged_dict = self.merged_dict
+        for key, new_value in new_dict.items():
             value_path = f"{parent_path}.{key}" if parent_path else str(key)
-            if key not in merged_mapping:
-                merged_mapping[key] = copy.deepcopy(new_value)
-                self._record_source_name(new_value, value_path)
+            if key not in merged_dict:
+                merged_dict[key] = copy.deepcopy(new_value)
+                self._record_source_name(source_name, new_value, value_path)
                 continue
-            merged_value = merged_mapping[key]
+            merged_value = merged_dict[key]
             if isinstance(merged_value, dict) and isinstance(new_value, dict):
-                self._merge_mapping_recurse(merged_value, new_value, value_path)
+                self._merge_dict_recurse(source_name, new_value, merged_value, value_path)
             elif _is_id_list(merged_value) and _is_id_list(new_value):
-                self._merge_id_lists(merged_value, new_value, value_path)
+                self._merge_id_lists(source_name, merged_value, new_value, value_path)
             else:
                 raise ValueError(
                     f"Conflicting env graph spec value at '{value_path}': defined in both "
                     f"{self._source_name_by_value_path[value_path]} (value {merged_value!r}) and "
-                    f"{self._current_source_name} (value {new_value!r})"
+                    f"{source_name} (value {new_value!r})"
                 )
 
     def _merge_id_lists(
-        self, merged_list: list[dict[str, Any]], new_list: list[dict[str, Any]], list_path: str
+        self, source_name: str, merged_list: list[dict[str, Any]], new_list: list[dict[str, Any]], list_path: str
     ) -> None:
         """Append the elements of ``new_list`` to ``merged_list``, failing if an ``id`` is already present."""
         merged_ids = {element["id"] for element in merged_list}
@@ -137,23 +143,23 @@ class _ConflictFreeMerger:
             if new_element["id"] in merged_ids:
                 raise ValueError(
                     f"Conflicting env graph spec entry at '{element_path}': an element with this id is defined in "
-                    f"both {self._source_name_by_value_path[element_path]} and {self._current_source_name}"
+                    f"both {self._source_name_by_value_path[element_path]} and {source_name}"
                 )
             merged_ids.add(new_element["id"])
             merged_list.append(copy.deepcopy(new_element))
-            self._source_name_by_value_path[element_path] = self._current_source_name
+            self._source_name_by_value_path[element_path] = source_name
 
-    def _record_source_name(self, value: Any, value_path: str) -> None:
-        """Record the current source as the definer of ``value_path`` and of everything below it."""
-        self._source_name_by_value_path[value_path] = self._current_source_name
+    def _record_source_name(self, source_name: str, value: Any, value_path: str) -> None:
+        """Record ``source_name`` as the definer of ``value_path`` and of everything below it."""
+        self._source_name_by_value_path[value_path] = source_name
         if isinstance(value, dict):
             for key, child_value in value.items():
-                self._record_source_name(child_value, f"{value_path}.{key}")
+                self._record_source_name(source_name, child_value, f"{value_path}.{key}")
         elif _is_id_list(value):
             for element in value:
-                self._source_name_by_value_path[f"{value_path}[id={element['id']}]"] = self._current_source_name
+                self._source_name_by_value_path[f"{value_path}[id={element['id']}]"] = source_name
 
 
 def _is_id_list(value: Any) -> bool:
-    """Whether ``value`` is a list whose elements are all mappings with an ``id`` (an empty list qualifies)."""
+    """Whether ``value`` is a list whose elements are all dicts with an ``id`` (an empty list qualifies)."""
     return isinstance(value, list) and all(isinstance(element, dict) and "id" in element for element in value)
