@@ -218,7 +218,8 @@ different objects in the environments of one build, use a
 :doc:`RigidObjectSet <../scene/concept_rigid_object_set>`, which has no ``asset_selection``.
 
 The example config ``isaaclab_arena_environments/experiment_configs/asset_selection_experiment.yaml``
-spawns three pick-up objects in ``pick_and_place_maple_table``, one per rebuild:
+spawns three pick-up objects in ``pick_and_place_maple_table``, one per rebuild, each in four parallel
+environments:
 
 .. literalinclude:: ../../../../isaaclab_arena_environments/experiment_configs/asset_selection_experiment.yaml
    :language: yaml
