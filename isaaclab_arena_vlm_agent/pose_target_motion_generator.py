@@ -58,7 +58,7 @@ class PoseTargetMotionGenerator(MotionGenerator):
         Returns:
             Whether every pose and binary control is within its configured tolerance.
         """
-        assert self.embodiment.get_command_type(env) == self.command_type, "Expected absolute pose controllers"
+        assert self.embodiment.get_command_type() == self.command_type, "Expected absolute pose controllers"
         command_dim = env.unwrapped.action_manager.total_action_dim
         quaternion_offsets = self.embodiment.get_quaternion_indices(env)
         binary_values = self.embodiment.get_binary_action_values(env)

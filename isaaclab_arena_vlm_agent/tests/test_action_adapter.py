@@ -56,7 +56,7 @@ def test_bimanual_pose_layout_and_binary_conventions(binary_values, embodiment):
     adapter = ChunkActionAdapter(embodiment, CommandType.EE_POSE, chunk_size=2)
     env = _env(16)
     assert adapter.is_robot_action_space_supported(env)
-    embodiment.get_command_type.assert_called_once_with(env)
+    embodiment.get_command_type.assert_called_once_with()
     embodiment.get_quaternion_indices.assert_called_once_with(env)
     embodiment.get_binary_action_values.assert_called_once_with(env)
     row = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, binary_values[0]] * 2

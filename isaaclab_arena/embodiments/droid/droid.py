@@ -234,21 +234,9 @@ class DroidEmbodimentBase(EmbodimentBase, ABC):
         assert robot is not None, "scene_config.robot must be populated before setting the joint pose"
         robot.init_state = robot.init_state.replace(joint_pos=dict(zip(_DROID_JOINT_NAMES, initial_joint_pose)))
 
-    def get_command_type(self, env) -> CommandType | None:
-        """Identify the arm command type; controller configuration is the user's responsibility."""
-        from isaaclab.envs.mdp.actions.joint_actions import JointPositionAction
-        from isaaclab.envs.mdp.actions.task_space_actions import DifferentialInverseKinematicsAction
-
-        arm = env.unwrapped.action_manager.get_term("arm_action")
-        if isinstance(arm, DifferentialInverseKinematicsAction):
-            return CommandType.EE_POSE
-        if isinstance(arm, JointPositionAction):
-            return CommandType.JOINT_POSITION
-        return None
-
     def get_quaternion_indices(self, env) -> tuple[int, ...]:
         """Return the XYZW start index for absolute pose commands, or no indices for joint commands."""
-        return (3,) if self.get_command_type(env) == CommandType.EE_POSE else ()
+        return (3,) if self.get_command_type() == CommandType.EE_POSE else ()
 
     def get_binary_action_values(self, env) -> dict[int, tuple[float, float]]:
         """Return the gripper index and its native (open, close) inputs."""
@@ -298,6 +286,10 @@ class DroidDifferentialIKEmbodiment(DroidEmbodimentBase):
             collision_mode=collision_mode,
         )
         self.action_config = DroidDifferentialIKActionsCfg()
+
+    def get_command_type(self) -> CommandType:
+        """Return the end-effector pose command type."""
+        return CommandType.EE_POSE
 
     def get_measured_pose_and_gripper_closure(self, env) -> torch.Tensor:
         """Return root-relative command-body XYZ, XYZW, and gripper closure, shaped (num_envs, 8).
@@ -368,6 +360,9 @@ class DroidRelativeJointPositionEmbodiment(DroidEmbodimentBase):
         )
         self.action_config = DroidRelativeJointPositionActionsCfg()
 
+    def get_command_type(self) -> None:
+        """Return None because relative joint targets are outside the absolute-command interface."""
+
 
 @register_asset
 class DroidAbsoluteJointPositionEmbodiment(DroidEmbodimentBase):
@@ -400,6 +395,10 @@ class DroidAbsoluteJointPositionEmbodiment(DroidEmbodimentBase):
             collision_mode=collision_mode,
         )
         self.action_config = DroidAbsoluteJointPositionActionsCfg()
+
+    def get_command_type(self) -> CommandType:
+        """Return the absolute joint-position command type."""
+        return CommandType.JOINT_POSITION
 
 
 @configclass

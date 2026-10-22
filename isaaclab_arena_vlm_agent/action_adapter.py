@@ -102,7 +102,7 @@ class StepActionAdapter(AgentActionAdapter):
         self._binary_values: dict[int, tuple[float, float]] = {}
 
     def is_robot_action_space_supported(self, env) -> bool:
-        """Check the command type derived from the active controllers.
+        """Check the embodiment's command type and read action dimensions and indices.
 
         Args:
             env: Arena environment, optionally gym-wrapped.
@@ -111,7 +111,7 @@ class StepActionAdapter(AgentActionAdapter):
         self._quaternion_slices = []
         self._binary_values = {}
         manager = env.unwrapped.action_manager
-        if self.embodiment.get_command_type(env) != self.command_type:
+        if self.embodiment.get_command_type() != self.command_type:
             return False
         quaternion_offsets = self.embodiment.get_quaternion_indices(env)
         self._command_dim = manager.total_action_dim
