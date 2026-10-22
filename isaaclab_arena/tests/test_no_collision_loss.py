@@ -1012,7 +1012,7 @@ def test_oriented_collision_cache_uses_current_positions_on_repeated_backward():
         for subject_index, subject, obstacle_index, obstacle in ((0, first, 1, second), (1, second, 0, first)):
             subject_world = collision_boxes[subject].translated(reference_positions[:, subject_index])
             obstacle_world = collision_boxes[obstacle].translated(reference_positions[:, obstacle_index].detach())
-            reference_loss += solver._no_collision_strategy.slope * subject_world.projected_overlap_volume(
+            reference_loss += solver._no_collision_strategy.slope * subject_world.overlap_volume_upper_bound(
                 obstacle_world, margin=solver.params.clearance_m
             )
         loss = solver._compute_no_overlap_loss(state)

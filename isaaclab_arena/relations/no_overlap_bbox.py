@@ -15,7 +15,7 @@ from isaaclab_arena.relations.collision_mode import CollisionMode, object_uses_m
 from isaaclab_arena.relations.relation_loss_strategies import NoCollisionLossStrategy
 from isaaclab_arena.relations.relation_solver_state import RelationSolverState
 from isaaclab_arena.relations.relations import On
-from isaaclab_arena.utils.bounding_box import ProjectedOverlapVolume
+from isaaclab_arena.utils.bounding_box import OverlapVolumeUpperBound
 
 if TYPE_CHECKING:
     from isaaclab_arena.relations.collision_object import CollisionObject
@@ -41,7 +41,7 @@ class NoOverlapPairCache:
     """Pairs whose collision geometry matches box validation, in directed penalty order."""
     mesh_fallback_pairs: list[NoOverlapPair]
     """Pairs using enclosing-box mesh proxies, in directed penalty order."""
-    projections: ProjectedOverlapVolume | None
+    projections: OverlapVolumeUpperBound | None
     """Prepared projections for box_pairs, or None when every collision box is an AxisAlignedBoundingBox."""
 
 
@@ -54,7 +54,7 @@ def compute_no_overlap_loss_bbox(
     skip_mesh_pairs: bool = False,
     debug: bool = False,
 ) -> tuple[torch.Tensor, int]:
-    """Sum projected-overlap penalties over directed pairs, returning (B,) losses and pair count.
+    """Sum overlap-volume penalties over directed pairs, returning (B,) losses and pair count.
 
     Movable pairs contribute in both directions. On-linked pairs and pairs handled
     by MESH are excluded. Fixed obstacles receive no position gradients.
@@ -173,7 +173,7 @@ def prepare_no_overlap_pair_cache(
             for obj in (pair.subject, pair.obstacle):
                 if obj not in geometry:
                     geometry[obj] = state.get_collision_geometry(obj)
-        projections = ProjectedOverlapVolume(
+        projections = OverlapVolumeUpperBound(
             torch.stack([geometry[p.subject][1] for p in box_pairs]),
             torch.stack([geometry[p.subject][2] for p in box_pairs]),
             torch.stack([geometry[p.obstacle][1].detach() for p in box_pairs]),
@@ -213,7 +213,7 @@ def _compute_aabb_pair_losses(
 def _compute_oriented_pair_losses(
     state: RelationSolverState,
     pairs: list[NoOverlapPair],
-    projections: ProjectedOverlapVolume,
+    projections: OverlapVolumeUpperBound,
     strategy: NoCollisionLossStrategy,
     clearance_m: float,
 ) -> torch.Tensor:

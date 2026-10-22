@@ -16,7 +16,7 @@ class CollisionMode(Enum):
     """Collision-detection method for no-overlap constraints."""
 
     BBOX = "bbox"
-    """Oriented bounding boxes with a projected-overlap penalty."""
+    """Oriented bounding boxes, penalized by an upper bound on their overlap volume."""
 
     MESH = "mesh"
     """Sphere-to-SDF queries against actual mesh geometry (accurate, slower)."""

@@ -122,7 +122,7 @@ class BoundingBox(ABC):
 
         # Here A and B are the local frames of this box and other.
         center_a_W, half_extents_a, q_W_A, center_b_W, half_extents_b, q_W_B = self._get_paired_geometry(other)
-        projections = ProjectedOverlapVolume(
+        projections = OverlapVolumeUpperBound(
             half_extents_a, matrix_from_quat(q_W_A), half_extents_b, matrix_from_quat(q_W_B)
         )
         return projections.compute(center_a_W, center_b_W, margin)
@@ -687,10 +687,10 @@ class AxisAlignedBoundingBox(BoundingBox):
         return AxisAlignedBoundingBox(min_point=rotated.amin(dim=1), max_point=rotated.amax(dim=1))
 
 
-class ProjectedOverlapVolume:
-    """Overlap-volume penalty for box pairs whose half-extents and rotations stay fixed while centers move.
+class OverlapVolumeUpperBound:
+    """Overlap-volume upper bound for box pairs whose half-extents and rotations stay fixed while centers move.
 
-    For each box, the penalty multiplies the interval overlaps along that box's 3 axes and keeps the smaller
+    For each box, the bound multiplies the interval overlaps along that box's 3 axes and keeps the smaller
     of the two products. Projections that depend only on half-extents and rotations are cached at construction.
     """
 
@@ -720,7 +720,7 @@ class ProjectedOverlapVolume:
         self._radius_a_B = (abs_R_A_B * half_extents_a.unsqueeze(-1)).sum(dim=-2)
 
     def compute(self, center_a_W: torch.Tensor, center_b_W: torch.Tensor, margin: float = 0.0) -> torch.Tensor:
-        """Return penalties in cubed length units with the broadcast leading shape, differentiable in the centers.
+        """Return upper bounds in cubed length units with the broadcast leading shape, differentiable in the centers.
 
         Args:
             center_a_W: Box A centers in W, shape (..., 3).
