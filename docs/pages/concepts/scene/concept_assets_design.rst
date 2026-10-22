@@ -9,9 +9,9 @@ as a rigid, articulated, or static body. A robot (an embodiment) is an asset but
 
 Arena ships with a library of asset classes, and new ones can be added by registering them.
 Each asset class is registered under a ``registry_name``, such as ``rubiks_cube_hot3d_robolab``.
-``asset_registry.get_asset_by_name()`` returns the class. Calling the class creates an asset,
-named after the registry name unless you pass ``name``, for example to name it after its role
-in the task:
+``asset_registry.get_asset_by_name()`` returns the class. Calling the class creates an asset.
+A library object such as ``CrackerBox`` is named after its registry name unless you pass ``name``,
+for example to name it after its role in the task:
 
 .. code-block:: python
 
@@ -19,6 +19,8 @@ in the task:
    cracker_box = CrackerBox()  # an asset named "cracker_box"
    pick_up_object = CrackerBox(name="pick_up_object")  # an asset named "pick_up_object"
    pick_up_object.registry_name  # "cracker_box"
+
+Backgrounds and robots take no ``name`` argument. Their ``name`` is always their registry name.
 
 Most code does both steps in one line:
 
