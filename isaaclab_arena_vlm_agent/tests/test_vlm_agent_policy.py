@@ -84,9 +84,6 @@ class ActionAdapter(AgentActionAdapter):
             raise InvalidAgentResponseError("Wrong command dimensions")
         return target - positions
 
-    def is_command_valid(self, command):
-        return bool(command.ndim == 1 and command.size > 0 and np.isfinite(command).all())
-
     def command_to_action(self, env, command):
         return super().command_to_action(env, command * self.scale)
 
@@ -292,20 +289,9 @@ class JointChunkAdapter(ChunkActionAdapter):
             raise InvalidAgentResponseError("Wrong command dimensions")
         return np.asarray(response.actions, dtype=np.float32)
 
-    def is_command_valid(self, command):
-        return bool(
-            command.ndim == 2
-            and command.shape[0] == self.chunk_size
-            and command.shape[1] > 0
-            and np.isfinite(command).all()
-        )
-
 
 class JointGoalAdapter(GoalActionAdapter):
     response_model = JointTargetResponse
-
-    def is_command_valid(self, command):
-        return ActionAdapter.is_command_valid(self, command)
 
     def __init__(self, action_dim=2, *, motion_generator=None):
         if motion_generator is None:
@@ -596,3 +582,9 @@ def test_missing_camera_keys_fail_before_inference(backend):
     with pytest.raises(AssertionError, match="camera observation key"):
         policy.get_action(*inputs())
     backend.client.chat.completions.create.assert_not_called()
+
+
+@pytest.mark.parametrize("adapter_class", [AgentActionAdapter, ChunkActionAdapter, GoalActionAdapter])
+def test_action_adapter_requires_controller_compatibility_override(adapter_class):
+    with pytest.raises(TypeError, match="is_robot_action_space_supported"):
+        adapter_class(SimpleNamespace(), CommandType.JOINT_POSITION)

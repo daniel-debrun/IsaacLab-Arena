@@ -21,8 +21,8 @@ def _test_droid_absolute_pose_adapters(simulation_app):
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
     from isaaclab_arena.scene.scene import Scene
     from isaaclab_arena.utils.pose import Pose
-    from isaaclab_arena_vlm_agent.action_adapter import AgentActionAdapter
     from isaaclab_arena_vlm_agent.commands import Command, CommandType
+    from isaaclab_arena_vlm_agent.droid_action_adapter import DroidActionAdapter
     from isaaclab_arena_vlm_agent.droid_motion_generator import DroidPoseMotionGenerator
     from isaaclab_arena_vlm_agent.droid_observation_adapter import DroidObservationAdapter
 
@@ -50,16 +50,16 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         obs, _ = env.reset()
         base = env.unwrapped
         observation_adapter = DroidObservationAdapter()
-        action_adapter = AgentActionAdapter(embodiment, CommandType.EE_POSE)
+        action_adapter = DroidActionAdapter(embodiment, CommandType.EE_POSE)
         assert action_adapter.embodiment is embodiment
         assert action_adapter.is_robot_action_space_supported(env)
-        assert not AgentActionAdapter(embodiment, CommandType.JOINT_POSITION).is_robot_action_space_supported(env)
+        assert not DroidActionAdapter(embodiment, CommandType.JOINT_POSITION).is_robot_action_space_supported(env)
         for scene_key, body_name in (("other_robot", "base_link"), ("robot", "panda_link7")):
             other_embodiment = SimpleNamespace(
                 get_scene_key=lambda: scene_key,
                 get_command_body_name=lambda: body_name,
             )
-            assert not AgentActionAdapter(other_embodiment, CommandType.EE_POSE).is_robot_action_space_supported(env)
+            assert not DroidActionAdapter(other_embodiment, CommandType.EE_POSE).is_robot_action_space_supported(env)
         states = [observation_adapter.extract_robot_state(env, obs, env_id) for env_id in range(base.num_envs)]
         actions = []
         for env_id, state in enumerate(states):
@@ -137,8 +137,8 @@ def _test_droid_joint_position_adapters(simulation_app):
     from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
     from isaaclab_arena.scene.scene import Scene
-    from isaaclab_arena_vlm_agent.action_adapter import AgentActionAdapter, ChunkActionAdapter
     from isaaclab_arena_vlm_agent.commands import CommandType
+    from isaaclab_arena_vlm_agent.droid_action_adapter import DroidActionAdapter, DroidChunkActionAdapter
     from isaaclab_arena_vlm_agent.droid_observation_adapter import DroidObservationAdapter
     from isaaclab_arena_vlm_agent.vlm_agent_policy import VLMChunkPolicy, VLMPolicyCfg, VLMStepPolicy
 
@@ -148,7 +148,7 @@ def _test_droid_joint_position_adapters(simulation_app):
     try:
         env.reset()
         base = env.unwrapped
-        assert not AgentActionAdapter(embodiment, CommandType.EE_POSE).is_robot_action_space_supported(env)
+        assert not DroidActionAdapter(embodiment, CommandType.EE_POSE).is_robot_action_space_supported(env)
         arm = base.action_manager.get_term("arm_action")
         joint_names = tuple(f"panda_joint{i}" for i in range(1, 8))
         targets = base.arena_world.get_joint_positions("robot", joint_names)[:1].expand(2, -1)
@@ -158,8 +158,8 @@ def _test_droid_joint_position_adapters(simulation_app):
         observation_adapter = DroidObservationAdapter()
         observation_adapter.build_request_content = Mock(return_value=[])
         for policy_type, adapter in (
-            (VLMStepPolicy, AgentActionAdapter(embodiment, CommandType.JOINT_POSITION)),
-            (VLMChunkPolicy, ChunkActionAdapter(embodiment, CommandType.JOINT_POSITION, chunk_size=2)),
+            (VLMStepPolicy, DroidActionAdapter(embodiment, CommandType.JOINT_POSITION)),
+            (VLMChunkPolicy, DroidChunkActionAdapter(embodiment, CommandType.JOINT_POSITION, chunk_size=2)),
         ):
             assert adapter.is_robot_action_space_supported(env)
             responses = [invalid, nonfinite, target, target]
