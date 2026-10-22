@@ -92,6 +92,7 @@ class StepActionAdapter(AgentActionAdapter):
     Pose targets use root-relative XYZ and XYZW. Joint targets use controller joint order.
     Binary controls retain their native open/close values. The user configures controllers
     to accept these absolute targets directly, including scales, offsets, and reference frames.
+    The embodiment supplies get_command_type, get_quaternion_indices, and get_binary_action_values.
     """
 
     def __init__(self, embodiment: EmbodimentBase, command_type: CommandType):

@@ -15,7 +15,6 @@ from isaaclab.envs import ManagerBasedRLMimicEnv
 from isaaclab.managers import EventTermCfg
 
 from isaaclab_arena.embodiments.common.arm_mode import ArmMode
-from isaaclab_arena.embodiments.common.command_type import CommandType
 from isaaclab_arena.embodiments.gripper import Gripper
 from isaaclab_arena.relations.collision_mode import CollisionMode
 from isaaclab_arena.relations.placement_asset import PlaceableAsset
@@ -26,7 +25,6 @@ from isaaclab_arena.utils.physics_backend import PhysicsBackend
 from isaaclab_arena.utils.pose import Pose, PosePerEnv, PoseRange
 
 if TYPE_CHECKING:
-    import torch
     import trimesh
 
 
@@ -223,40 +221,6 @@ class EmbodimentBase(PlaceableAsset):
 
     def get_action_cfg(self) -> Any:
         return self.action_config
-
-    def get_command_type(self, env) -> CommandType | None:
-        """Return the controller command type, or None when it cannot be identified.
-
-        Args:
-            env: Arena environment, optionally gym-wrapped.
-        """
-
-    def get_quaternion_indices(self, env) -> tuple[int, ...]:
-        """Return the start indices of unit XYZW quaternions, each preceded by XYZ translation.
-
-        Args:
-            env: Arena environment, optionally gym-wrapped.
-        """
-        return ()
-
-    def get_binary_action_values(self, env) -> dict[int, tuple[float, float]]:
-        """Return binary action indices mapped to their native (open, close) input values.
-
-        Args:
-            env: Arena environment, optionally gym-wrapped.
-        """
-        return {}
-
-    def get_measured_pose_and_gripper_closure(self, env) -> torch.Tensor:
-        """Return measured poses and gripper closure in controller order, shaped (num_envs, dimension).
-
-        Binary controls use continuous measurements mapped to their native input values,
-        without clamping physical overshoot.
-
-        Args:
-            env: Arena environment, optionally gym-wrapped.
-        """
-        raise NotImplementedError(f"{type(self).__name__} does not expose measured poses and gripper closure")
 
     def get_observation_cfg(self) -> Any:
         if self.enable_cameras:

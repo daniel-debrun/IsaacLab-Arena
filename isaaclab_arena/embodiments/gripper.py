@@ -36,6 +36,15 @@ def _robotiq_jaw_gap_m(driver_position: torch.Tensor) -> torch.Tensor:
 class Gripper(Protocol):
     """Gripper state exposed to embodiment-agnostic tasks."""
 
+    def get_measured_closure(self, env, action_name: str) -> torch.Tensor:
+        """Return unclamped closure relative to a binary action's open/close targets, shaped (num_envs,).
+
+        Args:
+            env: Arena environment, optionally gym-wrapped.
+            action_name: Binary gripper action term supplying the robot and joint targets.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not expose normalized closure.")
+
     def get_position_w(self, world: ArenaWorld) -> torch.Tensor:
         """Return the gripper position in world frame with shape ``(num_envs, 3)``."""
         ...
@@ -149,6 +158,21 @@ class RobotiqGripper(ParallelJawGripper):
         assert self.body_name is not None or all(
             value == 0.0 for value in self.body_point_offset_xyz
         ), "body_point_offset_xyz requires body_name when nonzero."
+
+    def get_measured_closure(self, env, action_name: str) -> torch.Tensor:
+        """Return driver-joint closure: 0 at the open target, 1 at closed, preserving overshoot.
+
+        Args:
+            env: Arena environment, optionally gym-wrapped.
+            action_name: Binary action whose target mappings name the driver joint explicitly.
+        """
+        base = env.unwrapped
+        cfg = base.action_manager.get_term(action_name).cfg
+        joint_name = self.driver_joint_name or "finger_joint"
+        measured = base.arena_world.get_joint_position(cfg.asset_name, joint_name)
+        open_position = cfg.open_command_expr[joint_name]
+        closed_position = cfg.close_command_expr[joint_name]
+        return (measured - open_position) / (closed_position - open_position)
 
     def get_jaw_gap_m(self, world: ArenaWorld) -> torch.Tensor:
         """Return the physical distance between the two finger pads."""

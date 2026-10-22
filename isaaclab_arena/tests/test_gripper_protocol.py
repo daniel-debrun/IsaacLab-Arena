@@ -117,6 +117,7 @@ def test_robotiq_gripper_measurement_sources_are_independent() -> None:
 
 def _test_robotiq_gripper_encapsulates_driver_joint_and_body_point_details(_simulation_app) -> bool:
     import torch
+    from types import SimpleNamespace
 
     from isaaclab_arena.embodiments.gripper import RobotiqGripper
 
@@ -134,6 +135,17 @@ def _test_robotiq_gripper_encapsulates_driver_joint_and_body_point_details(_simu
         gripper.get_position_w(world),
         torch.tensor([[0.2, 0.2, 0.457], [0.4, 0.3, 0.657]]),
     )
+    cfg = SimpleNamespace(
+        asset_name="robot",
+        open_command_expr={"left_driver_joint": 0.0},
+        close_command_expr={"left_driver_joint": 0.4},
+    )
+    terms = {"left_gripper": SimpleNamespace(cfg=cfg)}
+    env = SimpleNamespace(
+        unwrapped=SimpleNamespace(arena_world=world, action_manager=SimpleNamespace(get_term=terms.__getitem__))
+    )
+    # The configured driver and action determine closure, including measured overshoot.
+    torch.testing.assert_close(gripper.get_measured_closure(env, "left_gripper"), torch.tensor([0.0, 2.0]))
     return True
 
 

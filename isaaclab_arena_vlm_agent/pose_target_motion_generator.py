@@ -33,7 +33,8 @@ class PoseTargetMotionGenerator(MotionGenerator):
         """Configure pose tracking and normalized binary-control completion tolerances.
 
         Args:
-            embodiment: Robot supplying measured command state in controller order.
+            embodiment: Robot supplying get_measured_pose_and_gripper_closure and the command
+                type, quaternion indices, and binary action values in controller order.
             position_tolerance_m: Maximum translation error per pose.
             rotation_tolerance_rad: Maximum shortest rotation error per pose.
             gripper_tolerance: Maximum error as a fraction of each binary control's range.

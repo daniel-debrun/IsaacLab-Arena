@@ -70,7 +70,7 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         actions = torch.stack(actions)
         assert actions.shape == (2, 8)
         T_R_E = actions[:, :7]
-        torch.testing.assert_close(embodiment.get_measured_command_body_pose(env), T_R_E)
+        torch.testing.assert_close(embodiment.get_measured_command_body_pose_in_root(env), T_R_E)
         T_W_R = base.arena_world.get_pose_w("robot")
         t_W_E, q_W_E = combine_frame_transforms(T_W_R[:, :3], T_W_R[:, 3:], T_R_E[:, :3], T_R_E[:, 3:])
         torch.testing.assert_close(
@@ -112,8 +112,11 @@ def _test_droid_absolute_pose_adapters(simulation_app):
                     get_body_pose_in_root=Mock(return_value=torch.zeros(2, 7)),
                     get_joint_position=Mock(return_value=open_position + closure * (closed_position - open_position)),
                 )
-                measured_env = SimpleNamespace(unwrapped=SimpleNamespace(arena_world=world))
-                torch.testing.assert_close(embodiment.get_measured_gripper_closure(measured_env), closure)
+                manager = SimpleNamespace(get_term=Mock(return_value=SimpleNamespace(cfg=gripper_cfg)))
+                measured_env = SimpleNamespace(unwrapped=SimpleNamespace(arena_world=world, action_manager=manager))
+                torch.testing.assert_close(
+                    embodiment.get_gripper().get_measured_closure(measured_env, "gripper_action"), closure
+                )
                 torch.testing.assert_close(
                     embodiment.get_measured_pose_and_gripper_closure(measured_env)[:, 7], closure
                 )

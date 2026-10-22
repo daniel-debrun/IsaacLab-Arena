@@ -308,32 +308,17 @@ class DroidDifferentialIKEmbodiment(DroidEmbodimentBase):
         Args:
             env: Arena environment, optionally gym-wrapped.
         """
-        pose = self.get_measured_command_body_pose(env)
-        closure = self.get_measured_gripper_closure(env)
+        pose = self.get_measured_command_body_pose_in_root(env)
+        closure = self.get_gripper().get_measured_closure(env, "gripper_action")
         return torch.cat((pose, closure.unsqueeze(-1)), dim=-1)
 
-    def get_measured_command_body_pose(self, env) -> torch.Tensor:
+    def get_measured_command_body_pose_in_root(self, env) -> torch.Tensor:
         """Return root-relative command-body XYZ and XYZW, shaped (num_envs, 7).
 
         Args:
             env: Arena environment, optionally gym-wrapped.
         """
         return env.unwrapped.arena_world.get_body_pose_in_root(self.get_scene_key(), self.get_command_body_name())
-
-    def get_measured_gripper_closure(self, env) -> torch.Tensor:
-        """Return unclamped gripper closure, shaped (num_envs,).
-
-        Closure is 0 at the configured open joint position and 1 at the closed position;
-        measured overshoot is preserved.
-
-        Args:
-            env: Arena environment, optionally gym-wrapped.
-        """
-        finger_position = env.unwrapped.arena_world.get_joint_position(self.get_scene_key(), "finger_joint")
-        gripper_cfg = self.action_config.gripper_action
-        open_position = gripper_cfg.open_command_expr["finger_joint"]
-        closed_position = gripper_cfg.close_command_expr["finger_joint"]
-        return (finger_position - open_position) / (closed_position - open_position)
 
     def _configure_physics_backend(self, backend: PhysicsBackend) -> None:
         """Apply shared Newton spawn setup, then diff-IK-specific Newton tuning."""
