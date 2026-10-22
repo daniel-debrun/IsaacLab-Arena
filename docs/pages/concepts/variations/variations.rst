@@ -210,10 +210,11 @@ variations are sampled once and applied to asset configs before the environment 
 Asset selection
 ---------------
 
-Every rigid ``Object`` has a disabled ``asset_selection`` variation. When it is enabled, each build
-chooses one name from its ``asset_names``, a list of registered rigid objects, and every parallel
-environment of that build spawns that object. While the selection is off, the object spawns the asset
-the environment declares. For different objects in the environments of one build, use a
+Every rigid object of the object library (a ``LibraryObject``, such as ``rubiks_cube_hot3d_robolab``)
+has a disabled ``asset_selection`` variation. When it is enabled, each build chooses one name from its
+``asset_names``, a list of registered rigid objects, and every parallel environment of that build
+spawns that object. While the selection is off, the object spawns its own registered asset. For
+different objects in the environments of one build, use a
 :doc:`RigidObjectSet <../scene/concept_rigid_object_set>`, which has no ``asset_selection``.
 
 The example config ``isaaclab_arena_environments/experiment_configs/asset_selection_experiment.yaml``

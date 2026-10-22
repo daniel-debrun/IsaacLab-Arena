@@ -267,12 +267,18 @@ def _test_placement_replay_needs_recorded_asset_selection(simulation_app, tmp_pa
     return True
 
 
-def _test_rigid_objects_outside_sets_have_disabled_asset_selection(simulation_app):
+def _test_registered_rigid_objects_have_disabled_asset_selection(simulation_app):
+    import isaaclab.sim as sim_utils
+
+    from isaaclab_arena.assets.object import Object
     from isaaclab_arena.assets.object_set import RigidObjectSet
+    from isaaclab_arena.assets.object_type import ObjectType
 
     pickup = make_pickup()
     assert not pickup.get_variation("asset_selection").enabled
     assert "asset_selection" not in make_table().variations
+    cube = Object(name="cube", object_type=ObjectType.RIGID, spawner_cfg=sim_utils.CuboidCfg(size=(0.1, 0.1, 0.1)))
+    assert "asset_selection" not in cube.variations
     pickup_set = RigidObjectSet(name="pickup_set", objects=[pickup])
     assert "asset_selection" not in pickup_set.variations
     return True
@@ -333,9 +339,9 @@ def test_placement_replay_needs_recorded_asset_selection(tmp_path):
     )
 
 
-def test_rigid_objects_outside_sets_have_disabled_asset_selection():
+def test_registered_rigid_objects_have_disabled_asset_selection():
     assert run_function_with_persistent_simulation_app(
-        _test_rigid_objects_outside_sets_have_disabled_asset_selection, headless=HEADLESS
+        _test_registered_rigid_objects_have_disabled_asset_selection, headless=HEADLESS
     )
 
 

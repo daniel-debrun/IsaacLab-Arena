@@ -23,14 +23,10 @@ from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 from isaaclab_arena.utils.pose import Pose
 from isaaclab_arena.utils.usd.helpers import has_light, open_stage
 from isaaclab_arena.utils.usd.rigid_bodies import read_asset_rigid_body_paths
-from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariation
 
 
 class Object(RootedObjectBase):
     """Scene object spawned from a USD file or a spawn configuration, as a rigid, articulated or static (``BASE``) asset."""
-
-    supports_asset_selection: bool = True
-    """Whether a rigid Object of this class gets a disabled AssetSelectionVariation named ``asset_selection``."""
 
     def __init__(
         self,
@@ -59,8 +55,6 @@ class Object(RootedObjectBase):
             )
             object_type = detect_object_type(usd_path=usd_path, variants=spawn_cfg_addon.get("variants"))
         super().__init__(name=name, prim_path=prim_path, object_type=object_type, **kwargs)
-        if self.object_type == ObjectType.RIGID and self.supports_asset_selection:
-            self.add_variation(AssetSelectionVariation(self))
         self.usd_path = usd_path
         self.spawner_cfg = spawner_cfg
         self.scale = scale

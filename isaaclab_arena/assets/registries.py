@@ -111,7 +111,7 @@ class AssetRegistry(Registry):
         Args:
             name: Registered name of a rigid Object.
         """
-        # Imported here to avoid a cycle: object.py imports asset_selection_variation.py, which imports this module.
+        # Imported here to avoid a cycle: object.py imports relations.py, which imports this module.
         from isaaclab_arena.assets.object import Object
 
         assert self.is_registered(
