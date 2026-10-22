@@ -31,6 +31,9 @@ class _PolicyCfg(PolicyCfg):
 
 
 class _Policy:
+    def __init__(self, config=None):
+        self.config = config or _PolicyCfg()
+
     def has_length(self):
         return False
 
@@ -95,7 +98,7 @@ def _experiment(*run_cfgs: ArenaRunCfg) -> ArenaExperimentCfg:
 @pytest.mark.parametrize("config_wait_for_settling", [False, True])
 def test_build_and_run_splits_episode_budget_without_mutating_config(monkeypatch, tmp_path, config_wait_for_settling):
     run = _run()
-    run.policy_wait_for_objects_to_settle = config_wait_for_settling
+    run.policy.wait_for_objects_to_settle = config_wait_for_settling
     rollout_limits = []
     received_run_cfgs = []
 
@@ -104,14 +107,14 @@ def test_build_and_run_splits_episode_budget_without_mutating_config(monkeypatch
         return _environment()
 
     monkeypatch.setattr(run_execution, "_build_environment_from_cfg", make_environment)
-    monkeypatch.setattr(run_execution, "_build_policy_from_cfg", lambda cfg: _Policy())
+    monkeypatch.setattr(run_execution, "_build_policy_from_cfg", lambda cfg: _Policy(cfg.policy))
     monkeypatch.setattr(run_execution, "wrap_env_for_video", lambda env, video_cfg, steps, episodes: env)
     monkeypatch.setattr(run_execution, "close_run_resources", lambda policy, env: None)
 
     received_settling_options = []
 
-    def record_rollout(env, policy, num_steps, num_episodes, policy_wait_for_objects_to_settle):
-        received_settling_options.append(policy_wait_for_objects_to_settle)
+    def record_rollout(env, policy, num_steps, num_episodes):
+        received_settling_options.append(policy.config.wait_for_objects_to_settle)
         rollout_limits.append((num_steps, num_episodes))
 
     monkeypatch.setattr(run_execution, "rollout_policy", record_rollout)
@@ -168,15 +171,13 @@ def test_build_and_run_resolves_variation_replay_budget(
         return _environment()
 
     monkeypatch.setattr(run_execution, "_build_environment_from_cfg", make_environment)
-    monkeypatch.setattr(run_execution, "_build_policy_from_cfg", lambda cfg: _Policy())
+    monkeypatch.setattr(run_execution, "_build_policy_from_cfg", lambda cfg: _Policy(cfg.policy))
     monkeypatch.setattr(run_execution, "wrap_env_for_video", lambda env, video_cfg, steps, episodes: env)
     monkeypatch.setattr(run_execution, "close_run_resources", lambda policy, env: None)
     monkeypatch.setattr(
         run_execution,
         "rollout_policy",
-        lambda env, policy, num_steps, num_episodes, policy_wait_for_objects_to_settle: rollout_limits.append(
-            (num_steps, num_episodes)
-        ),
+        lambda env, policy, num_steps, num_episodes: rollout_limits.append((num_steps, num_episodes)),
     )
 
     run_execution.build_and_run(run, output_dir=tmp_path)
@@ -213,15 +214,13 @@ def test_build_and_run_assigns_one_replay_file_per_rebuild(
         return _environment()
 
     monkeypatch.setattr(run_execution, "_build_environment_from_cfg", make_environment)
-    monkeypatch.setattr(run_execution, "_build_policy_from_cfg", lambda cfg: _Policy())
+    monkeypatch.setattr(run_execution, "_build_policy_from_cfg", lambda cfg: _Policy(cfg.policy))
     monkeypatch.setattr(run_execution, "wrap_env_for_video", lambda env, video_cfg, steps, episodes: env)
     monkeypatch.setattr(run_execution, "close_run_resources", lambda policy, env: None)
     monkeypatch.setattr(
         run_execution,
         "rollout_policy",
-        lambda env, policy, num_steps, num_episodes, policy_wait_for_objects_to_settle: rollout_limits.append(
-            (num_steps, num_episodes)
-        ),
+        lambda env, policy, num_steps, num_episodes: rollout_limits.append((num_steps, num_episodes)),
     )
 
     run_execution.build_and_run(run, output_dir=tmp_path)
@@ -325,14 +324,14 @@ def test_execute_experiment_runs_in_declaration_order(monkeypatch, tmp_path, pol
 
     def build_and_run(run_cfg, output_dir, video_cfg):
         received.append((run_cfg.name, output_dir, video_cfg.video_base_dir))
-        received_settling_options.append(run_cfg.policy_wait_for_objects_to_settle)
+        received_settling_options.append(run_cfg.policy.wait_for_objects_to_settle)
         return ArenaRunResult(run_name=run_cfg.name, status=RunStatus.COMPLETED)
 
     monkeypatch.setattr(run_execution, "build_and_run", build_and_run)
 
     experiment = _experiment(_run(name="first"), _run(name="second"))
     for run in experiment.runs.values():
-        run.policy_wait_for_objects_to_settle = policy_wait_for_objects_to_settle
+        run.policy.wait_for_objects_to_settle = policy_wait_for_objects_to_settle
     results = run_execution.execute_experiment(
         experiment,
         output_dir=tmp_path,

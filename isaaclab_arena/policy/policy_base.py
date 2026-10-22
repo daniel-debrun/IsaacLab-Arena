@@ -8,14 +8,17 @@ from __future__ import annotations
 import gymnasium as gym
 import torch
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from gymnasium.spaces.dict import Dict as GymSpacesDict
 from typing import Generic, TypeVar
 
 
 @dataclass
 class PolicyCfg:
-    """Mark a typed Arena policy configuration."""
+    """Configure shared Arena policy behavior."""
+
+    wait_for_objects_to_settle: bool = field(default=False, kw_only=True)
+    """Wait for leading objects_settled requirements before inference, including after resets."""
 
 
 PolicyCfgT = TypeVar("PolicyCfgT", bound=PolicyCfg)

@@ -130,7 +130,6 @@ def build_and_run(
                 policy,
                 num_steps=num_steps,
                 num_episodes=num_episodes,
-                policy_wait_for_objects_to_settle=rebuild_cfg.policy_wait_for_objects_to_settle,
             )
             if metrics is not None:
                 metrics_per_rebuild.append(metrics)

@@ -68,7 +68,6 @@ def rollout_policy(
     policy: PolicyBase,
     num_steps: int | None,
     num_episodes: int | None,
-    policy_wait_for_objects_to_settle: bool = False,
 ) -> MetricsDataCollection | None:
     import torch
 
@@ -90,12 +89,14 @@ def rollout_policy(
             pbar = tqdm.tqdm(total=num_episodes, desc="Episodes", unit="episode")
 
         num_steps_completed = 0
-        progress_tracker = env.unwrapped.progress_tracker if policy_wait_for_objects_to_settle else None
+        progress_tracker = env.unwrapped.progress_tracker if policy.config.wait_for_objects_to_settle else None
 
         while True:
             with torch.inference_mode(), Timer("step"):
                 settling_pending = progress_tracker is not None and bool(
-                    (progress_tracker.initial_object_settling_pending() & env.unwrapped.active_episode_mask).any()
+                    (
+                        progress_tracker.get_initial_object_settling_pending_mask() & env.unwrapped.active_episode_mask
+                    ).any()
                 )
                 if settling_pending:
                     # Reuse the environment's command (reset command for new episodes).

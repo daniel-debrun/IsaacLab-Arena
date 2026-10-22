@@ -49,15 +49,15 @@ def _test_initial_object_settling_gate(simulation_app):
             "isaaclab_arena.tasks.predicates.object_settling.objects_below_velocity_thresholds",
             return_value=torch.ones(2, dtype=torch.bool),
         ):
-            assert tracker.initial_object_settling_pending().tolist() == [True, True]
+            assert tracker.get_initial_object_settling_pending_mask().tolist() == [True, True]
             tracker.step(env, step_index=torch.tensor([1, 1]))
             # Repeated reads must not advance consecutive-step counters.
-            assert tracker.initial_object_settling_pending().tolist() == [True, True]
-            assert tracker.initial_object_settling_pending().tolist() == [True, True]
+            assert tracker.get_initial_object_settling_pending_mask().tolist() == [True, True]
+            assert tracker.get_initial_object_settling_pending_mask().tolist() == [True, True]
             tracker.step(env, step_index=torch.tensor([2, 2]))
-            assert tracker.initial_object_settling_pending().tolist() == [False, False]
+            assert tracker.get_initial_object_settling_pending_mask().tolist() == [False, False]
             tracker.reset([1])
-            assert tracker.initial_object_settling_pending().tolist() == [False, True]
+            assert tracker.get_initial_object_settling_pending_mask().tolist() == [False, True]
     return True
 
 

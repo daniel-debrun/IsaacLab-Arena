@@ -1,0 +1,28 @@
+# Copyright (c) 2026, The Isaac Lab Arena Project Developers (https://github.com/isaac-sim/IsaacLab-Arena/blob/main/CONTRIBUTORS.md).
+# All rights reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# In the Arena runtime:
+# python isaaclab_arena/evaluation/experiment_runner.py --viz kit \
+#   --experiment_config isaaclab_arena_environments/experiment_configs/avocado_settling_experiment.yaml
+shared:
+  environment:
+    type: avocado_settling
+    drop_height_m: 0.15
+    sideways_speed_m_s: 0.08
+    spin_rad_s: 1.5
+    settled_steps: 15
+    episode_length_s: 20.0
+  policy:
+    type: isaaclab_arena_examples.policy.avocado_settling.AvocadoHoverPolicy
+    speed_m_s: 0.30
+    wait_for_objects_to_settle: true
+  environment_builder:
+    num_envs: 1
+    seed: 42
+    resolve_on_reset: false
+  rollout_limit:
+    num_episodes: 1
+runs:
+  avocado_drop_and_hover: {}

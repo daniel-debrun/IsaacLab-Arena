@@ -685,7 +685,7 @@ class ProgressTracker:
                 return predicate
         raise KeyError(f"Unknown completion criteria: {criteria_name!r}")
 
-    def initial_object_settling_pending(self) -> torch.Tensor:
+    def get_initial_object_settling_pending_mask(self) -> torch.Tensor:
         """Return environments still waiting on a leading objects_settled requirement.
 
         Read sequence progress without evaluating predicates or advancing consecutive-step

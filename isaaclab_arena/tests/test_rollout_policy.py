@@ -8,6 +8,7 @@ import torch
 from types import SimpleNamespace
 
 from isaaclab_arena.evaluation import policy_runner
+from isaaclab_arena.policy.policy_base import PolicyCfg
 
 
 class _RolloutEnvironment:
@@ -50,6 +51,7 @@ class _RolloutEnvironment:
 
 class _Policy:
     def __init__(self):
+        self.config = PolicyCfg()
         self.reset_calls = []
         self.observed_steps = []
 
@@ -130,9 +132,10 @@ def test_rollout_defers_first_policy_observation_until_batch_settles_and_waits_a
         [False, False, False],
     ]
     environment.progress_tracker = SimpleNamespace(
-        initial_object_settling_pending=lambda: torch.tensor(pending_by_step[environment.steps_completed])
+        get_initial_object_settling_pending_mask=lambda: torch.tensor(pending_by_step[environment.steps_completed])
     )
     policy = _Policy()
+    policy.config.wait_for_objects_to_settle = True
     _capture_progress(monkeypatch, total=5)
 
     policy_runner.rollout_policy(
@@ -140,7 +143,6 @@ def test_rollout_defers_first_policy_observation_until_batch_settles_and_waits_a
         policy,
         num_steps=5,
         num_episodes=None,
-        policy_wait_for_objects_to_settle=True,
     )
 
     assert policy.observed_steps == [2, 4]
@@ -151,9 +153,10 @@ def test_rollout_does_not_wait_for_inactive_environments(monkeypatch):
     environment = _RolloutEnvironment([(1, [], [0], [])])
     environment.active_episode_mask = torch.tensor([True, False, False])
     environment.progress_tracker = SimpleNamespace(
-        initial_object_settling_pending=lambda: torch.tensor([False, True, True])
+        get_initial_object_settling_pending_mask=lambda: torch.tensor([False, True, True])
     )
     policy = _Policy()
+    policy.config.wait_for_objects_to_settle = True
     _capture_progress(monkeypatch, total=1)
 
     policy_runner.rollout_policy(
@@ -161,7 +164,6 @@ def test_rollout_does_not_wait_for_inactive_environments(monkeypatch):
         policy,
         num_steps=None,
         num_episodes=1,
-        policy_wait_for_objects_to_settle=True,
     )
 
     assert policy.observed_steps == [0]
@@ -170,7 +172,7 @@ def test_rollout_does_not_wait_for_inactive_environments(monkeypatch):
 def test_rollout_does_not_wait_for_settling_by_default(monkeypatch):
     environment = _RolloutEnvironment([(0, [], [], [])])
     environment.progress_tracker = SimpleNamespace(
-        initial_object_settling_pending=lambda: torch.ones(3, dtype=torch.bool)
+        get_initial_object_settling_pending_mask=lambda: torch.ones(3, dtype=torch.bool)
     )
     policy = _Policy()
     _capture_progress(monkeypatch, total=1)
