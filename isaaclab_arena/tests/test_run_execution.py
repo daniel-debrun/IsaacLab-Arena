@@ -18,6 +18,8 @@ from isaaclab_arena.evaluation.arena_experiment_result import ARENA_SINGLE_RUN_T
 from isaaclab_arena.evaluation.arena_run import ArenaRunCfg, ArenaRunResult, RolloutLimitCfg, RunStatus
 from isaaclab_arena.policy.policy_base import PolicyCfg
 from isaaclab_arena.utils.timer import Timer
+from isaaclab_arena.variations.choice_sampler import ChoiceSamplerCfg
+from isaaclab_arena.variations.variation_base import BuildTimeVariationBase, VariationBaseCfg
 
 
 @dataclass
@@ -48,6 +50,14 @@ class _EpisodeRecorder:
         self.path = path
 
 
+class _BuildTimeVariation(BuildTimeVariationBase):
+    def __init__(self, enabled: bool):
+        super().__init__(cfg=VariationBaseCfg(enabled=enabled, sampler_cfg=ChoiceSamplerCfg()), name="hdr_image")
+
+    def _realize_at_build_time(self) -> None:
+        pass
+
+
 def _environment():
     return SimpleNamespace(unwrapped=SimpleNamespace(episode_recorder=_EpisodeRecorder()))
 
@@ -61,13 +71,17 @@ class _RecorderManagerCfg:
 class _ArenaEnvBuilder:
     """Stands in for the real builder so the dataset naming can be checked without a SimulationApp."""
 
-    def __init__(self, recorders):
+    def __init__(self, recorders, variations=None):
         self.env_cfg = SimpleNamespace(recorders=recorders)
         self.made_with = None
+        self.variations = variations or {}
 
     def make_registered(self, env_cfg=None, env_kwargs=None, render_mode=None):
         self.made_with = SimpleNamespace(env_cfg=env_cfg, env_kwargs=env_kwargs, render_mode=render_mode)
         return _environment()
+
+    def get_all_variations(self):
+        return self.variations
 
 
 def _builder(monkeypatch, recorders):
@@ -406,6 +420,22 @@ def test_build_environment_tolerates_an_environment_without_recorders(monkeypatc
 
     assert env is not None
     assert builder.made_with.render_mode is None
+
+
+@pytest.mark.parametrize(
+    "num_rebuilds, enabled, expect_warning",
+    [(1, True, True), (2, True, False), (1, False, False)],
+)
+def test_build_environment_warns_when_one_build_enables_build_time_variations(
+    monkeypatch, tmp_path, capsys, num_rebuilds, enabled, expect_warning
+):
+    builder = _ArenaEnvBuilder(None, variations={"light": [_BuildTimeVariation(enabled)]})
+    monkeypatch.setattr(run_execution, "build_arena_builder_from_run_cfg", lambda cfg: builder)
+
+    run_execution._build_environment_from_cfg(_run(num_rebuilds=num_rebuilds), render_mode=None, output_dir=tmp_path)
+
+    warning = "[WARNING] Run 'test_run' enables the build-time variations ['light.hdr_image']"
+    assert (warning in capsys.readouterr().out) is expect_warning
 
 
 def test_execute_experiment_writes_one_timings_file_per_run(monkeypatch, tmp_path):

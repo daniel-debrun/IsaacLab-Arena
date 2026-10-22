@@ -27,6 +27,7 @@ from isaaclab_arena.evaluation.resource_cleanup import close_run_resources
 from isaaclab_arena.metrics.aggregate_metrics import aggregate_metrics
 from isaaclab_arena.recording.episode_results import read_episode_records
 from isaaclab_arena.utils.timer import print_timer_stats, reset_timer_stats
+from isaaclab_arena.variations.variation_base import BuildTimeVariationBase, get_enabled_variations_by_key
 from isaaclab_arena.variations.variations_hydra import overrides_from_dict
 from isaaclab_arena.video.video_recording import VideoRecordingCfg, wrap_env_for_video
 
@@ -168,7 +169,31 @@ def _build_environment_from_cfg(
     run_cfg.environment_builder.recorder_dataset_export_dir_path = str(output_dir)
     run_cfg.environment_builder.recorder_dataset_filename = f"dataset_{cfg.name}_rebuild{rebuild_index}"
     arena_builder = build_arena_builder_from_run_cfg(run_cfg)
-    return arena_builder.make_registered(render_mode=render_mode)
+    env = arena_builder.make_registered(render_mode=render_mode)
+    _warn_if_build_time_variations_draw_once(cfg, arena_builder)
+    return env
+
+
+def _warn_if_build_time_variations_draw_once(cfg: ArenaRunCfg, arena_builder: ArenaEnvBuilder) -> None:
+    """Warn when a Run builds its environment once but enables build-time variations.
+
+    A build-time variation draws once per build, so with one build it gives one value for the whole Run.
+    """
+    if cfg.num_rebuilds > 1 or cfg.environment_builder.recorded_variation_samples_path is not None:
+        return
+    enabled_variations_by_key = get_enabled_variations_by_key(arena_builder.get_all_variations())
+    build_time_variation_keys = [
+        variation_key
+        for variation_key, variation in enabled_variations_by_key.items()
+        if isinstance(variation, BuildTimeVariationBase)
+    ]
+    if build_time_variation_keys:
+        print(
+            f"[WARNING] Run '{cfg.name}' enables the build-time variations {build_time_variation_keys} but builds its"
+            " environment once (num_rebuilds: 1), so each of them draws one value for the whole Run. Set num_rebuilds"
+            " to the number of builds you want.",
+            flush=True,
+        )
 
 
 def build_arena_builder_from_run_cfg(cfg: ArenaRunCfg) -> ArenaEnvBuilder:

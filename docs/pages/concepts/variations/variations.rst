@@ -34,7 +34,9 @@ an environment resets during policy rollouts. Arena calls these *build-time* and
 
 This distinction matters when planning an evaluation. To collect several values of a
 build-time variation, the environment must be rebuilt with different seeds; the Experiment
-Runner gives each rebuild its own seed. A run-time variation can produce a new value on each
+Runner gives each rebuild its own seed. Set ``num_rebuilds`` in the Run; with the default of 1,
+the Experiment Runner prints a warning that each enabled build-time variation draws one value for
+the whole Run. A run-time variation can produce a new value on each
 reset without rebuilding the scene. Both kinds draw their values from the variation's own
 generator, seeded from ``--seed`` (see :doc:`../environment/env_builder`).
 
