@@ -117,7 +117,7 @@ class PickAndPlaceTask(TaskBase):
         """The robot must reach the object it picks up and the location it places onto."""
         self._apply_reachability_constraints([self.pick_up_object, self.destination_location])
 
-    def make_scene_cfg(self):
+    def get_scene_cfg(self):
         if self.contact_sensor_cfg is None:
             return None
         sensor_cfg = self.pick_up_object.get_contact_sensor_cfg(
@@ -128,9 +128,6 @@ class PickAndPlaceTask(TaskBase):
             [(self.contact_sensor_cfg.name, type(sensor_cfg), sensor_cfg)],
         )
         return scene_cfg_type()
-
-    def get_scene_cfg(self):
-        return self.make_scene_cfg()
 
     def get_events_cfg(self):
         return self.events_cfg

@@ -48,7 +48,7 @@ class SortMultiObjectTask(TaskBase):
         ]
         self.events_cfg = None
 
-    def make_scene_cfg(self):
+    def get_scene_cfg(self):
 
         # Support variable number of contact sensors.
         fields: list[tuple[str, type, ContactSensorCfg]] = []
@@ -60,9 +60,6 @@ class SortMultiObjectTask(TaskBase):
         SceneCfg = make_configclass("SceneCfg", fields)
         scene_cfg = SceneCfg()
         return scene_cfg
-
-    def get_scene_cfg(self):
-        return self.make_scene_cfg()
 
     def get_termination_cfg(self) -> TaskTerminationCfg:
         object_cfg_list = [SceneEntityCfg(pick_up_object.name) for pick_up_object in self.pick_up_object_list]
