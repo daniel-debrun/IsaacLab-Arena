@@ -1,0 +1,27 @@
+# Copyright (c) 2026, The Isaac Lab Arena Project Developers (https://github.com/isaac-sim/IsaacLab-Arena/blob/main/CONTRIBUTORS.md).
+# All rights reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+shared:
+  environment:
+    type: pick_and_place_maple_table
+    enable_cameras: true
+    embodiment: droid_rel_joint_pos
+    episode_length_s: 1.0
+  environment_builder:
+    num_envs: 1
+    seed: 42
+    placement_seed: 42
+    resolve_on_reset: false
+    presets: PHYSX
+  policy:
+    type: zero_action
+  rollout_limit:
+    num_episodes: 3
+runs:
+  intrinsics:
+    variations:
+      droid_rel_joint_pos.camera_intrinsics_wrist_camera.enabled: true
+      droid_rel_joint_pos.camera_intrinsics_wrist_camera.sampler_cfg.low: [-0.45, -0.45]
+      droid_rel_joint_pos.camera_intrinsics_wrist_camera.sampler_cfg.high: [0.6, 0.6]
