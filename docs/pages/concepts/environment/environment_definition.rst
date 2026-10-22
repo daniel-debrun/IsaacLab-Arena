@@ -258,6 +258,19 @@ task files. Pattern used in ``isaaclab_arena_environments/robolab/``:
      composition: atomic
      ...
 
+``external_yaml`` also takes a list of files, for example a scene plus a file of shared
+defaults. The files are merged without overrides: mappings merge recursively, lists of
+mappings with an ``id`` (such as ``objects``) concatenate, and any other value may be
+defined by only one file. A value defined twice, or an ``id`` that appears twice, fails
+when the file loads and names the path and both files:
+
+.. code-block:: text
+
+   AssertionError: Conflicting env graph spec value at 'env_cfg_override.sim.physics.max_position_iteration_count':
+   defined in both /.../defaults.yaml (value 32) and /.../tasks/banana_in_bowl.yaml (value 16)
+
+Included files cannot include further files.
+
 **Declared CLI overrides.** ``cli_override_specs`` turns a node into a CLI flag
 with no code change. Below, ``--object`` replaces that node's ``registry_name``:
 
