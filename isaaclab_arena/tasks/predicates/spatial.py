@@ -86,14 +86,37 @@ def object_bounds_center_over_destination(
     downward_W[:, 2] = -1.0
     downward_D = quat_apply_inverse(q_W_D, downward_W)
 
+    return _ray_intersects_axis_aligned_box(object_centroid_D, downward_D, destination_bounds_D)
+
+
+def _ray_intersects_axis_aligned_box(
+    ray_origin_B: torch.Tensor,
+    ray_direction_B: torch.Tensor,
+    bounds_B: AxisAlignedBoundingBox,
+) -> torch.Tensor:
+    """Check whether each forward ray intersects an axis-aligned box.
+
+    Rays and box bounds share frame B. An origin inside or on the box counts as
+    an intersection; a box entirely behind the ray does not. Direction components
+    with magnitude below 1e-6 are treated as parallel to the corresponding planes.
+
+    Args:
+        ray_origin_B: Ray origins in frame B, with shape (num_rays, 3).
+        ray_direction_B: Unit ray directions in frame B, with shape (num_rays, 3).
+        bounds_B: Bounds aligned with frame B, on the same device as the rays.
+            A single box broadcasts across rays; otherwise one box per ray.
+
+    Returns:
+        Boolean tensor of shape (num_rays,) indicating forward intersections.
+    """
     # Each pair of box planes encloses a slab. For each axis, find the distances
     # along the ray where it enters and exits that slab. Sorting the two distances
     # handles either sign of the direction component.
-    parallel = downward_D.abs() < 1e-6
+    parallel = ray_direction_B.abs() < 1e-6
     # Avoid division by zero for parallel axes; their distances are replaced below.
-    safe_direction_D = torch.where(parallel, torch.ones_like(downward_D), downward_D)
-    distance_to_min = (destination_bounds_D.min_point - object_centroid_D) / safe_direction_D
-    distance_to_max = (destination_bounds_D.max_point - object_centroid_D) / safe_direction_D
+    safe_direction_B = torch.where(parallel, torch.ones_like(ray_direction_B), ray_direction_B)
+    distance_to_min = (bounds_B.min_point - ray_origin_B) / safe_direction_B
+    distance_to_max = (bounds_B.max_point - ray_origin_B) / safe_direction_B
     entry_distance = torch.minimum(distance_to_min, distance_to_max)
     exit_distance = torch.maximum(distance_to_min, distance_to_max)
     # A ray parallel to a slab's planes never crosses them. If its origin is inside
@@ -101,8 +124,8 @@ def object_bounds_center_over_destination(
     # misses the box entirely, which the separate containment check rejects.
     entry_distance = torch.where(parallel, -torch.inf, entry_distance)
     exit_distance = torch.where(parallel, torch.inf, exit_distance)
-    origin_above_min = object_centroid_D >= destination_bounds_D.min_point
-    origin_below_max = object_centroid_D <= destination_bounds_D.max_point
+    origin_above_min = ray_origin_B >= bounds_B.min_point
+    origin_below_max = ray_origin_B <= bounds_B.max_point
     origin_inside_slab = origin_above_min & origin_below_max
     ray_can_intersect_slab = ~parallel | origin_inside_slab
     inside_parallel_slabs = ray_can_intersect_slab.all(dim=-1)
