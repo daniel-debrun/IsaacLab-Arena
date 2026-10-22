@@ -69,10 +69,9 @@ class LibraryObject(Object):
             initial_pose=initial_pose,
             spawn_cfg_addon=self.spawn_cfg_addon,
             asset_cfg_addon=self.asset_cfg_addon,
+            spawned_asset_name=type(self).name,
             **kwargs,
         )
-        # instance_name can name the object by its role, so the asset name comes from the registry name.
-        self.spawned_asset_name = type(self).name
         if self.object_type == ObjectType.RIGID:
             self.add_variation(AssetSelectionVariation(self))
 
@@ -1944,6 +1943,7 @@ class ProceduralTable(Object):
             object_type=ObjectType.RIGID,
             usd_path="",
             initial_pose=initial_pose,
+            spawned_asset_name=type(self).name,
         )
 
     def _generate_rigid_cfg(self) -> RigidObjectCfg:
@@ -1989,6 +1989,7 @@ class ProceduralCube(Object):
             object_type=ObjectType.RIGID,
             usd_path="",
             initial_pose=initial_pose,
+            spawned_asset_name=type(self).name,
         )
 
     def _generate_rigid_cfg(self) -> RigidObjectCfg:

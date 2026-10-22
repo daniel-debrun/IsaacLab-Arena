@@ -18,14 +18,14 @@ class Asset:
     Base class for all assets.
     """
 
-    def __init__(self, name: str, tags: list[str] | None = None, **kwargs):
+    def __init__(self, name: str, tags: list[str] | None = None, spawned_asset_name: str | None = None, **kwargs):
         # NOTE: Cooperative Multiple Inheritance Pattern.
         # Calling super even though this is a base class to support
         # multiple inheritance of inheriting classes.
         super().__init__(**kwargs)
         assert name is not None, "Name is required for all assets"
         self.name = name
-        self.spawned_asset_name = name
+        self.spawned_asset_name = spawned_asset_name if spawned_asset_name is not None else name
         """Name of the spawned asset, for example its registry name. Defaults to name."""
         self.tags = tags
         self.variations: dict[str, VariationBase] = {}

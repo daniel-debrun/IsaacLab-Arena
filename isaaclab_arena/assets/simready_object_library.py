@@ -57,6 +57,7 @@ class SimReadyUsdObject(Object):
             scale=scale if scale is not None else (1.0, 1.0, 1.0),
             initial_pose=initial_pose,
             spawn_cfg_addon=spawn_cfg_addon,
+            spawned_asset_name=type(self).name,
             **kwargs,
         )
 

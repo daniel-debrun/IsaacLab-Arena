@@ -41,6 +41,7 @@ class LibraryDeformableObject(DeformableObject):
             tags=self.tags,
             spawner_cfg=copy.deepcopy(self.spawner_cfg),
             initial_pose=initial_pose,
+            spawned_asset_name=type(self).name,
             **kwargs,
         )
 
