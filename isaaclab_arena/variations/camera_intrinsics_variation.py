@@ -52,9 +52,9 @@ class CameraIntrinsicsVariation(RunTimeVariationBase):
     aperture parameters on the live camera prim. Nominal apertures are snapshotted on the
     first event call so perturbations do not compound.
 
-    The tiled RTX render product shares projection settings across environments, so
-    per-environment intrinsic edits do not render independently. This variation forces
-    ``camera_rig`` untiled at build time so each environment gets its own projection.
+    Tiled cameras share one USD sensor across envs, so a per-env intrinsic edit would leak
+    across all tiles. This variation forces ``camera_rig`` untiled at build time (via
+    _prepare_at_build_time) so the per-env perturbation takes effect.
 
     Args:
         camera_name: Scene-entity name of the target camera.

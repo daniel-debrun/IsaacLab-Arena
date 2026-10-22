@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -40,14 +40,6 @@ def validate_independent_camera_cfg(camera_cfg: CameraCfg) -> None:
     assert camera_cfg.background_color is None, "Untiled Arena cameras do not support custom background colors"
 
 
-@dataclass
-class SeparateCameraRenderData:
-    """Render products owned by one batched camera sensor."""
-
-    spec: CameraRenderSpec
-    children: list[IsaacRtxRenderData]
-
-
 class SeparateCameraRenderer(IsaacRtxRenderer):
     """Render RGB cameras independently and write into the usual batched buffers."""
 
@@ -60,11 +52,10 @@ class SeparateCameraRenderer(IsaacRtxRenderer):
         """Validate the camera before any renderer-specific stage changes."""
         validate_independent_camera_cfg(spec.cfg)
 
-    def create_render_data(self, spec: CameraRenderSpec) -> SeparateCameraRenderData:
+    def create_render_data(self, spec: CameraRenderSpec) -> list[IsaacRtxRenderData]:
         """Create one RGB annotator and render product per environment."""
         import omni.replicator.core as rep
 
-        validate_independent_camera_cfg(spec.cfg)
         children = []
         for path in spec.camera_prim_paths:
             child_spec = replace(spec, camera_prim_paths=(path,), num_instances=1, view_count=1)
@@ -82,27 +73,27 @@ class SeparateCameraRenderer(IsaacRtxRenderer):
                     spec=child_spec,
                 )
             )
-        return SeparateCameraRenderData(spec=spec, children=children)
+        return children
 
-    def set_outputs(self, render_data: SeparateCameraRenderData, output_data: dict[str, ProxyArray]) -> None:
+    def set_outputs(self, render_data: list[IsaacRtxRenderData], output_data: dict[str, ProxyArray]) -> None:
         """Bind each product to its slice of the shared camera output buffers."""
-        for i, child in enumerate(render_data.children):
+        for i, child in enumerate(render_data):
             outputs = {name: ProxyArray(value.warp[i : i + 1]) for name, value in output_data.items()}
             super().set_outputs(child, outputs)
 
-    def render(self, render_data: SeparateCameraRenderData) -> None:
+    def render(self, render_data: list[IsaacRtxRenderData]) -> None:
         """Write each environment's pixels into its camera output slice."""
-        for child in render_data.children:
+        for child in render_data:
             super().render(child)
 
-    def read_output(self, render_data: SeparateCameraRenderData, camera_data: CameraData) -> None:
+    def read_output(self, render_data: list[IsaacRtxRenderData], camera_data: CameraData) -> None:
         """Clear metadata for RGB/RGBA outputs, which carry no annotator metadata."""
         for name in camera_data.info:
             camera_data.info[name] = None
 
-    def cleanup(self, render_data: SeparateCameraRenderData | None) -> None:
+    def cleanup(self, render_data: list[IsaacRtxRenderData] | None) -> None:
         """Detach annotators and release every owned render product."""
         if render_data is not None:
-            for child in render_data.children:
+            for child in render_data:
                 if child.render_product is not None:
                     super().cleanup(child)

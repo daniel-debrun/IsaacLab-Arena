@@ -55,52 +55,33 @@ class ArenaCameraCfg:
 
         A copy is returned so callers may freely combine or mutate it without affecting this instance.
         """
-        if self._use_tiled_camera:
-            return self._tiled_rig()
-        return self._untiled_rig()
+        from isaaclab_physx.renderers.isaac_rtx_renderer import IsaacRtxRenderer
 
-    def _untiled_rig(self) -> Any:
-        """Return a rig whose cameras use independent Isaac RTX render products."""
         from isaaclab_arena.utils.isaaclab_utils.separate_camera_renderer import (
             SeparateCameraRenderer,
             validate_independent_camera_cfg,
         )
 
-        untiled = self.copy()
-        for name in untiled.camera_names():
-            camera_cfg = getattr(untiled, name)
-            if isinstance(camera_cfg, TiledCameraCfg):
-                init_fields = {
-                    f.name: getattr(camera_cfg, f.name) for f in fields(camera_cfg) if f.init and f.name != "class_type"
-                }
-                camera_cfg = CameraCfg(**init_fields)
-                setattr(untiled, name, camera_cfg)
-            validate_independent_camera_cfg(camera_cfg)
-            camera_cfg.renderer_cfg.class_type = SeparateCameraRenderer
-        return untiled
-
-    def _tiled_rig(self) -> Any:
-        """Return a copy of this rig with every untiled CameraCfg field converted to tiled."""
-        from isaaclab_physx.renderers.isaac_rtx_renderer import IsaacRtxRenderer
-
-        from isaaclab_arena.utils.isaaclab_utils.separate_camera_renderer import SeparateCameraRenderer
-
-        tiled = self.copy()
-        for f in fields(tiled):
-            value = getattr(tiled, f.name)
-            if isinstance(value, CameraCfg):
-                if value.renderer_cfg.class_type is SeparateCameraRenderer:
-                    value.renderer_cfg.class_type = IsaacRtxRenderer
-                if not isinstance(value, TiledCameraCfg):
-                    setattr(tiled, f.name, self._as_tiled_camera_cfg(value))
-        return tiled
-
-    def _as_tiled_camera_cfg(self, camera_cfg: CameraCfg) -> TiledCameraCfg:
-        """Return a TiledCameraCfg mirroring the settings of an untiled CameraCfg."""
-        init_fields = {
-            f.name: getattr(camera_cfg, f.name) for f in fields(camera_cfg) if f.init and f.name != "class_type"
-        }
-        return TiledCameraCfg(**init_fields)
+        rig = self.copy()
+        for name in rig.camera_names():
+            camera_cfg = getattr(rig, name)
+            if self._use_tiled_camera:
+                if camera_cfg.renderer_cfg.class_type is SeparateCameraRenderer:
+                    camera_cfg.renderer_cfg.class_type = IsaacRtxRenderer
+                if isinstance(camera_cfg, TiledCameraCfg):
+                    continue
+                cfg_type = TiledCameraCfg
+            else:
+                validate_independent_camera_cfg(camera_cfg)
+                camera_cfg.renderer_cfg.class_type = SeparateCameraRenderer
+                if not isinstance(camera_cfg, TiledCameraCfg):
+                    continue
+                cfg_type = CameraCfg
+            init_fields = {
+                f.name: getattr(camera_cfg, f.name) for f in fields(camera_cfg) if f.init and f.name != "class_type"
+            }
+            setattr(rig, name, cfg_type(**init_fields))
+        return rig
 
 
 def make_camera_observation_cfg(
