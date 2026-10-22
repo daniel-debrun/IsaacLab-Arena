@@ -90,7 +90,8 @@ class StepActionAdapter(AgentActionAdapter):
     """Use absolute targets in the active controller layout.
 
     Pose targets use root-relative XYZ and XYZW. Joint targets use controller joint order.
-    Binary controls retain their native open/close values.
+    Binary controls retain their native open/close values. The user configures controllers
+    to accept these absolute targets directly, including scales, offsets, and reference frames.
     """
 
     def __init__(self, embodiment: EmbodimentBase, command_type: CommandType):

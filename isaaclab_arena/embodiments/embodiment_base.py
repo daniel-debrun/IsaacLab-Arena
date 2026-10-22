@@ -225,7 +225,7 @@ class EmbodimentBase(PlaceableAsset):
         return self.action_config
 
     def get_command_type(self, env) -> CommandType | None:
-        """Return the supported absolute command type, or None for unsupported controllers.
+        """Return the controller command type, or None when it cannot be identified.
 
         Args:
             env: Arena environment, optionally gym-wrapped.
@@ -234,8 +234,6 @@ class EmbodimentBase(PlaceableAsset):
     def get_quaternion_indices(self, env) -> tuple[int, ...]:
         """Return the start indices of unit XYZW quaternions, each preceded by XYZ translation.
 
-        Call get_command_type first to verify controller support.
-
         Args:
             env: Arena environment, optionally gym-wrapped.
         """
@@ -243,8 +241,6 @@ class EmbodimentBase(PlaceableAsset):
 
     def get_binary_action_values(self, env) -> dict[int, tuple[float, float]]:
         """Return binary action indices mapped to their native (open, close) input values.
-
-        Call get_command_type first to verify controller support.
 
         Args:
             env: Arena environment, optionally gym-wrapped.

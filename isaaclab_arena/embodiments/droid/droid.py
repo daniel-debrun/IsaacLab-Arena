@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import numpy as np
 import torch
 from abc import ABC
 from typing import TYPE_CHECKING
@@ -236,53 +235,23 @@ class DroidEmbodimentBase(EmbodimentBase, ABC):
         robot.init_state = robot.init_state.replace(joint_pos=dict(zip(_DROID_JOINT_NAMES, initial_joint_pose)))
 
     def get_command_type(self, env) -> CommandType | None:
-        """Return DROID's supported absolute command type, or None for incompatible controllers."""
+        """Identify the arm command type; controller configuration is the user's responsibility."""
         from isaaclab.envs.mdp.actions.joint_actions import JointPositionAction
         from isaaclab.envs.mdp.actions.task_space_actions import DifferentialInverseKinematicsAction
 
-        manager = env.unwrapped.action_manager
-        if manager.active_terms != ["arm_action", "gripper_action"]:
-            return None
-        arm = manager.get_term("arm_action")
-        gripper = manager.get_term("gripper_action")
-        if not isinstance(arm, (DifferentialInverseKinematicsAction, JointPositionAction)):
-            return None
-        if not isinstance(gripper, BinaryJointPositionZeroToOneAction) or gripper.action_dim != 1:
-            return None
-
-        # Both action terms must control this robot and preserve the supplied target values.
-        if arm.cfg.asset_name != self.get_scene_key() or gripper.cfg.asset_name != self.get_scene_key():
-            return None
-        if arm.cfg.clip is not None or gripper.cfg.clip is not None:
-            return None
-        if not _all_equal(arm.cfg.scale, 1.0):
-            return None
-
+        arm = env.unwrapped.action_manager.get_term("arm_action")
         if isinstance(arm, DifferentialInverseKinematicsAction):
-            return CommandType.EE_POSE if self._supports_absolute_pose_commands(arm) else None
-        return CommandType.JOINT_POSITION if self._supports_absolute_joint_commands(arm) else None
-
-    def _supports_absolute_pose_commands(self, arm) -> bool:
-        """Check that IK accepts XYZ and XYZW for the expected body without a body offset."""
-        cfg = arm.cfg
-        return (
-            arm.action_dim == 7
-            and cfg.body_name == getattr(self.action_config.arm_action, "body_name", None)
-            and cfg.controller.command_type == "pose"
-            and not cfg.controller.use_relative_mode
-            and cfg.body_offset is None
-        )
-
-    def _supports_absolute_joint_commands(self, arm) -> bool:
-        """Check that joint targets are used directly, without default or explicit position offsets."""
-        return arm.action_dim > 0 and not arm.cfg.use_default_offset and _all_equal(arm.cfg.offset, 0.0)
+            return CommandType.EE_POSE
+        if isinstance(arm, JointPositionAction):
+            return CommandType.JOINT_POSITION
+        return None
 
     def get_quaternion_indices(self, env) -> tuple[int, ...]:
         """Return the XYZW start index for absolute pose commands, or no indices for joint commands."""
         return (3,) if self.get_command_type(env) == CommandType.EE_POSE else ()
 
     def get_binary_action_values(self, env) -> dict[int, tuple[float, float]]:
-        """Return the gripper index and its native (open, close) inputs after controller validation."""
+        """Return the gripper index and its native (open, close) inputs."""
         manager = env.unwrapped.action_manager
         arm = manager.get_term("arm_action")
         gripper = manager.get_term("gripper_action")
@@ -757,10 +726,3 @@ def spawn_newton_droid(
         joint.CreateAttribute("mjc:solref", Sdf.ValueTypeNames.DoubleArray).Set([0.002, 1.0])
         joint.CreateAttribute("mjc:solimp", Sdf.ValueTypeNames.DoubleArray).Set([0.99, 0.999, 0.001, 0.5, 2.0])
     return prim
-
-
-def _all_equal(value, target: float) -> bool:
-    """Check scalar, sequence, or joint-name mapping configuration values."""
-    if isinstance(value, dict):
-        value = list(value.values())
-    return bool(np.all(np.asarray(value) == target))

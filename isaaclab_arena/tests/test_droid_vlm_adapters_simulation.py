@@ -51,7 +51,9 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         base = env.unwrapped
         observation_adapter = StateObservationAdapter(embodiment)
         action_adapter = StepActionAdapter(embodiment, CommandType.EE_POSE)
-        _check_pose_controller_layout(env, embodiment)
+        assert embodiment.get_command_type(env) == CommandType.EE_POSE
+        assert embodiment.get_quaternion_indices(env) == (3,)
+        assert embodiment.get_binary_action_values(env) == {7: (0.0, 1.0)}
         assert action_adapter.embodiment is embodiment
         assert action_adapter.is_robot_action_space_supported(env)
         assert not StepActionAdapter(embodiment, CommandType.JOINT_POSITION).is_robot_action_space_supported(env)
@@ -164,8 +166,10 @@ def _test_droid_joint_position_adapters(simulation_app):
         env.reset()
         base = env.unwrapped
         assert not StepActionAdapter(embodiment, CommandType.EE_POSE).is_robot_action_space_supported(env)
-        _check_joint_controller_layout(env, embodiment)
         arm = base.action_manager.get_term("arm_action")
+        assert embodiment.get_command_type(env) == CommandType.JOINT_POSITION
+        assert embodiment.get_quaternion_indices(env) == ()
+        assert embodiment.get_binary_action_values(env) == {arm.action_dim: (0.0, 1.0)}
         joint_names = tuple(f"panda_joint{i}" for i in range(1, 8))
         targets = base.arena_world.get_joint_positions("robot", joint_names)[:1].expand(2, -1)
         target = {"values": targets[0].tolist() + [0.0]}
@@ -211,67 +215,3 @@ def _test_droid_joint_position_adapters(simulation_app):
 
 def test_droid_joint_position_adapters():
     assert run_function_with_persistent_simulation_app(_test_droid_joint_position_adapters)
-
-
-def _check_pose_controller_layout(env, embodiment):
-    from types import SimpleNamespace
-
-    from isaaclab_arena.embodiments.common.command_type import CommandType
-
-    manager = env.unwrapped.action_manager
-    arm = manager.get_term("arm_action")
-    assert embodiment.get_command_type(env) == CommandType.EE_POSE
-    assert embodiment.get_quaternion_indices(env) == (3,)
-    assert embodiment.get_binary_action_values(env) == {7: (0.0, 1.0)}
-    for cfg, field, value in (
-        (arm.cfg, "scale", 0.5),
-        (arm.cfg, "body_offset", object()),
-        (arm.cfg, "clip", {}),
-        (arm.cfg.controller, "command_type", "position"),
-        (arm.cfg.controller, "use_relative_mode", True),
-    ):
-        original = getattr(cfg, field)
-        try:
-            setattr(cfg, field, value)
-            assert embodiment.get_command_type(env) is None, field
-        finally:
-            setattr(cfg, field, original)
-    unknown = SimpleNamespace(cfg=SimpleNamespace(clip=None), action_dim=3)
-    other_env = SimpleNamespace(
-        unwrapped=SimpleNamespace(action_manager=SimpleNamespace(active_terms=["unknown"], get_term=lambda _: unknown))
-    )
-    assert embodiment.get_command_type(other_env) is None
-
-
-def _check_joint_controller_layout(env, embodiment):
-    from types import SimpleNamespace
-
-    from isaaclab.envs.mdp.actions.joint_actions import RelativeJointPositionAction
-
-    from isaaclab_arena.embodiments.common.command_type import CommandType
-    from isaaclab_arena.embodiments.droid.droid import DroidRelativeJointPositionActionsCfg
-    from isaaclab_arena_vlm_agent.action_adapter import StepActionAdapter
-
-    manager = env.unwrapped.action_manager
-    arm = manager.get_term("arm_action")
-    assert embodiment.get_command_type(env) == CommandType.JOINT_POSITION
-    assert embodiment.get_quaternion_indices(env) == ()
-    assert embodiment.get_binary_action_values(env) == {arm.action_dim: (0.0, 1.0)}
-    adapter = StepActionAdapter(embodiment, CommandType.JOINT_POSITION)
-    assert adapter.is_robot_action_space_supported(env)
-    for field, value in (("scale", 0.5), ("offset", 0.1), ("use_default_offset", True), ("clip", {})):
-        original = getattr(arm.cfg, field)
-        try:
-            setattr(arm.cfg, field, value)
-            assert not adapter.is_robot_action_space_supported(env), field
-        finally:
-            setattr(arm.cfg, field, original)
-    # DROID's hook rejects layouts that do not match its arm/gripper measurement order.
-    joint_manager = SimpleNamespace(active_terms=["body"], get_term=lambda _: arm, total_action_dim=arm.action_dim)
-    joint_env = SimpleNamespace(unwrapped=SimpleNamespace(action_manager=joint_manager))
-    assert not adapter.is_robot_action_space_supported(joint_env)
-    relative = RelativeJointPositionAction(DroidRelativeJointPositionActionsCfg().arm_action, env.unwrapped)
-    terms = {"arm_action": relative, "gripper_action": manager.get_term("gripper_action")}
-    relative_manager = SimpleNamespace(active_terms=list(terms), get_term=terms.__getitem__)
-    relative_env = SimpleNamespace(unwrapped=SimpleNamespace(action_manager=relative_manager))
-    assert embodiment.get_command_type(relative_env) is None
