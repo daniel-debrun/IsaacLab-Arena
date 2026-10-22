@@ -216,8 +216,10 @@ Asset selection
 Every rigid object of the object library (a ``LibraryObject``, such as ``rubiks_cube_hot3d_robolab``)
 has a disabled ``asset_selection`` variation. When it is enabled, each build chooses one name from its
 ``asset_names``, a list of registered rigid objects, and every parallel environment of that build
-spawns that asset. While the selection is off, the object spawns its own registered asset. For
-different objects in the environments of one build, use a
+spawns that asset. While the selection is off, the object spawns its own registered asset. The
+object keeps its ``name``, so its variation keys stay the same. Its ``registry_name`` becomes the
+selected name, and a task's default description, such as that of ``PickAndPlaceTask``, names the
+selected asset. For different objects in the environments of one build, use a
 :doc:`RigidObjectSet <../scene/concept_rigid_object_set>`, which has no ``asset_selection``.
 
 The example config ``isaaclab_arena_environments/experiment_configs/asset_selection_experiment.yaml``
