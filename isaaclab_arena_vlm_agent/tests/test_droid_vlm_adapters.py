@@ -25,7 +25,13 @@ from isaaclab_arena_vlm_agent.action_adapter import ChunkActionAdapter, GoalActi
 from isaaclab_arena_vlm_agent.commands import Command, CommandChunk
 from isaaclab_arena_vlm_agent.observation_adapter import ImageStateObservationAdapter, StateObservationAdapter
 from isaaclab_arena_vlm_agent.pose_target_motion_generator import PoseTargetMotionGenerator
-from isaaclab_arena_vlm_agent.vlm_agent_policy import VLMChunkPolicy, VLMGoalPolicy, VLMPolicyCfg, VLMStepPolicy
+from isaaclab_arena_vlm_agent.vlm_agent_policy import (
+    VLMChunkPolicy,
+    VLMGoalPolicy,
+    VLMGoalPolicyCfg,
+    VLMPolicyCfg,
+    VLMStepPolicy,
+)
 
 CAMERA_KEYS = ("external_camera_rgb", "external_camera_2_rgb", "wrist_camera_rgb")
 
@@ -110,6 +116,7 @@ def _inputs():
     env = SimpleNamespace(
         unwrapped=SimpleNamespace(
             num_envs=2,
+            action_dim=8,
             device="cpu",
             arena_world=world,
             action_manager=SimpleNamespace(
@@ -242,11 +249,14 @@ def test_droid_adapters_integrate_with_policy_and_partial_resets(mode):
         return _target(0.6)
 
     policy = policy_type(
-        VLMPolicyCfg(system_prompt="Return an absolute base_link target in robot-root coordinates."),
+        (
+            VLMGoalPolicyCfg(system_prompt="Return absolute pose commands.", max_steps_per_goal=2)
+            if mode == "goal"
+            else VLMPolicyCfg(system_prompt="Return absolute pose commands.")
+        ),
         inference_backend=SimpleNamespace(infer=infer),
         observation_adapter=ImageStateObservationAdapter(_embodiment()),
         action_adapter=adapter,
-        **({"max_steps_per_goal": 2} if mode == "goal" else {}),
     )
     policy.set_task_description("Move the gripper")
     env, obs = _inputs()
@@ -318,11 +328,14 @@ def test_invalid_droid_pose_is_corrected_before_any_action(mode, field, value):
         responses = [{"commands": [response, _target()]} for response in responses]
     backend = SimpleNamespace(infer=Mock(side_effect=responses))
     policy = policy_type(
-        VLMPolicyCfg(system_prompt="Return absolute pose commands."),
+        (
+            VLMGoalPolicyCfg(system_prompt="Return absolute pose commands.", max_steps_per_goal=2)
+            if mode == "goal"
+            else VLMPolicyCfg(system_prompt="Return absolute pose commands.")
+        ),
         inference_backend=backend,
         observation_adapter=ImageStateObservationAdapter(_embodiment()),
         action_adapter=adapter,
-        **({"max_steps_per_goal": 2} if mode == "goal" else {}),
     )
     policy.set_task_description("Move")
     actions = policy.get_action(*_inputs())
@@ -336,9 +349,13 @@ def test_droid_request_content_contains_state_and_resized_camera_views(env_id):
     env, obs = _inputs()
     for index, key in enumerate(CAMERA_KEYS):
         obs["camera_obs"][key][env_id].fill_(40 + index * 50)
-    content = ImageStateObservationAdapter(_embodiment()).build_request_content(
-        env, obs, env_id, image_max_width_or_height=2
+    policy = VLMStepPolicy(
+        VLMPolicyCfg(system_prompt="Return absolute pose commands.", image_max_width_or_height=2),
+        inference_backend=Mock(),
+        observation_adapter=ImageStateObservationAdapter(_embodiment()),
+        action_adapter=StepActionAdapter(_embodiment(), CommandType.ABS_EE_POSE),
     )
+    content = policy._request_content(env, obs, env_id)[1:]
     state = json.loads(content[0]["text"])
     assert state["command_body_poses"]["arm_action"]["position_root_m"][0] == pytest.approx(0.4 + env_id * 0.1)
     assert state["policy"]["gripper_pos"][0] == pytest.approx(1.03 * env_id)
@@ -381,14 +398,13 @@ def test_droid_goal_completion_reads_live_world_without_prompt_state(use_default
     adapter = GoalActionAdapter(embodiment, CommandType.ABS_EE_POSE, generator)
     _configure_pose_action_space(adapter)
     observation_adapter = ImageStateObservationAdapter(_embodiment())
-    observation_adapter.build_request_content = Mock(return_value=[])
+    observation_adapter.extract_vlm_input_from_observation = Mock(return_value=({}, {}))
     backend = SimpleNamespace(infer=Mock(return_value=_target(0.6, closed=True)))
     policy = VLMGoalPolicy(
-        VLMPolicyCfg(system_prompt="Return an absolute pose goal."),
+        VLMGoalPolicyCfg(system_prompt="Return an absolute pose goal.", max_steps_per_goal=10),
         inference_backend=backend,
         observation_adapter=observation_adapter,
         action_adapter=adapter,
-        max_steps_per_goal=10,
     )
     policy.set_task_description("Move and close")
     assert isinstance(adapter.motion_generator, PoseTargetMotionGenerator)
@@ -402,7 +418,7 @@ def test_droid_goal_completion_reads_live_world_without_prompt_state(use_default
     world.get_joint_position.return_value[0] = math.pi / 4
     policy.get_action(env, {})
     assert backend.infer.call_count == 3  # Only environment 0 reached its goal.
-    assert observation_adapter.build_request_content.call_count == 3
+    assert observation_adapter.extract_vlm_input_from_observation.call_count == 3
 
 
 def test_chunk_adapter_accepts_an_embodiment_with_default_chunk_size():

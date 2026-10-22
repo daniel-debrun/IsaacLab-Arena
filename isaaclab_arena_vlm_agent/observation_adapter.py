@@ -7,11 +7,11 @@
 
 from __future__ import annotations
 
-import json
+import numpy as np
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from isaaclab_arena_vlm_agent.image_utils import extract_rgb_images_from_camera_observations, image_to_jpeg_data_url
+from isaaclab_arena_vlm_agent.image_utils import extract_rgb_images_from_camera_observations
 
 if TYPE_CHECKING:
     from isaaclab_arena.embodiments.embodiment_base import EmbodimentBase
@@ -35,17 +35,18 @@ class VLMObservationAdapter(ABC):
         self.embodiment = embodiment
 
     @abstractmethod
-    def build_request_content(self, env, observation, env_id: int, *, image_max_width_or_height: int) -> list[dict]:
-        """Build modality-specific model inputs for one environment.
+    def extract_vlm_input_from_observation(
+        self, env, observation, env_id: int
+    ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+        """Extract camera images and prompt values for one environment.
 
         Args:
             env: Arena environment, optionally gym-wrapped.
             observation: Current batched state and camera observations.
             env_id: Environment index to prepare the request for.
-            image_max_width_or_height: Maximum encoded image width or height, in pixels.
 
         Returns:
-            State text, camera labels, and JPEG images for the selected modalities.
+            HWC RGB images indexed by camera name and JSON-serializable prompt values.
         """
 
 
@@ -105,12 +106,9 @@ class StateObservationAdapter(VLMObservationAdapter):
             }
         return {"policy": state, "command_body_poses": poses}
 
-    def build_request_content(self, env, observation, env_id: int, *, image_max_width_or_height: int) -> list[dict]:
-        """Return the selected environment's state as JSON text."""
-        return [{
-            "type": "text",
-            "text": json.dumps(self.extract_robot_state(env, observation, env_id), allow_nan=False),
-        }]
+    def extract_vlm_input_from_observation(self, env, observation, env_id: int):
+        """Return the selected environment's state as prompt values."""
+        return {}, self.extract_robot_state(env, observation, env_id)
 
 
 class ImageObservationAdapter(VLMObservationAdapter):
@@ -128,21 +126,12 @@ class ImageObservationAdapter(VLMObservationAdapter):
         )
         assert self.camera_keys, "RGB modality requires at least one configured RGB observation"
 
-    def build_request_content(self, env, observation, env_id: int, *, image_max_width_or_height: int) -> list[dict]:
-        """Return labeled, resized RGB views for the selected environment."""
-        content = []
+    def extract_vlm_input_from_observation(self, env, observation, env_id: int):
+        """Return configured RGB views for the selected environment."""
         images = extract_rgb_images_from_camera_observations(
             observation[CAMERA_OBSERVATION_GROUP], self.camera_keys, env_id
         )
-        for key, image in images.items():
-            content.extend([
-                {"type": "text", "text": f"camera={key}"},
-                {
-                    "type": "image_url",
-                    "image_url": {"url": image_to_jpeg_data_url(image, image_max_width_or_height)},
-                },
-            ])
-        return content
+        return images, {}
 
 
 class ImageStateObservationAdapter(VLMObservationAdapter):
@@ -153,10 +142,8 @@ class ImageStateObservationAdapter(VLMObservationAdapter):
         self.state_adapter = StateObservationAdapter(embodiment)
         self.image_adapter = ImageObservationAdapter(embodiment)
 
-    def build_request_content(self, env, observation, env_id: int, *, image_max_width_or_height: int) -> list[dict]:
-        """Return state text and labeled RGB views for the selected environment."""
-        return self.state_adapter.build_request_content(
-            env, observation, env_id, image_max_width_or_height=image_max_width_or_height
-        ) + self.image_adapter.build_request_content(
-            env, observation, env_id, image_max_width_or_height=image_max_width_or_height
-        )
+    def extract_vlm_input_from_observation(self, env, observation, env_id: int):
+        """Return state and RGB views for the selected environment."""
+        _, state = self.state_adapter.extract_vlm_input_from_observation(env, observation, env_id)
+        images, _ = self.image_adapter.extract_vlm_input_from_observation(env, observation, env_id)
+        return images, state

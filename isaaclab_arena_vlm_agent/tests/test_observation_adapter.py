@@ -5,7 +5,6 @@
 
 """Verify embodiment-based state and image selection without robot-specific field names."""
 
-import json
 import torch
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -80,9 +79,8 @@ def test_selects_only_requested_modalities_and_configured_terms(adapter_type, in
         embodiment.get_observation_cfg.return_value.camera_obs = None
     adapter = adapter_type(embodiment)
     assert adapter.embodiment is embodiment
-    content = adapter.build_request_content(env, observation, 1, image_max_width_or_height=4)
+    images, state = adapter.extract_vlm_input_from_observation(env, observation, 1)
     if include_state:
-        state = json.loads(content.pop(0)["text"])
         assert state["policy"] == {"left_joints": [3.0, 4.0], "right_joints": [7.0, 8.0]}
         assert set(state["command_body_poses"]) == {"left_target", "right_target"}
         assert state["command_body_poses"]["left_target"]["position_root_m"] == [11.0, 0.0, 0.0]
@@ -93,13 +91,13 @@ def test_selects_only_requested_modalities_and_configured_terms(adapter_type, in
         embodiment.get_action_cfg.assert_not_called()
         env.unwrapped.arena_world.get_body_pose_in_root.assert_not_called()
     if include_images:
-        assert [item["text"] for item in content if item["type"] == "text"] == [
-            "camera=head_color",
-            "camera=hand_color",
-        ]
-        assert sum(item["type"] == "image_url" for item in content) == 2
+        assert list(images) == ["head_color", "hand_color"]
+        assert images["head_color"].shape == (4, 8, 3)
+        assert images["hand_color"].shape == (8, 4, 3)
     else:
-        assert content == []
+        assert images == {}
+    if not include_state:
+        assert state == {}
 
 
 def test_joint_only_state_does_not_require_command_body_queries():
@@ -130,5 +128,5 @@ def test_rgb_modality_requires_configured_rgb_views():
 
 def test_observation_base_requires_a_modality_implementation():
     embodiment, _, _ = _inputs()
-    with pytest.raises(TypeError, match="build_request_content"):
+    with pytest.raises(TypeError, match="extract_vlm_input_from_observation"):
         VLMObservationAdapter(embodiment)
