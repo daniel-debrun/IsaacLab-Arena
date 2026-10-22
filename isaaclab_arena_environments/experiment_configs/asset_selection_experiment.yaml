@@ -5,7 +5,7 @@
 
 # An Arena Experiment whose Run spawns another pick-up object in each rebuild of the environment.
 runs:
-  one_object_per_build:
+  asset_selection_demo:
     environment:
       type: pick_and_place_maple_table
       # The default asset of the object "pick_up_object". It is spawned while the asset selection is off.
@@ -27,7 +27,6 @@ runs:
     variations:
       pick_up_object.asset_selection.enabled: true
       # Registered rigid objects to spawn, in this order. Each episode row records the chosen name.
-      pick_up_object.asset_selection.asset_names:
-        - rubiks_cube_hot3d_robolab
-        - mustard_bottle_hot3d_robolab
-        - orange_01_fruits_veggies_robolab
+      pick_up_object.asset_selection.asset_names: [rubiks_cube_hot3d_robolab, mustard_bottle_hot3d_robolab, orange_01_fruits_veggies_robolab]
+      # Each build draws a name at random, and names can repeat.
+      # pick_up_object.asset_selection.random_choice: true

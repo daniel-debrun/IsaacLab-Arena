@@ -234,28 +234,10 @@ Run it with:
      --viz kit \
      --experiment_config isaaclab_arena_environments/experiment_configs/asset_selection_experiment.yaml
 
-By default, a build takes the name at zero-based index ``seed mod n`` of the ``n`` names, where
-``seed`` is the build seed: ``--seed`` for ``policy_runner.py``, or ``environment_builder.seed`` in
-an Experiment Run. The Experiment Runner adds the rebuild index to the seed, so ``n`` rebuilds take
-each name once. With the default seed 42, the example's three rebuilds take the names in the listed
-order. In-order selections on two objects with the same number of names therefore change together.
-With ``random_choice: true``, each build draws a name at random, and a name can repeat across
-rebuilds.
+By default, a build takes the name at index ``seed % n`` of the ``n`` names. The Experiment Runner
+adds the rebuild index to ``environment_builder.seed``, so ``n`` rebuilds take each name once. With
+``random_choice: true``, each build draws a name at random, and names can repeat.
 
 Every episode row records the chosen name, for example
 ``"pick_up_object.asset_selection": "mustard_bottle_hot3d_robolab"``, and
 :doc:`recorded variation replay <../experiment_record_replay>` spawns the recorded asset.
-
-Limitations:
-
-* A hand-written ``language_instruction`` applies to every rebuild. ``PickAndPlaceTask`` and
-  ``AssemblyTask`` build their default description from the selected asset, for example
-  ``Pick up the mustard_bottle_hot3d_robolab, and place it into the bowl_ycb_robolab``. For a
-  language-conditioned policy, leave ``language_instruction`` unset to use that description, or use
-  one Run per object.
-* Only the spawn configuration changes. A library object such as ``Mug`` keeps the behavior written
-  for its own asset.
-* An Object with a ``bounding_box`` override cannot use the selection, because placement would use
-  that box for every selected asset.
-* ``Scene.export_to_usd()`` and ``ObjectReference`` read ``Object.usd_path``, which still names the
-  declared asset.
