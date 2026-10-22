@@ -36,17 +36,24 @@ def _embodiment(scene_key="robot", body_name="base_link", camera_keys=CAMERA_KEY
     for key in camera_keys:
         camera_terms[key] = SimpleNamespace(func=Mock(), params={"data_type": "rgb"})
 
-    def get_measured_pose_and_gripper_closure(env):
-        world = env.unwrapped.arena_world
-        pose = world.get_body_pose_in_root(scene_key, body_name)
-        closure = world.get_joint_position(scene_key, "finger_joint") / close_position
-        return torch.cat((pose, closure.unsqueeze(-1)), dim=-1)
+    def get_measured_command_body_pose_in_root(env):
+        return env.unwrapped.arena_world.get_body_pose_in_root(scene_key, body_name)
+
+    def get_measured_joint_position(env, action_name):
+        assert action_name == "gripper_action"
+        return env.unwrapped.arena_world.get_joint_position(scene_key, "finger_joint")
 
     return SimpleNamespace(
         get_command_type=Mock(return_value=CommandType.EE_POSE),
         get_quaternion_indices=Mock(return_value=(3,)),
         get_binary_action_values=Mock(return_value={7: (0.0, 1.0)}),
-        get_measured_pose_and_gripper_closure=get_measured_pose_and_gripper_closure,
+        get_measured_command_body_pose_in_root=get_measured_command_body_pose_in_root,
+        get_gripper=Mock(
+            return_value=SimpleNamespace(
+                get_measured_joint_position=get_measured_joint_position,
+                get_open_close_joint_positions=Mock(return_value=(0.0, close_position)),
+            )
+        ),
         get_scene_key=Mock(return_value=scene_key),
         get_command_body_name=Mock(return_value=body_name),
         get_action_cfg=Mock(
@@ -64,7 +71,13 @@ def _embodiment(scene_key="robot", body_name="base_link", camera_keys=CAMERA_KEY
 
 
 def _configure_pose_action_space(adapter):
-    env = SimpleNamespace(unwrapped=SimpleNamespace(action_manager=SimpleNamespace(total_action_dim=8)))
+    env = SimpleNamespace(
+        unwrapped=SimpleNamespace(
+            action_manager=SimpleNamespace(
+                total_action_dim=8, active_terms=["arm_action", "gripper_action"], action_term_dim=[7, 1]
+            )
+        )
+    )
     assert adapter.is_robot_action_space_supported(env)
 
 
@@ -96,7 +109,12 @@ def _inputs():
     )
     env = SimpleNamespace(
         unwrapped=SimpleNamespace(
-            num_envs=2, device="cpu", arena_world=world, action_manager=SimpleNamespace(total_action_dim=8)
+            num_envs=2,
+            device="cpu",
+            arena_world=world,
+            action_manager=SimpleNamespace(
+                total_action_dim=8, active_terms=["arm_action", "gripper_action"], action_term_dim=[7, 1]
+            ),
         )
     )
     cameras = {}
@@ -176,7 +194,12 @@ def test_goal_completion_requires_measured_pose_and_gripper(field, value):
     _configure_pose_action_space(adapter)
     world = _world(_state(), _state(**{field: value}), _state(quaternion_root_xyzw=[0.0, 0.0, 0.0, -1.0]))
     env = SimpleNamespace(
-        unwrapped=SimpleNamespace(arena_world=world, action_manager=SimpleNamespace(total_action_dim=8))
+        unwrapped=SimpleNamespace(
+            arena_world=world,
+            action_manager=SimpleNamespace(
+                total_action_dim=8, active_terms=["arm_action", "gripper_action"], action_term_dim=[7, 1]
+            ),
+        )
     )
     goal = adapter.decode_command(Command.model_validate(_target()), world, 0)
     assert generator.goal_reached(goal, env, 0)
@@ -335,7 +358,12 @@ def test_pose_target_uses_embodiment_gripper_measurement(close_position):
         _state(gripper_closed_fraction=1.03), _state(gripper_closed_fraction=0.5), close_position=close_position
     )
     env = SimpleNamespace(
-        unwrapped=SimpleNamespace(arena_world=world, action_manager=SimpleNamespace(total_action_dim=8))
+        unwrapped=SimpleNamespace(
+            arena_world=world,
+            action_manager=SimpleNamespace(
+                total_action_dim=8, active_terms=["arm_action", "gripper_action"], action_term_dim=[7, 1]
+            ),
+        )
     )
     goal = StepActionAdapter(_embodiment(), CommandType.EE_POSE).decode_command(
         Command.model_validate(_target(closed=True)), world, 0

@@ -17,20 +17,43 @@ from isaaclab_arena_vlm_agent.pose_target_motion_generator import PoseTargetMoti
 
 
 @pytest.mark.parametrize("binary_values", [(0.0, 1.0), (1.0, -1.0)])
-def test_completion_checks_every_pose_and_unclamped_binary_state(binary_values):
+@pytest.mark.parametrize("joint_targets", [(0.1, 0.461), (0.04, 0.0)])
+def test_completion_checks_every_pose_and_unclamped_binary_state(binary_values, joint_targets):
     row = [0, 0, 0, 0, 0, 0, 1, binary_values[1]] * 2
     measured = torch.tensor([row, row], dtype=torch.float32)
+
+    def get_measured_joint_position(env, name):
+        native_value = measured[:, {"left_gripper": 7, "right_gripper": 15}[name]]
+        closure = (native_value - binary_values[0]) / (binary_values[1] - binary_values[0])
+        return joint_targets[0] + closure * (joint_targets[1] - joint_targets[0])
+
     embodiment = SimpleNamespace(
-        get_measured_pose_and_gripper_closure=Mock(return_value=measured),
+        get_measured_command_body_pose_in_root=Mock(
+            side_effect=lambda env: torch.stack((measured[:, :7], measured[:, 8:15]), dim=1)
+        ),
+        get_gripper=Mock(
+            return_value=SimpleNamespace(
+                get_measured_joint_position=get_measured_joint_position,
+                get_open_close_joint_positions=Mock(return_value=joint_targets),
+            )
+        ),
         get_command_type=Mock(return_value=CommandType.EE_POSE),
         get_quaternion_indices=Mock(return_value=(3, 11)),
         get_binary_action_values=Mock(return_value={7: binary_values, 15: binary_values}),
     )
     generator = PoseTargetMotionGenerator(embodiment)
-    env = SimpleNamespace(unwrapped=SimpleNamespace(action_manager=SimpleNamespace(total_action_dim=16)))
+    env = SimpleNamespace(
+        unwrapped=SimpleNamespace(
+            action_manager=SimpleNamespace(
+                total_action_dim=16,
+                active_terms=["left_arm", "left_gripper", "right_arm", "right_gripper"],
+                action_term_dim=[7, 1, 7, 1],
+            )
+        )
+    )
     goal = np.asarray(row, dtype=np.float32)
     assert generator.goal_reached(goal, env, 0)
-    embodiment.get_measured_pose_and_gripper_closure.assert_called_with(env)
+    embodiment.get_measured_command_body_pose_in_root.assert_called_with(env)
     measured[1, 8] = 0.2  # Only the second pose in environment 1 misses its target.
     assert not generator.goal_reached(goal, env, 1)
     measured[1, 8] = 0
@@ -49,13 +72,17 @@ def test_completion_checks_every_pose_and_unclamped_binary_state(binary_values):
 def test_pose_only_layout_rejects_invalid_measured_rotation(invalid_state):
     measured = torch.tensor([[0, 0, 0, 0, 0, 0, 1]], dtype=torch.float32)
     embodiment = SimpleNamespace(
-        get_measured_pose_and_gripper_closure=Mock(return_value=measured),
+        get_measured_command_body_pose_in_root=Mock(return_value=measured),
         get_command_type=Mock(return_value=CommandType.EE_POSE),
         get_quaternion_indices=Mock(return_value=(3,)),
         get_binary_action_values=Mock(return_value={}),
     )
     generator = PoseTargetMotionGenerator(embodiment)
-    env = SimpleNamespace(unwrapped=SimpleNamespace(action_manager=SimpleNamespace(total_action_dim=7)))
+    env = SimpleNamespace(
+        unwrapped=SimpleNamespace(
+            action_manager=SimpleNamespace(total_action_dim=7, active_terms=["arm"], action_term_dim=[7])
+        )
+    )
     goal = measured[0].numpy().copy()
     assert generator.goal_reached(goal, env, 0)
     measured[0] = torch.tensor(invalid_state)

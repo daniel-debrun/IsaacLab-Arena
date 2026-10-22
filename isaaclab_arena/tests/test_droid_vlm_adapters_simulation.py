@@ -115,10 +115,12 @@ def _test_droid_absolute_pose_adapters(simulation_app):
                 manager = SimpleNamespace(get_term=Mock(return_value=SimpleNamespace(cfg=gripper_cfg)))
                 measured_env = SimpleNamespace(unwrapped=SimpleNamespace(arena_world=world, action_manager=manager))
                 torch.testing.assert_close(
-                    embodiment.get_gripper().get_measured_closure(measured_env, "gripper_action"), closure
+                    embodiment.get_gripper().get_measured_joint_position(measured_env, "gripper_action"),
+                    open_position + closure * (closed_position - open_position),
                 )
-                torch.testing.assert_close(
-                    embodiment.get_measured_pose_and_gripper_closure(measured_env)[:, 7], closure
+                assert embodiment.get_gripper().get_open_close_joint_positions(measured_env, "gripper_action") == (
+                    open_position,
+                    closed_position,
                 )
         finally:
             gripper_cfg.open_command_expr["finger_joint"] = original_open

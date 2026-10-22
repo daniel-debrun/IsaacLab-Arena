@@ -33,8 +33,8 @@ class PoseTargetMotionGenerator(MotionGenerator):
         """Configure pose tracking and normalized binary-control completion tolerances.
 
         Args:
-            embodiment: Robot supplying get_measured_pose_and_gripper_closure and the command
-                type, quaternion indices, and binary action values in controller order.
+            embodiment: Robot supplying root-relative command-body poses, gripper measurements,
+                and command metadata. Multiple poses follow quaternion-index order.
             position_tolerance_m: Maximum translation error per pose.
             rotation_tolerance_rad: Maximum shortest rotation error per pose.
             gripper_tolerance: Maximum error as a fraction of each binary control's range.
@@ -59,19 +59,22 @@ class PoseTargetMotionGenerator(MotionGenerator):
             Whether every pose and binary control is within its configured tolerance.
         """
         assert self.embodiment.get_command_type() == self.command_type, "Expected absolute pose controllers"
-        command_dim = env.unwrapped.action_manager.total_action_dim
+        manager = env.unwrapped.action_manager
         quaternion_offsets = self.embodiment.get_quaternion_indices()
         binary_values = self.embodiment.get_binary_action_values(env)
-        measured = self.embodiment.get_measured_pose_and_gripper_closure(env)[env_id].detach().cpu().numpy()
-        assert measured.shape == goal.shape == (command_dim,)
-        if not np.isfinite(measured).all():
+        poses = (
+            self.embodiment.get_measured_command_body_pose_in_root(env)[env_id].detach().cpu().numpy().reshape(-1, 7)
+        )
+        assert goal.shape == (manager.total_action_dim,)
+        assert poses.shape == (len(quaternion_offsets), 7)
+        if not np.isfinite(poses).all():
             return False
-        for offset in quaternion_offsets:
+        for pose, offset in zip(poses, quaternion_offsets):
             pose_start = offset - 3
             # Euclidean distance in meters; both positions are expressed in the robot-root frame R.
-            position_error = np.linalg.norm(goal[pose_start:offset] - measured[pose_start:offset])
+            position_error = np.linalg.norm(goal[pose_start:offset] - pose[:3])
             # E is the measured end-effector frame; G is its goal frame, both relative to R.
-            q_R_E = measured[offset : offset + 4]
+            q_R_E = pose[3:7]
             q_R_G = goal[offset : offset + 4]
             norm_product = np.linalg.norm(q_R_E) * np.linalg.norm(q_R_G)
             if norm_product == 0:
@@ -82,12 +85,28 @@ class PoseTargetMotionGenerator(MotionGenerator):
             rotation_error = 2.0 * np.arccos(np.clip(cosine_half_angle, 0.0, 1.0))
             if position_error > self.position_tolerance_m or rotation_error > self.rotation_tolerance_rad:
                 return False
+        action_names = {}
+        action_index = 0
+        for name, dimension in zip(manager.active_terms, manager.action_term_dim):
+            action_names[action_index] = name
+            action_index += dimension
         for index, (open_value, closed_value) in binary_values.items():
-            # Normalize by the native input range; retain measured physical overshoot.
-            gripper_error = abs(float(goal[index]) - measured[index]) / abs(closed_value - open_value)
+            closure = self._get_gripper_closure_fraction(env, action_names[index], env_id)
+            if not math.isfinite(closure):
+                return False
+            # Normalize the target to 0=open and 1=closed; retain measured physical overshoot.
+            target_closure = (float(goal[index]) - open_value) / (closed_value - open_value)
+            gripper_error = abs(target_closure - closure)
             if gripper_error > self.gripper_tolerance:
                 return False
         return True
+
+    def _get_gripper_closure_fraction(self, env, action_name: str, env_id: int) -> float:
+        """Return dimensionless joint-travel closure: 0=open, 1=closed, with overshoot preserved."""
+        gripper = self.embodiment.get_gripper()
+        measured = gripper.get_measured_joint_position(env, action_name)[env_id].item()
+        open_position, closed_position = gripper.get_open_close_joint_positions(env, action_name)
+        return (measured - open_position) / (closed_position - open_position)
 
     def compute_command(self, goal: np.ndarray, env, env_id: int) -> np.ndarray:
         """Hold the absolute target while the environment's IK controller tracks measured state.

@@ -236,10 +236,7 @@ class DroidEmbodimentBase(EmbodimentBase, ABC):
 
     def get_binary_action_values(self, env) -> dict[int, tuple[float, float]]:
         """Return the gripper index and its native (open, close) inputs."""
-        manager = env.unwrapped.action_manager
-        arm = manager.get_term("arm_action")
-        gripper = manager.get_term("gripper_action")
-        return {arm.action_dim: gripper.binary_action_values}
+        return self.get_gripper().get_binary_action_values(env, "gripper_action")
 
     def get_ee_frame_name(self, arm_mode: ArmMode) -> str:
         return "ee_frame"
@@ -290,19 +287,6 @@ class DroidDifferentialIKEmbodiment(DroidEmbodimentBase):
     def get_quaternion_indices(self) -> tuple[int, ...]:
         """Return the XYZW quaternion start index in the pose command."""
         return (3,)
-
-    def get_measured_pose_and_gripper_closure(self, env) -> torch.Tensor:
-        """Return root-relative command-body XYZ, XYZW, and gripper closure, shaped (num_envs, 8).
-
-        Closure is 0 at the configured open joint position and 1 at the closed position;
-        measured overshoot is preserved.
-
-        Args:
-            env: Arena environment, optionally gym-wrapped.
-        """
-        pose = self.get_measured_command_body_pose_in_root(env)
-        closure = self.get_gripper().get_measured_closure(env, "gripper_action")
-        return torch.cat((pose, closure.unsqueeze(-1)), dim=-1)
 
     def get_measured_command_body_pose_in_root(self, env) -> torch.Tensor:
         """Return root-relative command-body XYZ and XYZW, shaped (num_envs, 7).
