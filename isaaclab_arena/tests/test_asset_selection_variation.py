@@ -58,6 +58,7 @@ def compose_pick_and_place_with_selection(
     seed=42,
     hydra_overrides=None,
     recorded_variation_samples_path=None,
+    solve_relations=False,
 ):
     """Compose a PickAndPlaceTask environment whose pickup, a cracker box on a table, has an asset selection.
 
@@ -66,6 +67,7 @@ def compose_pick_and_place_with_selection(
         seed: Build seed.
         hydra_overrides: Variation overrides for the build.
         recorded_variation_samples_path: Record to replay, if any.
+        solve_relations: Whether to solve the pickup's placement on the table.
 
     Returns:
         The pickup Object, the composed env_cfg and the env_kwargs.
@@ -104,6 +106,7 @@ def compose_pick_and_place_with_selection(
     builder_cfg = ArenaEnvBuilderCfg(
         num_envs=NUM_ENVS,
         seed=seed,
+        solve_relations=solve_relations,
         placement_seed=0,
         resolve_on_reset=False,
         recorded_variation_samples_path=recorded_variation_samples_path,
@@ -112,7 +115,7 @@ def compose_pick_and_place_with_selection(
     return pickup, env_cfg, env_kwargs
 
 
-def _test_selected_asset_is_spawned_placed_and_recorded(simulation_app):
+def _test_selected_asset_is_spawned_placed_recorded_and_described(simulation_app):
     from isaaclab_arena.assets.registries import AssetRegistry
     from isaaclab_arena.variations.variations_hydra import overrides_from_dict
 
@@ -120,7 +123,9 @@ def _test_selected_asset_is_spawned_placed_and_recorded(simulation_app):
         {f"{SELECTION_KEY}.enabled": True, f"{SELECTION_KEY}.asset_names": ["sugar_box"]}
     )
 
-    pickup, env_cfg, env_kwargs = compose_pick_and_place_with_selection(hydra_overrides=hydra_overrides)
+    pickup, env_cfg, env_kwargs = compose_pick_and_place_with_selection(
+        hydra_overrides=hydra_overrides, solve_relations=True
+    )
 
     assert env_cfg.scene.pickup.spawn.usd_path == get_registered_usd_path("sugar_box")
     # The center of the sugar box rests 13 mm lower than the center of the cracker box would.
@@ -131,6 +136,8 @@ def _test_selected_asset_is_spawned_placed_and_recorded(simulation_app):
     selection_record = env_kwargs["variation_recorder"][SELECTION_KEY]
     recorded_names = [selection_record.sample_for_episode(env_id, 0) for env_id in range(NUM_ENVS)]
     assert recorded_names == ["sugar_box"] * NUM_ENVS
+    # The pickup is named by its role, and the description names the asset it spawns.
+    assert env_cfg.task_description == "Pick up the sugar_box, and place it into the plate"
     return True
 
 
@@ -142,6 +149,7 @@ def _test_disabled_selection_keeps_default_asset(simulation_app):
     )
 
     assert env_cfg.scene.pickup.spawn.usd_path == get_registered_usd_path(DEFAULT_ASSET_NAME)
+    assert env_cfg.task_description == "Pick up the cracker_box, and place it into the plate"
     return True
 
 
@@ -284,23 +292,9 @@ def _test_registered_rigid_objects_have_disabled_asset_selection(simulation_app)
     return True
 
 
-def _test_task_description_names_the_spawned_asset(simulation_app):
-    from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariationCfg
-
-    _, default_env_cfg, _ = compose_pick_and_place_with_selection()
-    _, selected_env_cfg, _ = compose_pick_and_place_with_selection(
-        selection_cfg=AssetSelectionVariationCfg(enabled=True, asset_names=["sugar_box"])
-    )
-
-    # The pickup is named by its role, and the description names the asset it spawns.
-    assert default_env_cfg.task_description == "Pick up the cracker_box, and place it into the plate"
-    assert selected_env_cfg.task_description == "Pick up the sugar_box, and place it into the plate"
-    return True
-
-
-def test_selected_asset_is_spawned_placed_and_recorded():
+def test_selected_asset_is_spawned_placed_recorded_and_described():
     assert run_function_with_persistent_simulation_app(
-        _test_selected_asset_is_spawned_placed_and_recorded, headless=HEADLESS
+        _test_selected_asset_is_spawned_placed_recorded_and_described, headless=HEADLESS
     )
 
 
@@ -342,10 +336,4 @@ def test_placement_replay_needs_recorded_asset_selection(tmp_path):
 def test_registered_rigid_objects_have_disabled_asset_selection():
     assert run_function_with_persistent_simulation_app(
         _test_registered_rigid_objects_have_disabled_asset_selection, headless=HEADLESS
-    )
-
-
-def test_task_description_names_the_spawned_asset():
-    assert run_function_with_persistent_simulation_app(
-        _test_task_description_names_the_spawned_asset, headless=HEADLESS
     )
