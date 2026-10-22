@@ -335,7 +335,21 @@ def test_object_on_destination():
 
 
 def _test_rotated_destination_footprint(simulation_app, angles_deg):
-    """Above means world up, including for pitched, rolled, and inverted supports."""
+    """Check world-vertical placement against a translated, rotated support box.
+
+    For the supplied roll, pitch, and yaw, accept the box center and a point
+    directly above it in world Z. Reject a point below the entire box and a point
+    above but outside its horizontal footprint. The parameterized orientations
+    cover sideways, tilted, inverted, and yaw-only supports, so a destination's
+    local Z axis cannot be used as the meaning of up.
+
+    Args:
+        simulation_app: Running simulation application required by Arena imports.
+        angles_deg: Support roll, pitch, and yaw in degrees.
+
+    Returns:
+        True when all four placement assertions pass.
+    """
     import torch
 
     from isaaclab.utils.math import quat_apply, quat_from_euler_xyz

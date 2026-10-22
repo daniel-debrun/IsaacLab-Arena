@@ -75,6 +75,9 @@ def object_bounds_center_over_destination(
     """
     t_W_D, q_W_D = T_W_D[:, :3], T_W_D[:, 3:]
 
+    # Transform the world-downward ray into D, where the destination bounds are
+    # axis aligned. Enclosing the rotated box in a world-aligned AABB would enlarge
+    # its footprint and accept points above empty corners outside the actual box.
     object_centroid_D = quat_apply_inverse(
         q_W_D,
         object_centroid_W - t_W_D,
@@ -83,25 +86,33 @@ def object_bounds_center_over_destination(
     downward_W[:, 2] = -1.0
     downward_D = quat_apply_inverse(q_W_D, downward_W)
 
-    # Intersect the ray with each pair of local box planes. Their distance intervals
-    # must overlap at or below the center. This preserves the rotated footprint,
-    # unlike checking the larger world-axis-aligned enclosing box.
+    # Each pair of box planes encloses a slab. For each axis, find the distances
+    # along the ray where it enters and exits that slab. Sorting the two distances
+    # handles either sign of the direction component.
     parallel = downward_D.abs() < 1e-6
+    # Avoid division by zero for parallel axes; their distances are replaced below.
     safe_direction_D = torch.where(parallel, torch.ones_like(downward_D), downward_D)
     distance_to_min = (destination_bounds_D.min_point - object_centroid_D) / safe_direction_D
     distance_to_max = (destination_bounds_D.max_point - object_centroid_D) / safe_direction_D
     entry_distance = torch.minimum(distance_to_min, distance_to_max)
     exit_distance = torch.maximum(distance_to_min, distance_to_max)
+    # A ray parallel to a slab's planes never crosses them. If its origin is inside
+    # that slab, it imposes no distance restriction (-inf, +inf); otherwise the ray
+    # misses the box entirely, which the separate containment check rejects.
     entry_distance = torch.where(parallel, -torch.inf, entry_distance)
     exit_distance = torch.where(parallel, torch.inf, exit_distance)
-    inside_parallel_slabs = (
-        ~parallel
-        | (
-            (object_centroid_D >= destination_bounds_D.min_point)
-            & (object_centroid_D <= destination_bounds_D.max_point)
-        )
-    ).all(dim=-1)
-    return inside_parallel_slabs & (exit_distance.amin(dim=-1) >= entry_distance.amax(dim=-1).clamp_min(0.0))
+    origin_above_min = object_centroid_D >= destination_bounds_D.min_point
+    origin_below_max = object_centroid_D <= destination_bounds_D.max_point
+    origin_inside_slab = origin_above_min & origin_below_max
+    ray_can_intersect_slab = ~parallel | origin_inside_slab
+    inside_parallel_slabs = ray_can_intersect_slab.all(dim=-1)
+
+    # All three slab intervals must overlap on the forward ray (distance >= 0).
+    # Clamping entry to zero also accepts an origin already inside the box.
+    box_entry_distance = entry_distance.amax(dim=-1).clamp_min(0.0)
+    box_exit_distance = exit_distance.amin(dim=-1)
+    intervals_overlap = box_exit_distance >= box_entry_distance
+    return inside_parallel_slabs & intervals_overlap
 
 
 def contact_force_is_upward_support(
