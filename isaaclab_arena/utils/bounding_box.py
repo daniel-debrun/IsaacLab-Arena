@@ -27,6 +27,9 @@ class BoundingBox(ABC):
     or 1/N, and require finite, nonempty geometry.
     """
 
+    def __init__(self):
+        """Initialize the base; subclasses store the box geometry."""
+
     @property
     @abstractmethod
     def num_envs(self) -> int:
@@ -189,6 +192,7 @@ class OrientedBoundingBox(BoundingBox):
             rotation_W_B_xyzw: Rotations q_W_B mapping box-local axes into W, shape (4,) or (N, 4).
                 Norms within 1e-3 of one are normalized to allow rounded input values.
         """
+        super().__init__()
         device = _get_device_from_maybe_tensors(center_W, half_extents, rotation_W_B_xyzw)
         center_W = _batched_tensor(center_W, 3, device)
         half_extents = _batched_tensor(half_extents, 3, device)
@@ -297,6 +301,7 @@ class AxisAlignedBoundingBox(BoundingBox):
         min_point: tuple[float, float, float] | torch.Tensor,
         max_point: tuple[float, float, float] | torch.Tensor,
     ):
+        super().__init__()
         self._min_point = self._to_batched_tensor(min_point)
         self._max_point = self._to_batched_tensor(max_point)
         assert self._min_point.shape == self._max_point.shape
