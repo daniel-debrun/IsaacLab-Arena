@@ -89,7 +89,7 @@ class SoftFrankaIKEmbodiment(FrankaIKEmbodiment):
     contact-rich or force-sensitive tasks.
     """
 
-    name = "franka_ik_soft"
+    registry_name = "franka_ik_soft"
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

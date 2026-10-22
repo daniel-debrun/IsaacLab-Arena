@@ -130,7 +130,7 @@ class FrankaEmbodimentBase(EmbodimentBase):
 class FrankaIKEmbodiment(FrankaEmbodimentBase):
     """Franka with differential IK (relative) arm control and high-PD defaults."""
 
-    name = "franka_ik"
+    registry_name = "franka_ik"
     tags = ["embodiment", "default"]
 
     def __init__(
@@ -185,7 +185,7 @@ class FrankaJointPosEmbodiment(FrankaEmbodimentBase):
     FRANKA_PANDA_HIGH_PD_CFG used by :class:`FrankaIKEmbodiment`.
     """
 
-    name = "franka_joint_pos"
+    registry_name = "franka_joint_pos"
 
     def __init__(
         self,

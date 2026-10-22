@@ -126,7 +126,9 @@ class AssetRegistry(Registry):
             ``tags`` is empty.
         """
         ensure_assets_registered()
-        return sorted(asset.name for asset in self._components.values() if all(tag in asset.tags for tag in tags))
+        return sorted(
+            asset.registry_name for asset in self._components.values() if all(tag in asset.tags for tag in tags)
+        )
 
     def get_random_asset_by_tag(self, tag: str) -> type["Asset"]:
         """Gets a random asset which has the given tag.
@@ -162,7 +164,7 @@ class DeviceRegistry(Registry):
         self, device: type["TeleopDeviceBase"], embodiment: object
     ) -> "DeviceCfg | IsaacTeleopCfg":
         retargeter_registry = RetargeterRegistry()
-        retargeter_key = (device.name, embodiment.name)
+        retargeter_key = (device.name, embodiment.registry_name)
         retargeter_key_str = retargeter_registry.convert_tuple_to_str(retargeter_key)
         retargeter = retargeter_registry.get_component_by_name(retargeter_key_str)()
         return retargeter.get_device_cfg(device, embodiment)

@@ -24,7 +24,9 @@ from isaaclab_arena.utils.pose import Pose, PosePerEnv
 class LibraryDeformableObject(DeformableObject):
     """Base class for registered deformable objects."""
 
-    name: str
+    registry_name: str
+    """Key of this asset in the asset registry."""
+
     tags = ["object", "deformable", "physx"]
     spawner_cfg: DeformableObjectSpawnerCfg
 
@@ -44,7 +46,7 @@ class LibraryDeformableObject(DeformableObject):
             **kwargs: Extra arguments passed to ``DeformableObject``.
         """
         super().__init__(
-            name=object_name or type(self).name,
+            name=object_name or self.registry_name,
             prim_path=prim_path,
             tags=self.tags,
             spawner_cfg=copy.deepcopy(self.spawner_cfg),
@@ -57,7 +59,7 @@ class LibraryDeformableObject(DeformableObject):
 class DeformableCube(LibraryDeformableObject):
     """PhysX deformable cube used by the DROID pick-and-place environment."""
 
-    name = "deformable_cube"
+    registry_name = "deformable_cube"
     spawner_cfg = sim_utils.MeshCuboidCfg(
         size=(0.15, 0.04, 0.04),
         deformable_props=PhysxDeformableBodyPropertiesCfg(linear_damping=0.0),
@@ -75,7 +77,7 @@ class DeformableCube(LibraryDeformableObject):
 class DeformableSurface(LibraryDeformableObject):
     """PhysX surface matching Isaac Lab's Franka cloth lift geometry."""
 
-    name = "deformable_surface"
+    registry_name = "deformable_surface"
     spawner_cfg = sim_utils.MeshRectangleCfg(
         size=(0.2, 0.2),
         edge_refinement=30,
@@ -89,7 +91,7 @@ class DeformableSurface(LibraryDeformableObject):
 class DeformableTeddyBear(LibraryDeformableObject):
     """PhysX teddy bear from Isaac Lab's Franka lift environment."""
 
-    name = "deformable_teddy_bear"
+    registry_name = "deformable_teddy_bear"
     spawner_cfg = sim_utils.UsdFileCfg(
         usd_path=f"{ISAACLAB_NUCLEUS_DIR}/Objects/Teddy_Bear/teddy_bear.usd",
         scale=(0.01, 0.01, 0.01),

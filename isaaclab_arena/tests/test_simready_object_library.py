@@ -21,7 +21,7 @@ def test_simready_usd_object_registered():
     ensure_assets_registered()
     cls = AssetRegistry().get_asset_by_name("simready_usd_object")
     assert cls is SimReadyUsdObject
-    assert cls.name == "simready_usd_object"
+    assert cls.registry_name == "simready_usd_object"
     assert "sim-ready" in cls.tags
 
 
@@ -86,7 +86,7 @@ def test_register_searched_simready_object_makes_it_a_catalogue_entry():
     asset_cls = register_searched_simready_object(
         "green trash can", "s3://bucket/trash_can.usd", ("sim-ready", "green")
     )
-    assert asset_cls.name == "simready_green_trash_can"
+    assert asset_cls.registry_name == "simready_green_trash_can"
     assert AssetRegistry().get_asset_by_name("simready_green_trash_can") is asset_cls
     # Rigid, so the entry can also be an object_set member; the search only accepts one rigid body.
     assert asset_cls.object_type is ObjectType.RIGID

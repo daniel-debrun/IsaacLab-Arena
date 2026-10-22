@@ -29,14 +29,14 @@ name, for example after its role in the task, so the name does not depend on the
 Registering a new asset
 -----------------------
 
-To add a new object, subclass ``LibraryObject``, provide the USD path and object type,
-and decorate it with ``@register_asset``:
+To add a new object, subclass ``LibraryObject``, set its ``registry_name``, provide the USD path
+and object type, and decorate it with ``@register_asset``:
 
 .. code-block:: python
 
    @register_asset
    class MyObject(LibraryObject):
-       name = "my_object"
+       registry_name = "my_object"
        tags = ["object", "graspable"]
        usd_path = "path/to/my_object.usd"
        object_type = ObjectType.RIGID
