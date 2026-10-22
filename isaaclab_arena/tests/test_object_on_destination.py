@@ -364,7 +364,11 @@ def _test_rotated_destination_footprint(simulation_app, angles_deg):
     center_W = t_W_D + quat_apply(q_W_D, torch.tensor([[0.0, 0.0, 0.09]]))
     # An upward extrusion of the rotated bounds contains both its center and a point directly above it.
     # It excludes a point below the entire box and points outside its horizontal projection.
-    offsets_W = torch.tensor([[0.0, 0.0, 0.3], [0.0, 0.0, 0.0], [0.0, 0.0, -0.3], [0.3, 0.0, 0.3]])
+    above_center_W = torch.tensor([0.0, 0.0, 0.3])
+    at_center_W = torch.tensor([0.0, 0.0, 0.0])
+    below_box_W = torch.tensor([0.0, 0.0, -0.3])
+    beside_box_W = torch.tensor([0.3, 0.0, 0.3])
+    offsets_W = torch.stack([above_center_W, at_center_W, below_box_W, beside_box_W])
     result = object_bounds_center_over_destination(
         center_W + offsets_W, torch.cat((t_W_D, q_W_D), dim=-1).expand(4, -1), bounds_D
     )
@@ -375,6 +379,7 @@ def _test_rotated_destination_footprint(simulation_app, angles_deg):
 @pytest.mark.parametrize(
     "angles_deg",
     [(0.0, 90.0, 0.0), (90.0, 0.0, 0.0), (0.0, -90.0, 30.0), (35.0, 25.0, 40.0), (180.0, 0.0, 0.0), (0.0, 0.0, 45.0)],
+    ids=["pitched_sideways", "rolled_sideways", "pitched_and_yawed", "tilted", "inverted", "yaw_only"],
 )
 def test_rotated_destination_footprint(angles_deg):
     assert run_function_with_persistent_simulation_app(_test_rotated_destination_footprint, angles_deg=angles_deg)
