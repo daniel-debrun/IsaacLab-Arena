@@ -802,6 +802,7 @@ def test_direct_solver_orients_objects_omitted_from_partial_collision_bounds():
     cube = DummyObject("cube", AxisAlignedBoundingBox((-0.005, -0.005, -0.05), (0.005, 0.005, 0.05)))
     supplied_bounds = AxisAlignedBoundingBox((-0.14, -0.02, -0.05), (0.14, 0.02, 0.05))
     positions = {table: (0.0, 0.0, 0.0), rod: (0.0, 0.0, 1.0), cube: (0.2, 0.3, 1.0)}
+    collision_bboxes = {cube: supplied_bounds.to_obb()}
     solver = RelationSolver(RelationSolverParams(max_iters=0, clearance_m=0.0, verbose=False))
 
     solver.solve(
@@ -809,12 +810,14 @@ def test_direct_solver_orients_objects_omitted_from_partial_collision_bounds():
         [positions, positions],
         orientations=[{rod: math.pi / 4}, {rod: -math.pi / 4}],
         env_bboxes={cube: cube.get_bounding_box()},
-        collision_bboxes={cube: supplied_bounds.to_obb()},
+        collision_bboxes=collision_bboxes,
     )
 
     # The supplied wide cube reaches the diagonal rod; its tiny default bounds do not.
     assert solver.last_loss_per_env[0] > 0
     assert solver.last_loss_per_env[1] == 0
+    # The caller's bounds are not extended with the defaults.
+    assert set(collision_bboxes) == {cube}
 
 
 @pytest.mark.parametrize(
@@ -962,7 +965,7 @@ def test_oriented_loss_pushes_zero_thickness_panel_out_of_fixed_block():
     objects = [table, panel]
     boxes = {table: table.get_bounding_box(), panel: panel_bounds}
     yaw = math.pi / 6
-    # The panel sticks 0.1 m out of the block along its long axis.
+    # The panel's center is 0.1 m from the block's along the panel's long axis, so one end sticks out.
     positions = {table: (0.0, 0.0, 0.0), panel: (0.1 * math.cos(yaw), 0.1 * math.sin(yaw), 1.0)}
     params = RelationSolverParams(max_iters=0, verbose=False)
     validator = NoOverlapValidator(ObjectPlacerParams(solver_params=params, verbose=False))

@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from isaaclab_arena.relations.warp_mesh_manager import WarpMeshAndSphereCache
 
 _MIN_LOSS_HALF_EXTENT_M = 1e-3
-"""Smallest box half-extent in the oriented loss, so a zero-thickness box inside an obstacle has an overlap to reduce."""
+"""Smallest box half-extent in the oriented loss, so a zero-thickness box has an overlap volume to reduce."""
 
 
 @dataclass(frozen=True)
@@ -224,10 +224,12 @@ def _compute_oriented_pair_losses(
     """Return (P, B) overlap-volume penalties for P directed pairs and B candidates at the current positions."""
     centers_W = {}
     for obj in [*state.optimizable_objects, *state.anchor_objects, *state.collision_objects]:
-        center_W, _, _ = state.get_collision_geometry(obj)
+        geometry_center, _, _ = state.get_collision_geometry(obj)
+        # Movable objects store centers relative to their origin; fixed objects store world centers.
         if obj in state.optimizable_objects:
-            center_W = center_W + state.get_position(obj)
-        centers_W[obj] = center_W
+            centers_W[obj] = geometry_center + state.get_position(obj)
+        else:
+            centers_W[obj] = geometry_center
     subject_centers_W = torch.stack([centers_W[p.subject] for p in pairs])
     obstacle_centers_W = torch.stack([centers_W[p.obstacle].detach() for p in pairs])
     return strategy.slope * overlap_bound.compute(subject_centers_W, obstacle_centers_W, margin=clearance_m)

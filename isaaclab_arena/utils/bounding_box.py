@@ -122,10 +122,10 @@ class BoundingBox(ABC):
 
         # Here A and B are the local frames of this box and other.
         center_a_W, half_extents_a, q_W_A, center_b_W, half_extents_b, q_W_B = self._get_paired_geometry(other)
-        projections = OverlapVolumeUpperBound(
+        overlap_bound = OverlapVolumeUpperBound(
             half_extents_a, matrix_from_quat(q_W_A), half_extents_b, matrix_from_quat(q_W_B)
         )
-        return projections.compute(center_a_W, center_b_W, margin)
+        return overlap_bound.compute(center_a_W, center_b_W, margin)
 
     def _get_paired_geometry(self, other: "BoundingBox") -> tuple[torch.Tensor, ...]:
         """Return both boxes' finite geometry on a shared device, broadcast to shared rows.

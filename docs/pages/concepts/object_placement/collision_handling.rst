@@ -142,8 +142,9 @@ test (SAT), batched across candidates; axis-aligned bounding box (AABB) pairs
 use interval comparisons. The loss uses face-axis projections, so tilted boxes
 separated only by an edge-cross-edge axis can still receive a positive penalty
 even when SAT accepts them. This penalty is not the exact intersection volume
-of rotated boxes. Boxes thinner than 2 mm count as 2 mm thick in this loss, so
-a flat object inside an obstacle can still be pushed out.
+of rotated boxes. When any collision box in a solve is rotated, boxes thinner
+than 2 mm count as 2 mm thick in this loss, so a flat object that overlaps an
+obstacle still has an overlap volume to reduce.
 
 Support-fit checks and clutter release initialization use enclosing AABBs.
 For exact bounding-box containment with ``On``, keep the support axis aligned
@@ -156,8 +157,9 @@ surface distance.
 collision mesh. Pairs not covered by a mesh check use bounding-box-based
 checks. Each pair has a subject, the object the loss moves, and an obstacle held
 fixed. A pair whose obstacle has a mesh, or whose subject has a mesh and whose
-obstacle is not a background object, uses enclosing-AABB penalties that are
-conservative relative to the validator's sphere proxies. A meshed object
+obstacle is not a background object, uses enclosing-AABB penalties, while the
+validator checks sphere proxies against the mesh. Near contact the two can
+disagree, so a layout with zero loss can still fail validation. A meshed object
 against a meshless background obstacle uses oriented boxes.
 
 The solver and validator check the following pairs:

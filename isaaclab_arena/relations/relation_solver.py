@@ -251,7 +251,8 @@ class RelationSolver:
         collision_bboxes_with_defaults = dict(collision_bboxes or {})
         base_bounds = {}
         for obj in objects:
-            if obj in collision_bboxes_with_defaults:
+            # Anchors use their fixed world bounds, so they need no candidate collision bounds.
+            if obj.is_anchor or obj in collision_bboxes_with_defaults:
                 continue
             if env_bboxes is not None and obj in env_bboxes:
                 if env_bboxes_include_yaw:
