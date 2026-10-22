@@ -246,30 +246,30 @@ Isaac Sim starts. Python has no equivalent; the same mistakes show up later as a
 background USD? The loader adds a dome light and a directional light (off until a
 lighting-direction variation turns it on). In Python, no light means no light.
 
-**Scene reuse across task files.** ``external_yaml`` merges one scene into many
-task files. Pattern used in ``isaaclab_arena_environments/robolab/``:
-``scenes/*.yaml`` for layout, ``tasks/*.yaml`` for the task block only:
+**Reuse across task files.** ``external_yaml`` merges one or more YAML files
+into a task file. It takes a single path or a list of paths, relative to the including
+file. For example:
 
 .. code-block:: yaml
 
-   external_yaml: ../scenes/bagel_plate_banana_bowl.yaml
+   external_yaml:
+   - ../scenes/bagel_plate_banana_bowl.yaml
+   - ../shared_defaults.yaml
    env_name: banana_on_plate
    task:
      composition: atomic
      ...
 
-``external_yaml`` also takes a list of files, for example a scene plus a file of shared
-defaults. The files are merged without overrides: mappings merge recursively, lists of
-mappings with an ``id`` (such as ``objects``) concatenate, and any other value may be
-defined by only one file. A value defined twice, or an ``id`` that appears twice, fails
-when the file loads and names the path and both files:
+All external yaml files are merged into one spec, but no value may be defined in more than one file.
+A value that appears twice fails with an assertion that names its path and both files:
 
 .. code-block:: text
 
    AssertionError: Conflicting env graph spec value at 'env_cfg_override.sim.physics.max_position_iteration_count':
-   defined in both /.../defaults.yaml (value 32) and /.../tasks/banana_in_bowl.yaml (value 16)
+   defined in both /.../shared_defaults.yaml (value 32) and /.../tasks/banana_in_bowl.yaml (value 16)
 
-Included files cannot include further files.
+Lists, such as ``objects``, are concatenated, and an entry's ``id`` may appear only once.
+An included file cannot include further files.
 
 **Declared CLI overrides.** ``cli_override_specs`` turns a node into a CLI flag
 with no code change. Below, ``--object`` replaces that node's ``registry_name``:
