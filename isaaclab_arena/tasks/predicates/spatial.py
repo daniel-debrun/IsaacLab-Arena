@@ -100,6 +100,10 @@ def _ray_intersects_axis_aligned_box(
     an intersection; a box entirely behind the ray does not. Direction components
     with magnitude below 1e-6 are treated as parallel to the corresponding planes.
 
+    A slab is the space between two opposite box faces, extending infinitely in
+    the other directions. The box is the overlap of three slabs. The ray hits the
+    box if its intervals inside all three overlap at a forward distance.
+
     Args:
         ray_origin_B: Ray origins in frame B, with shape (num_rays, 3).
         ray_direction_B: Unit ray directions in frame B, with shape (num_rays, 3).
