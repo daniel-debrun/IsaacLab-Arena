@@ -42,7 +42,7 @@ class LibraryObject(Object):
     """
 
     registry_name: str
-    """Key of this asset class in the asset registry."""
+    """Key of this asset class in the asset registry. An asset selection sets it on the object to the selected key."""
 
     tags: list[str]
     usd_path: str | None = None
