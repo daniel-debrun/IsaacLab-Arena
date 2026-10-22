@@ -12,7 +12,6 @@ import numpy as np
 from typing import TYPE_CHECKING
 
 from isaaclab_arena.embodiments.common.command_type import CommandType
-from isaaclab_arena.embodiments.common.controller_commands import get_controller_command_layout
 from isaaclab_arena_vlm_agent.motion_generator import MotionGenerator
 
 if TYPE_CHECKING:
@@ -57,7 +56,7 @@ class PoseTargetMotionGenerator(MotionGenerator):
         self._quaternion_offsets = ()
         self._binary_values = {}
         manager = env.unwrapped.action_manager
-        layout = get_controller_command_layout(manager)
+        layout = self.embodiment.get_controller_command_layout(env)
         assert layout is not None and layout[0] == self.command_type, "Expected absolute pose controllers"
         _, self._quaternion_offsets, self._binary_values = layout
         self._command_dim = manager.total_action_dim
@@ -74,7 +73,7 @@ class PoseTargetMotionGenerator(MotionGenerator):
             Whether every pose and binary control is within its configured tolerance.
         """
         assert self._command_dim is not None, "Call configure(env) before checking goals"
-        measured = self.embodiment.get_command_state(arena_world)[env_id].detach().cpu().numpy()
+        measured = self.embodiment.get_measured_pose_and_gripper_closure(arena_world)[env_id].detach().cpu().numpy()
         assert measured.shape == goal.shape == (self._command_dim,)
         if not np.isfinite(measured).all():
             return False

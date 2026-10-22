@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 
 from isaaclab_arena.embodiments.common.command_type import CommandType
-from isaaclab_arena.embodiments.common.controller_commands import get_controller_command_layout
 from isaaclab_arena_vlm_agent.commands import Command, CommandChunk
 from isaaclab_arena_vlm_agent.motion_generator import MotionGenerator
 from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
@@ -110,7 +109,7 @@ class StepActionAdapter(AgentActionAdapter):
         self._quaternion_slices = []
         self._binary_values = {}
         manager = env.unwrapped.action_manager
-        layout = get_controller_command_layout(manager)
+        layout = self.embodiment.get_controller_command_layout(env)
         if layout is None or layout[0] != self.command_type:
             return False
         _, quaternion_offsets, binary_values = layout

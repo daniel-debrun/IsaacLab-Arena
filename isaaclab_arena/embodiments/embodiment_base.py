@@ -15,6 +15,7 @@ from isaaclab.envs import ManagerBasedRLMimicEnv
 from isaaclab.managers import EventTermCfg
 
 from isaaclab_arena.embodiments.common.arm_mode import ArmMode
+from isaaclab_arena.embodiments.common.command_type import CommandType
 from isaaclab_arena.embodiments.gripper import Gripper
 from isaaclab_arena.relations.collision_mode import CollisionMode
 from isaaclab_arena.relations.placement_asset import PlaceableAsset
@@ -225,8 +226,21 @@ class EmbodimentBase(PlaceableAsset):
     def get_action_cfg(self) -> Any:
         return self.action_config
 
-    def get_command_state(self, arena_world: ArenaWorld) -> torch.Tensor:
-        """Return measured state in native controller order, shaped (num_envs, dimension).
+    def get_controller_command_layout(
+        self, env
+    ) -> tuple[CommandType, tuple[int, ...], dict[int, tuple[float, float]]] | None:
+        """Derive supported absolute command semantics from this embodiment's active controllers.
+
+        Args:
+            env: Arena environment, optionally gym-wrapped.
+
+        Returns:
+            Command type, quaternion start indices, and binary input values keyed by action index.
+            Return None when unsupported; override to interpret the embodiment's controllers.
+        """
+
+    def get_measured_pose_and_gripper_closure(self, arena_world: ArenaWorld) -> torch.Tensor:
+        """Return measured poses and gripper closure in controller order, shaped (num_envs, dimension).
 
         Binary controls use continuous measurements mapped to their native input values,
         without clamping physical overshoot.
@@ -234,7 +248,7 @@ class EmbodimentBase(PlaceableAsset):
         Args:
             arena_world: Live Arena scene queries for robot state.
         """
-        raise NotImplementedError(f"{type(self).__name__} does not expose measured command state")
+        raise NotImplementedError(f"{type(self).__name__} does not expose measured poses and gripper closure")
 
     def get_observation_cfg(self) -> Any:
         if self.enable_cameras:

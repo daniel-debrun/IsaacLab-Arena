@@ -51,7 +51,7 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         base = env.unwrapped
         observation_adapter = StateObservationAdapter(embodiment)
         action_adapter = StepActionAdapter(embodiment, CommandType.EE_POSE)
-        _check_pose_controller_layout(env)
+        _check_pose_controller_layout(env, embodiment)
         assert action_adapter.embodiment is embodiment
         assert action_adapter.is_robot_action_space_supported(env)
         assert not StepActionAdapter(embodiment, CommandType.JOINT_POSITION).is_robot_action_space_supported(env)
@@ -109,7 +109,7 @@ def _test_droid_absolute_pose_adapters(simulation_app):
                     get_body_pose_in_root=Mock(return_value=torch.zeros(2, 7)),
                     get_joint_position=Mock(return_value=open_position + closure * (closed_position - open_position)),
                 )
-                torch.testing.assert_close(embodiment.get_command_state(world)[:, 7], closure)
+                torch.testing.assert_close(embodiment.get_measured_pose_and_gripper_closure(world)[:, 7], closure)
         finally:
             gripper_cfg.open_command_expr["finger_joint"] = original_open
             gripper_cfg.close_command_expr["finger_joint"] = original_closed
@@ -209,28 +209,14 @@ def test_droid_joint_position_adapters():
     assert run_function_with_persistent_simulation_app(_test_droid_joint_position_adapters)
 
 
-def _check_pose_controller_layout(env):
+def _check_pose_controller_layout(env, embodiment):
     from types import SimpleNamespace
 
-    from isaaclab.envs.mdp.actions.binary_joint_actions import BinaryJointPositionAction
-    from isaaclab.envs.mdp.actions.joint_actions import JointPositionAction
-
     from isaaclab_arena.embodiments.common.command_type import CommandType
-    from isaaclab_arena.embodiments.common.controller_commands import get_controller_command_layout
-    from isaaclab_arena.embodiments.droid.droid import DroidAbsoluteJointPositionActionsCfg
 
     manager = env.unwrapped.action_manager
     arm = manager.get_term("arm_action")
-    hand = manager.get_term("gripper_action")
-    assert get_controller_command_layout(manager) == (CommandType.EE_POSE, (3,), {7: (0.0, 1.0)})
-    # Controller ordering, not robot or term names, determines bimanual packing.
-    terms = {"first_tool": arm, "first_hand": hand, "second_tool": arm, "second_hand": hand}
-    bimanual = SimpleNamespace(active_terms=list(terms), get_term=terms.__getitem__)
-    assert get_controller_command_layout(bimanual) == (CommandType.EE_POSE, (3, 11), {7: (0.0, 1.0), 15: (0.0, 1.0)})
-    terms["second_hand"] = BinaryJointPositionAction(hand.cfg, env.unwrapped)
-    assert get_controller_command_layout(bimanual)[2] == {7: (0.0, 1.0), 15: (1.0, -1.0)}
-    terms["second_tool"] = JointPositionAction(DroidAbsoluteJointPositionActionsCfg().arm_action, env.unwrapped)
-    assert get_controller_command_layout(bimanual) is None  # Mixed pose/joint inputs need a different adapter.
+    assert embodiment.get_controller_command_layout(env) == (CommandType.EE_POSE, (3,), {7: (0.0, 1.0)})
     for cfg, field, value in (
         (arm.cfg, "scale", 0.5),
         (arm.cfg, "body_offset", object()),
@@ -241,11 +227,14 @@ def _check_pose_controller_layout(env):
         original = getattr(cfg, field)
         try:
             setattr(cfg, field, value)
-            assert get_controller_command_layout(manager) is None, field
+            assert embodiment.get_controller_command_layout(env) is None, field
         finally:
             setattr(cfg, field, original)
     unknown = SimpleNamespace(cfg=SimpleNamespace(clip=None), action_dim=3)
-    assert get_controller_command_layout(SimpleNamespace(active_terms=["unknown"], get_term=lambda _: unknown)) is None
+    other_env = SimpleNamespace(
+        unwrapped=SimpleNamespace(action_manager=SimpleNamespace(active_terms=["unknown"], get_term=lambda _: unknown))
+    )
+    assert embodiment.get_controller_command_layout(other_env) is None
 
 
 def _check_joint_controller_layout(env, embodiment):
@@ -254,13 +243,16 @@ def _check_joint_controller_layout(env, embodiment):
     from isaaclab.envs.mdp.actions.joint_actions import RelativeJointPositionAction
 
     from isaaclab_arena.embodiments.common.command_type import CommandType
-    from isaaclab_arena.embodiments.common.controller_commands import get_controller_command_layout
     from isaaclab_arena.embodiments.droid.droid import DroidRelativeJointPositionActionsCfg
     from isaaclab_arena_vlm_agent.action_adapter import StepActionAdapter
 
     manager = env.unwrapped.action_manager
     arm = manager.get_term("arm_action")
-    assert get_controller_command_layout(manager) == (CommandType.JOINT_POSITION, (), {arm.action_dim: (0.0, 1.0)})
+    assert embodiment.get_controller_command_layout(env) == (
+        CommandType.JOINT_POSITION,
+        (),
+        {arm.action_dim: (0.0, 1.0)},
+    )
     adapter = StepActionAdapter(embodiment, CommandType.JOINT_POSITION)
     assert adapter.is_robot_action_space_supported(env)
     for field, value in (("scale", 0.5), ("offset", 0.1), ("use_default_offset", True), ("clip", {})):
@@ -270,11 +262,12 @@ def _check_joint_controller_layout(env, embodiment):
             assert not adapter.is_robot_action_space_supported(env), field
         finally:
             setattr(arm.cfg, field, original)
-    # Joint-only layouts use the live resolved joint count, without a gripper assumption.
+    # DROID's hook rejects layouts that do not match its arm/gripper measurement order.
     joint_manager = SimpleNamespace(active_terms=["body"], get_term=lambda _: arm, total_action_dim=arm.action_dim)
     joint_env = SimpleNamespace(unwrapped=SimpleNamespace(action_manager=joint_manager))
-    assert adapter.is_robot_action_space_supported(joint_env)
-    assert adapter._command_dim == arm.action_dim
+    assert not adapter.is_robot_action_space_supported(joint_env)
     relative = RelativeJointPositionAction(DroidRelativeJointPositionActionsCfg().arm_action, env.unwrapped)
-    relative_manager = SimpleNamespace(active_terms=["body"], get_term=lambda _: relative)
-    assert get_controller_command_layout(relative_manager) is None
+    terms = {"arm_action": relative, "gripper_action": manager.get_term("gripper_action")}
+    relative_manager = SimpleNamespace(active_terms=list(terms), get_term=terms.__getitem__)
+    relative_env = SimpleNamespace(unwrapped=SimpleNamespace(action_manager=relative_manager))
+    assert embodiment.get_controller_command_layout(relative_env) is None

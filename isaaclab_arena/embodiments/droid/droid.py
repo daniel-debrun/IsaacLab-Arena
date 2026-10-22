@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import torch
 from abc import ABC
 from typing import TYPE_CHECKING
@@ -35,6 +36,7 @@ from isaaclab.utils.configclass import configclass
 from isaaclab_arena.assets.nucleus import ARENA_NUCLEUS_DIR
 from isaaclab_arena.assets.register import register_asset
 from isaaclab_arena.embodiments.common.arm_mode import ArmMode
+from isaaclab_arena.embodiments.common.command_type import CommandType
 from isaaclab_arena.embodiments.droid.actions import BinaryJointPositionZeroToOneAction
 from isaaclab_arena.embodiments.droid.observations import (
     _DROID_NEWTON_GRIPPER_CLOSE_RAD,
@@ -234,6 +236,46 @@ class DroidEmbodimentBase(EmbodimentBase, ABC):
         assert robot is not None, "scene_config.robot must be populated before setting the joint pose"
         robot.init_state = robot.init_state.replace(joint_pos=dict(zip(_DROID_JOINT_NAMES, initial_joint_pose)))
 
+    def get_controller_command_layout(self, env):
+        """Derive DROID's absolute arm target and binary gripper layout from its controllers."""
+        from isaaclab.envs.mdp.actions.joint_actions import JointPositionAction
+        from isaaclab.envs.mdp.actions.task_space_actions import DifferentialInverseKinematicsAction
+
+        manager = env.unwrapped.action_manager
+        if manager.active_terms != ["arm_action", "gripper_action"]:
+            return None
+        arm = manager.get_term("arm_action")
+        gripper = manager.get_term("gripper_action")
+        if not isinstance(arm, (DifferentialInverseKinematicsAction, JointPositionAction)):
+            return None
+        if not isinstance(gripper, BinaryJointPositionZeroToOneAction):
+            return None
+        if not (
+            arm.cfg.asset_name == gripper.cfg.asset_name == self.get_scene_key()
+            and arm.cfg.clip is None
+            and gripper.cfg.clip is None
+            and _all_equal(arm.cfg.scale, 1.0)
+            and gripper.action_dim == 1
+        ):
+            return None
+        quaternion_offsets = ()
+        if isinstance(arm, DifferentialInverseKinematicsAction):
+            if not (
+                arm.action_dim == 7
+                and arm.cfg.body_name == getattr(self.action_config.arm_action, "body_name", None)
+                and arm.cfg.controller.command_type == "pose"
+                and not arm.cfg.controller.use_relative_mode
+                and arm.cfg.body_offset is None
+            ):
+                return None
+            command_type = CommandType.EE_POSE
+            quaternion_offsets = (3,)
+        else:
+            if arm.action_dim <= 0 or arm.cfg.use_default_offset or not _all_equal(arm.cfg.offset, 0.0):
+                return None
+            command_type = CommandType.JOINT_POSITION
+        return command_type, quaternion_offsets, {arm.action_dim: gripper.binary_action_values}
+
     def get_ee_frame_name(self, arm_mode: ArmMode) -> str:
         return "ee_frame"
 
@@ -276,8 +318,15 @@ class DroidDifferentialIKEmbodiment(DroidEmbodimentBase):
         )
         self.action_config = DroidDifferentialIKActionsCfg()
 
-    def get_command_state(self, arena_world: ArenaWorld) -> torch.Tensor:
-        """Return measured command-body pose and unclamped gripper closure for every environment."""
+    def get_measured_pose_and_gripper_closure(self, arena_world: ArenaWorld) -> torch.Tensor:
+        """Return root-relative command-body XYZ, XYZW, and gripper closure, shaped (num_envs, 8).
+
+        Closure is 0 at the configured open joint position and 1 at the closed position;
+        measured overshoot is preserved.
+
+        Args:
+            arena_world: Live Arena scene queries for body pose and finger-joint position.
+        """
         scene_key = self.get_scene_key()
         pose = arena_world.get_body_pose_in_root(scene_key, self.get_command_body_name())
         finger_position = arena_world.get_joint_position(scene_key, "finger_joint")
@@ -678,3 +727,10 @@ def spawn_newton_droid(
         joint.CreateAttribute("mjc:solref", Sdf.ValueTypeNames.DoubleArray).Set([0.002, 1.0])
         joint.CreateAttribute("mjc:solimp", Sdf.ValueTypeNames.DoubleArray).Set([0.99, 0.999, 0.001, 0.5, 2.0])
     return prim
+
+
+def _all_equal(value, target: float) -> bool:
+    """Check scalar, sequence, or joint-name mapping configuration values."""
+    if isinstance(value, dict):
+        value = list(value.values())
+    return bool(np.all(np.asarray(value) == target))

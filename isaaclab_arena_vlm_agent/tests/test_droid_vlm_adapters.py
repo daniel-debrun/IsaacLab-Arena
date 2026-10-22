@@ -30,29 +30,20 @@ from isaaclab_arena_vlm_agent.vlm_agent_policy import VLMChunkPolicy, VLMGoalPol
 CAMERA_KEYS = ("external_camera_rgb", "external_camera_2_rgb", "wrist_camera_rgb")
 
 
-@pytest.fixture(autouse=True)
-def normalized_pose_controllers(monkeypatch):
-    # Live controller normalization is covered by the simulation tests.
-    normalize = Mock(return_value=(CommandType.EE_POSE, (3,), {7: (0.0, 1.0)}))
-    monkeypatch.setattr("isaaclab_arena_vlm_agent.action_adapter.get_controller_command_layout", normalize)
-    monkeypatch.setattr(
-        "isaaclab_arena_vlm_agent.pose_target_motion_generator.get_controller_command_layout", normalize
-    )
-
-
 def _embodiment(scene_key="robot", body_name="base_link", camera_keys=CAMERA_KEYS, close_position=math.pi / 4):
     state_cfg = SimpleNamespace(concatenate_terms=False, gripper_pos=SimpleNamespace(func=Mock()))
     camera_terms = {}
     for key in camera_keys:
         camera_terms[key] = SimpleNamespace(func=Mock(), params={"data_type": "rgb"})
 
-    def get_command_state(world):
+    def get_measured_pose_and_gripper_closure(world):
         pose = world.get_body_pose_in_root(scene_key, body_name)
         closure = world.get_joint_position(scene_key, "finger_joint") / close_position
         return torch.cat((pose, closure.unsqueeze(-1)), dim=-1)
 
     return SimpleNamespace(
-        get_command_state=get_command_state,
+        get_controller_command_layout=Mock(return_value=(CommandType.EE_POSE, (3,), {7: (0.0, 1.0)})),
+        get_measured_pose_and_gripper_closure=get_measured_pose_and_gripper_closure,
         get_scene_key=Mock(return_value=scene_key),
         get_command_body_name=Mock(return_value=body_name),
         get_action_cfg=Mock(

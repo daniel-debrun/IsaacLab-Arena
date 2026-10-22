@@ -17,22 +17,21 @@ from isaaclab_arena_vlm_agent.pose_target_motion_generator import PoseTargetMoti
 
 
 @pytest.mark.parametrize("binary_values", [(0.0, 1.0), (1.0, -1.0)])
-def test_completion_checks_every_pose_and_unclamped_binary_state(binary_values, monkeypatch):
+def test_completion_checks_every_pose_and_unclamped_binary_state(binary_values):
     row = [0, 0, 0, 0, 0, 0, 1, binary_values[1]] * 2
     measured = torch.tensor([row, row], dtype=torch.float32)
     embodiment = SimpleNamespace(
-        get_command_state=Mock(return_value=measured),
-    )
-    monkeypatch.setattr(
-        "isaaclab_arena_vlm_agent.pose_target_motion_generator.get_controller_command_layout",
-        Mock(return_value=(CommandType.EE_POSE, (3, 11), {7: binary_values, 15: binary_values})),
+        get_measured_pose_and_gripper_closure=Mock(return_value=measured),
+        get_controller_command_layout=Mock(
+            return_value=(CommandType.EE_POSE, (3, 11), {7: binary_values, 15: binary_values})
+        ),
     )
     generator = PoseTargetMotionGenerator(embodiment)
     generator.configure(SimpleNamespace(unwrapped=SimpleNamespace(action_manager=SimpleNamespace(total_action_dim=16))))
     goal = np.asarray(row, dtype=np.float32)
     world = object()
     assert generator.goal_reached(goal, world, 0)
-    embodiment.get_command_state.assert_called_with(world)
+    embodiment.get_measured_pose_and_gripper_closure.assert_called_with(world)
     measured[1, 8] = 0.2  # Only the second pose in environment 1 misses its target.
     assert not generator.goal_reached(goal, world, 1)
     measured[1, 8] = 0
@@ -48,14 +47,11 @@ def test_completion_checks_every_pose_and_unclamped_binary_state(binary_values, 
 
 
 @pytest.mark.parametrize("invalid_state", [[0] * 7, [float("nan")] * 7])
-def test_pose_only_layout_rejects_invalid_measured_rotation(invalid_state, monkeypatch):
+def test_pose_only_layout_rejects_invalid_measured_rotation(invalid_state):
     measured = torch.tensor([[0, 0, 0, 0, 0, 0, 1]], dtype=torch.float32)
     embodiment = SimpleNamespace(
-        get_command_state=Mock(return_value=measured),
-    )
-    monkeypatch.setattr(
-        "isaaclab_arena_vlm_agent.pose_target_motion_generator.get_controller_command_layout",
-        Mock(return_value=(CommandType.EE_POSE, (3,), {})),
+        get_measured_pose_and_gripper_closure=Mock(return_value=measured),
+        get_controller_command_layout=Mock(return_value=(CommandType.EE_POSE, (3,), {})),
     )
     generator = PoseTargetMotionGenerator(embodiment)
     generator.configure(SimpleNamespace(unwrapped=SimpleNamespace(action_manager=SimpleNamespace(total_action_dim=7))))
