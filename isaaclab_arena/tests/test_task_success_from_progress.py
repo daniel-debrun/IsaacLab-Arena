@@ -634,7 +634,7 @@ def _test_pick_and_place_uses_typed_success_failure_and_timeout(simulation_app):
 
     held_placement_task = PickAndPlaceTask(
         pick_up_object,
-        SimpleNamespace(name="destination", registry_name=None, object_type=ObjectType.RIGID),
+        SimpleNamespace(name="destination", object_type=ObjectType.RIGID),
         SimpleNamespace(object_min_z=-0.1),
         placement_consecutive_steps=10,
     )
