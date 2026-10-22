@@ -45,7 +45,7 @@ class ArticulationGeometrySpec:
 class EmbodimentBase(PlaceableAsset):
 
     registry_name: str | None = None
-    """Key of this embodiment in the asset registry."""
+    """Key of this embodiment class in the asset registry."""
 
     tags: list[str] = ["embodiment"]
     default_arm_mode: ArmMode | None = None

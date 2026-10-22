@@ -24,7 +24,7 @@ class LibraryBackground(Background):
     """
 
     registry_name: str
-    """Key of this asset in the asset registry."""
+    """Key of this asset class in the asset registry."""
 
     tags: list[str]
     usd_path: str | None = None

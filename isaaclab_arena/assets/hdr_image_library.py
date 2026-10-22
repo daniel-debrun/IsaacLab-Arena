@@ -12,7 +12,7 @@ class LibraryHDR(HDRImage):
     """Base class for HDRs in the library which are defined in this file."""
 
     registry_name: str
-    """Key of this HDR image in the HDR image registry."""
+    """Key of this HDR image class in the HDR image registry."""
 
     tags: list[str]
     texture_file: str

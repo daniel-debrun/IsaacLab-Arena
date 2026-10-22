@@ -25,7 +25,7 @@ class LibraryDeformableObject(DeformableObject):
     """Base class for registered deformable objects."""
 
     registry_name: str
-    """Key of this asset in the asset registry."""
+    """Key of this asset class in the asset registry."""
 
     tags = ["object", "deformable", "physx"]
     spawner_cfg: DeformableObjectSpawnerCfg
@@ -37,7 +37,7 @@ class LibraryDeformableObject(DeformableObject):
         initial_pose: Pose | PosePerEnv | None = None,
         **kwargs: Any,
     ):
-        """Create a deformable object from this asset.
+        """Create a deformable object of this asset class.
 
         Args:
             name: Name of the object in the scene. Defaults to the registry name.

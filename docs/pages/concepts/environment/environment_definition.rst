@@ -303,13 +303,13 @@ rejected. Explicit builder/CLI
 ``placement_seed`` and ``resolve_on_reset`` values take precedence over YAML.
 
 **Duplicate instances need unique names.** YAML sets ``name`` to the node
-id. Asset classes default it to the registry name, so two Python instances of the
-same asset share one name unless you set ``name``. Prim paths, event
+id. Asset classes default it to the registry name, so in Python two assets created
+from the same class share one name unless you set ``name``. Prim paths, event
 terms, and observation keys all key off that name:
 
 .. code-block:: python
 
-   # Two objects of one asset. Give each its own name.
+   # Two assets of one asset class. Give each its own name.
    banana_a = get("banana_ycb_robolab")(name="banana_a")
    banana_b = get("banana_ycb_robolab")(name="banana_b")
 

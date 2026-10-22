@@ -41,7 +41,7 @@ class LibraryObject(Object):
     """
 
     registry_name: str
-    """Key of this asset in the asset registry."""
+    """Key of this asset class in the asset registry."""
 
     tags: list[str]
     usd_path: str | None = None
@@ -58,7 +58,7 @@ class LibraryObject(Object):
         scale: tuple[float, float, float] | None = None,
         **kwargs,
     ):
-        """Create an object from this asset.
+        """Create an object of this asset class.
 
         Args:
             name: Name of the object in the scene. Defaults to the registry name.
