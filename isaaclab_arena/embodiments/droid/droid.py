@@ -35,7 +35,6 @@ from isaaclab.utils.configclass import configclass
 from isaaclab_arena.assets.nucleus import ARENA_NUCLEUS_DIR
 from isaaclab_arena.assets.register import register_asset
 from isaaclab_arena.embodiments.common.arm_mode import ArmMode
-from isaaclab_arena.embodiments.common.command_space import CommandSpace, CommandType
 from isaaclab_arena.embodiments.droid.actions import BinaryJointPositionZeroToOneAction
 from isaaclab_arena.embodiments.droid.observations import (
     _DROID_NEWTON_GRIPPER_CLOSE_RAD,
@@ -279,7 +278,6 @@ class DroidDifferentialIKEmbodiment(DroidEmbodimentBase):
 
     def get_command_state(self, arena_world: ArenaWorld) -> torch.Tensor:
         """Return measured command-body pose and unclamped gripper closure for every environment."""
-        assert self.command_space is not None and self.command_space.command_type == CommandType.EE_POSE
         scene_key = self.get_scene_key()
         pose = arena_world.get_body_pose_in_root(scene_key, self.get_command_body_name())
         finger_position = arena_world.get_joint_position(scene_key, "finger_joint")
@@ -287,9 +285,7 @@ class DroidDifferentialIKEmbodiment(DroidEmbodimentBase):
         open_position = gripper_cfg.open_command_expr["finger_joint"]
         closed_position = gripper_cfg.close_command_expr["finger_joint"]
         closure = (finger_position - open_position) / (closed_position - open_position)
-        open_value, closed_value = self.command_space.binary_values[7]
-        gripper_state = open_value + closure * (closed_value - open_value)
-        return torch.cat((pose, gripper_state.unsqueeze(-1)), dim=-1)
+        return torch.cat((pose, closure.unsqueeze(-1)), dim=-1)
 
     def _configure_physics_backend(self, backend: PhysicsBackend) -> None:
         """Apply shared Newton spawn setup, then diff-IK-specific Newton tuning."""
@@ -371,7 +367,6 @@ class DroidAbsoluteJointPositionEmbodiment(DroidEmbodimentBase):
             collision_mode=collision_mode,
         )
         self.action_config = DroidAbsoluteJointPositionActionsCfg()
-        self.command_space = CommandSpace(CommandType.JOINT_POSITION, 8, binary_values={7: (0.0, 1.0)})
 
 
 @configclass

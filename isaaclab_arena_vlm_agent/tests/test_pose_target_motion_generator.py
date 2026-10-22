@@ -12,21 +12,23 @@ from unittest.mock import Mock
 
 import pytest
 
-from isaaclab_arena.embodiments.common.command_space import CommandSpace, CommandType
+from isaaclab_arena.embodiments.common.command_type import CommandType
 from isaaclab_arena_vlm_agent.pose_target_motion_generator import PoseTargetMotionGenerator
 
 
 @pytest.mark.parametrize("binary_values", [(0.0, 1.0), (1.0, -1.0)])
-def test_completion_checks_every_pose_and_unclamped_binary_state(binary_values):
+def test_completion_checks_every_pose_and_unclamped_binary_state(binary_values, monkeypatch):
     row = [0, 0, 0, 0, 0, 0, 1, binary_values[1]] * 2
     measured = torch.tensor([row, row], dtype=torch.float32)
     embodiment = SimpleNamespace(
-        command_space=CommandSpace(
-            CommandType.EE_POSE, 16, quaternion_offsets=(3, 11), binary_values={7: binary_values, 15: binary_values}
-        ),
         get_command_state=Mock(return_value=measured),
     )
+    monkeypatch.setattr(
+        "isaaclab_arena_vlm_agent.pose_target_motion_generator.get_controller_command_layout",
+        Mock(return_value=(CommandType.EE_POSE, (3, 11), {7: binary_values, 15: binary_values})),
+    )
     generator = PoseTargetMotionGenerator(embodiment)
+    generator.configure(SimpleNamespace(unwrapped=SimpleNamespace(action_manager=SimpleNamespace(total_action_dim=16))))
     goal = np.asarray(row, dtype=np.float32)
     world = object()
     assert generator.goal_reached(goal, world, 0)
@@ -46,13 +48,17 @@ def test_completion_checks_every_pose_and_unclamped_binary_state(binary_values):
 
 
 @pytest.mark.parametrize("invalid_state", [[0] * 7, [float("nan")] * 7])
-def test_pose_only_layout_rejects_invalid_measured_rotation(invalid_state):
+def test_pose_only_layout_rejects_invalid_measured_rotation(invalid_state, monkeypatch):
     measured = torch.tensor([[0, 0, 0, 0, 0, 0, 1]], dtype=torch.float32)
     embodiment = SimpleNamespace(
-        command_space=CommandSpace(CommandType.EE_POSE, 7, quaternion_offsets=(3,)),
         get_command_state=Mock(return_value=measured),
     )
+    monkeypatch.setattr(
+        "isaaclab_arena_vlm_agent.pose_target_motion_generator.get_controller_command_layout",
+        Mock(return_value=(CommandType.EE_POSE, (3,), {})),
+    )
     generator = PoseTargetMotionGenerator(embodiment)
+    generator.configure(SimpleNamespace(unwrapped=SimpleNamespace(action_manager=SimpleNamespace(total_action_dim=7))))
     goal = measured[0].numpy().copy()
     assert generator.goal_reached(goal, None, 0)
     measured[0] = torch.tensor(invalid_state)

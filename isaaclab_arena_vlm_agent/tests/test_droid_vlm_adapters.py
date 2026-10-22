@@ -19,7 +19,7 @@ import pytest
 from PIL import Image
 from pydantic import ValidationError
 
-from isaaclab_arena.embodiments.common.command_space import CommandSpace, CommandType
+from isaaclab_arena.embodiments.common.command_type import CommandType
 from isaaclab_arena.inference.backend import build_strict_schema
 from isaaclab_arena_vlm_agent.action_adapter import ChunkActionAdapter, GoalActionAdapter, StepActionAdapter
 from isaaclab_arena_vlm_agent.commands import Command, CommandChunk
@@ -28,6 +28,16 @@ from isaaclab_arena_vlm_agent.pose_target_motion_generator import PoseTargetMoti
 from isaaclab_arena_vlm_agent.vlm_agent_policy import VLMChunkPolicy, VLMGoalPolicy, VLMPolicyCfg, VLMStepPolicy
 
 CAMERA_KEYS = ("external_camera_rgb", "external_camera_2_rgb", "wrist_camera_rgb")
+
+
+@pytest.fixture(autouse=True)
+def normalized_pose_controllers(monkeypatch):
+    # Live controller normalization is covered by the simulation tests.
+    normalize = Mock(return_value=(CommandType.EE_POSE, (3,), {7: (0.0, 1.0)}))
+    monkeypatch.setattr("isaaclab_arena_vlm_agent.action_adapter.get_controller_command_layout", normalize)
+    monkeypatch.setattr(
+        "isaaclab_arena_vlm_agent.pose_target_motion_generator.get_controller_command_layout", normalize
+    )
 
 
 def _embodiment(scene_key="robot", body_name="base_link", camera_keys=CAMERA_KEYS, close_position=math.pi / 4):
@@ -43,7 +53,6 @@ def _embodiment(scene_key="robot", body_name="base_link", camera_keys=CAMERA_KEY
 
     return SimpleNamespace(
         get_command_state=get_command_state,
-        command_space=CommandSpace(CommandType.EE_POSE, 8, quaternion_offsets=(3,), binary_values={7: (0.0, 1.0)}),
         get_scene_key=Mock(return_value=scene_key),
         get_command_body_name=Mock(return_value=body_name),
         get_action_cfg=Mock(
@@ -61,7 +70,7 @@ def _embodiment(scene_key="robot", body_name="base_link", camera_keys=CAMERA_KEY
 
 
 def _configure_pose_action_space(adapter):
-    env = SimpleNamespace(unwrapped=SimpleNamespace(single_action_space=SimpleNamespace(shape=(8,))))
+    env = SimpleNamespace(unwrapped=SimpleNamespace(action_manager=SimpleNamespace(total_action_dim=8)))
     assert adapter.is_robot_action_space_supported(env)
 
 
@@ -93,7 +102,7 @@ def _inputs():
     )
     env = SimpleNamespace(
         unwrapped=SimpleNamespace(
-            num_envs=2, device="cpu", arena_world=world, single_action_space=SimpleNamespace(shape=(8,))
+            num_envs=2, device="cpu", arena_world=world, action_manager=SimpleNamespace(total_action_dim=8)
         )
     )
     cameras = {}
@@ -170,6 +179,7 @@ def test_absolute_action_preserves_xyzw_and_binary_gripper(closed):
 def test_goal_completion_requires_measured_pose_and_gripper(field, value):
     generator = PoseTargetMotionGenerator(_embodiment())
     adapter = GoalActionAdapter(_embodiment(), CommandType.EE_POSE, generator)
+    _configure_pose_action_space(adapter)
     world = _world(_state(), _state(**{field: value}), _state(quaternion_root_xyzw=[0.0, 0.0, 0.0, -1.0]))
     goal = adapter.decode_command(Command.model_validate(_target()), world, 0)
     assert generator.goal_reached(goal, world, 0)
@@ -324,6 +334,7 @@ def test_droid_request_content_contains_state_and_resized_camera_views(env_id):
 @pytest.mark.parametrize("close_position", [math.pi / 4, 0.461])
 def test_pose_target_uses_embodiment_gripper_measurement(close_position):
     generator = PoseTargetMotionGenerator(_embodiment(close_position=close_position))
+    generator.configure(SimpleNamespace(unwrapped=SimpleNamespace(action_manager=SimpleNamespace(total_action_dim=8))))
     world = _world(
         _state(gripper_closed_fraction=1.03), _state(gripper_closed_fraction=0.5), close_position=close_position
     )

@@ -21,7 +21,7 @@ import pytest
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
-from isaaclab_arena.embodiments.common.command_space import CommandType
+from isaaclab_arena.embodiments.common.command_type import CommandType
 from isaaclab_arena.inference.backend import InferenceBackend, build_strict_schema
 from isaaclab_arena_vlm_agent.action_adapter import AgentActionAdapter, ChunkActionAdapter, GoalActionAdapter
 from isaaclab_arena_vlm_agent.image_utils import extract_rgb_images_from_camera_observations

@@ -14,7 +14,8 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from isaaclab_arena.embodiments.common.command_space import CommandType
+from isaaclab_arena.embodiments.common.command_type import CommandType
+from isaaclab_arena.embodiments.common.controller_commands import get_controller_command_layout
 from isaaclab_arena_vlm_agent.commands import Command, CommandChunk
 from isaaclab_arena_vlm_agent.motion_generator import MotionGenerator
 from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
@@ -87,10 +88,10 @@ class AgentActionAdapter(ABC):
 
 
 class StepActionAdapter(AgentActionAdapter):
-    """Use absolute targets in the embodiment's declared command layout.
+    """Use absolute targets in the active controller layout.
 
     Pose targets use root-relative XYZ and XYZW. Joint targets use controller joint order.
-    Binary controls retain their declared native open/close values.
+    Binary controls retain their native open/close values.
     """
 
     def __init__(self, embodiment: EmbodimentBase, command_type: CommandType):
@@ -100,7 +101,7 @@ class StepActionAdapter(AgentActionAdapter):
         self._binary_values: dict[int, tuple[float, float]] = {}
 
     def is_robot_action_space_supported(self, env) -> bool:
-        """Check the embodiment's declared command type and per-environment dimension.
+        """Check the command type derived from the active controllers.
 
         Args:
             env: Arena environment, optionally gym-wrapped.
@@ -108,18 +109,18 @@ class StepActionAdapter(AgentActionAdapter):
         self._command_dim = None
         self._quaternion_slices = []
         self._binary_values = {}
-        space = self.embodiment.command_space
-        if space is None or space.command_type != self.command_type:
+        manager = env.unwrapped.action_manager
+        layout = get_controller_command_layout(manager)
+        if layout is None or layout[0] != self.command_type:
             return False
-        if space.dimension <= 0 or env.unwrapped.single_action_space.shape != (space.dimension,):
-            return False
-        self._command_dim = space.dimension
-        self._quaternion_slices = [slice(offset, offset + 4) for offset in space.quaternion_offsets]
-        self._binary_values = space.binary_values
+        _, quaternion_offsets, binary_values = layout
+        self._command_dim = manager.total_action_dim
+        self._quaternion_slices = [slice(offset, offset + 4) for offset in quaternion_offsets]
+        self._binary_values = binary_values
         return True
 
     def decode_command(self, response: Command, arena_world: ArenaWorld, env_id: int) -> np.ndarray:
-        """Return absolute targets in declared command order.
+        """Return absolute targets in native controller order.
 
         Args:
             response: Validated command values.
@@ -135,7 +136,7 @@ class StepActionAdapter(AgentActionAdapter):
         """Validate targets against the layout resolved by is_robot_action_space_supported.
 
         Args:
-            command: One command in declared command order.
+            command: One command in native controller order.
         """
         if not (
             self._command_dim is not None
@@ -213,3 +214,10 @@ class GoalActionAdapter(StepActionAdapter):
         assert motion_generator.command_type == command_type, "Motion generator and adapter command types must match"
         self.motion_generator = motion_generator
         """Generate commands for this adapter's decoded goals."""
+
+    def is_robot_action_space_supported(self, env) -> bool:
+        """Check the controllers and configure motion generation for this environment."""
+        if not super().is_robot_action_space_supported(env):
+            return False
+        self.motion_generator.configure(env)
+        return True

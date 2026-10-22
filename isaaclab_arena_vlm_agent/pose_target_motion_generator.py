@@ -11,7 +11,8 @@ import math
 import numpy as np
 from typing import TYPE_CHECKING
 
-from isaaclab_arena.embodiments.common.command_space import CommandType
+from isaaclab_arena.embodiments.common.command_type import CommandType
+from isaaclab_arena.embodiments.common.controller_commands import get_controller_command_layout
 from isaaclab_arena_vlm_agent.motion_generator import MotionGenerator
 
 if TYPE_CHECKING:
@@ -34,7 +35,7 @@ class PoseTargetMotionGenerator(MotionGenerator):
         """Configure pose tracking and normalized binary-control completion tolerances.
 
         Args:
-            embodiment: Robot supplying the command layout and measured command state.
+            embodiment: Robot supplying measured command state in controller order.
             position_tolerance_m: Maximum translation error per pose.
             rotation_tolerance_rad: Maximum shortest rotation error per pose.
             gripper_tolerance: Maximum error as a fraction of each binary control's range.
@@ -43,33 +44,42 @@ class PoseTargetMotionGenerator(MotionGenerator):
         assert math.isfinite(rotation_tolerance_rad) and 0 < rotation_tolerance_rad <= math.pi
         assert math.isfinite(gripper_tolerance) and 0 < gripper_tolerance < 0.5
         self.embodiment = embodiment
+        self._command_dim = None
+        self._quaternion_offsets: tuple[int, ...] = ()
+        self._binary_values: dict[int, tuple[float, float]] = {}
         self.position_tolerance_m = position_tolerance_m
         self.rotation_tolerance_rad = rotation_tolerance_rad
         self.gripper_tolerance = gripper_tolerance
+
+    def configure(self, env) -> None:
+        """Resolve pose and binary-control layout from the environment's active controllers."""
+        self._command_dim = None
+        self._quaternion_offsets = ()
+        self._binary_values = {}
+        manager = env.unwrapped.action_manager
+        layout = get_controller_command_layout(manager)
+        assert layout is not None and layout[0] == self.command_type, "Expected absolute pose controllers"
+        _, self._quaternion_offsets, self._binary_values = layout
+        self._command_dim = manager.total_action_dim
 
     def goal_reached(self, goal: np.ndarray, arena_world: ArenaWorld, env_id: int) -> bool:
         """Compare the target to measured translation, rotation, and gripper closure.
 
         Args:
-            goal: Validated target in the embodiment's declared pose layout.
+            goal: Validated target in native controller order.
             arena_world: Live Arena scene queries for measured robot state.
             env_id: Environment index within the batched world state.
 
         Returns:
             Whether every pose and binary control is within its configured tolerance.
         """
-        space = self.embodiment.command_space
-        assert space is not None and space.command_type == self.command_type
-        assert space.quaternion_offsets, "Declare at least one pose quaternion"
+        assert self._command_dim is not None, "Call configure(env) before checking goals"
         measured = self.embodiment.get_command_state(arena_world)[env_id].detach().cpu().numpy()
-        assert measured.shape == goal.shape == (space.dimension,)
+        assert measured.shape == goal.shape == (self._command_dim,)
         if not np.isfinite(measured).all():
             return False
-        checked_indices = set(space.binary_values)
-        for offset in space.quaternion_offsets:
+        for offset in self._quaternion_offsets:
             pose_start = offset - 3
-            assert 0 <= pose_start and offset + 4 <= space.dimension
-            checked_indices.update(range(pose_start, offset + 4))
             # Euclidean distance in meters; both positions are expressed in the robot-root frame R.
             position_error = np.linalg.norm(goal[pose_start:offset] - measured[pose_start:offset])
             # E is the measured end-effector frame; G is its goal frame, both relative to R.
@@ -84,8 +94,7 @@ class PoseTargetMotionGenerator(MotionGenerator):
             rotation_error = 2.0 * np.arccos(np.clip(cosine_half_angle, 0.0, 1.0))
             if position_error > self.position_tolerance_m or rotation_error > self.rotation_tolerance_rad:
                 return False
-        assert checked_indices == set(range(space.dimension)), "Expected only pose and binary targets"
-        for index, (open_value, closed_value) in space.binary_values.items():
+        for index, (open_value, closed_value) in self._binary_values.items():
             # Normalize by the native input range; retain measured physical overshoot.
             gripper_error = abs(float(goal[index]) - measured[index]) / abs(closed_value - open_value)
             if gripper_error > self.gripper_tolerance:
@@ -96,7 +105,7 @@ class PoseTargetMotionGenerator(MotionGenerator):
         """Hold the absolute target while the environment's IK controller tracks measured state.
 
         Args:
-            goal: Validated target in the embodiment's declared pose layout.
+            goal: Validated target in native controller order.
             arena_world: Live Arena scene queries for measured robot state.
             env_id: Environment index within the batched world state.
 
