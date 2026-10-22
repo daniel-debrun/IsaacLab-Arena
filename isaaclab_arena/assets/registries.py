@@ -115,15 +115,15 @@ class AssetRegistry(Registry):
         return [asset for asset in self._components.values() if tag in asset.tags]
 
     def get_assets_with_all_tags(self, tags: list[str]) -> list[str]:
-        """Return asset names whose ``tags`` include every tag in ``tags``.
+        """Return the registry names of the asset classes whose ``tags`` include every tag in ``tags``.
 
         Args:
-            tags: Tags that must all be present on a candidate asset.
-                When empty, every registered asset name is returned.
+            tags: Tags that must all be present on a candidate asset class.
+                When empty, every registry name is returned.
 
         Returns:
-            Sorted asset names matching every tag, or all asset names when
-            ``tags`` is empty.
+            Sorted registry names matching every tag, or all registry names
+            when ``tags`` is empty.
         """
         ensure_assets_registered()
         return sorted(

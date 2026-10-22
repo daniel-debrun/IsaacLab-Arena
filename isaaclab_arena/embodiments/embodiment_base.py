@@ -45,7 +45,11 @@ class ArticulationGeometrySpec:
 class EmbodimentBase(PlaceableAsset):
 
     registry_name: str | None = None
-    """Key of this embodiment class in the asset registry."""
+    """Key of this embodiment class in the asset registry, and the name of each embodiment built from it.
+
+    Unregistered base classes set it too. For example, the cuRobo config lookup matches ``"droid"`` on
+    DroidEmbodimentBase.
+    """
 
     tags: list[str] = ["embodiment"]
     default_arm_mode: ArmMode | None = None
