@@ -24,7 +24,7 @@ def _test_droid_absolute_pose_adapters(simulation_app):
     from isaaclab_arena_vlm_agent.action_adapter import StepActionAdapter
     from isaaclab_arena_vlm_agent.commands import Command, CommandType
     from isaaclab_arena_vlm_agent.droid_motion_generator import DroidPoseMotionGenerator
-    from isaaclab_arena_vlm_agent.droid_observation_adapter import DroidObservationAdapter
+    from isaaclab_arena_vlm_agent.observation_adapter import ObservationModality, VLMObservationAdapter
 
     # Use a translated, rotated root and separate environment origins to expose world/root confusion.
     embodiment = DroidDifferentialIKEmbodiment(
@@ -49,7 +49,7 @@ def _test_droid_absolute_pose_adapters(simulation_app):
     try:
         obs, _ = env.reset()
         base = env.unwrapped
-        observation_adapter = DroidObservationAdapter()
+        observation_adapter = VLMObservationAdapter(embodiment, modalities=(ObservationModality.STATE,))
         action_adapter = StepActionAdapter(embodiment, CommandType.EE_POSE)
         assert action_adapter.embodiment is embodiment
         assert action_adapter.is_robot_action_space_supported(env)
@@ -66,7 +66,9 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         actions = []
         for env_id, state in enumerate(states):
             response = Command(
-                values=state["position_root_m"] + state["quaternion_root_xyzw"] + [0.0],
+                values=state["command_body_poses"]["arm_action"]["position_root_m"]
+                + state["command_body_poses"]["arm_action"]["quaternion_root_xyzw"]
+                + [0.0],
             )
             command = action_adapter.decode_command(response, base.arena_world, env_id)
             actions.append(action_adapter.command_to_action(env, command))
@@ -96,16 +98,18 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         measured_states = [observation_adapter.extract_robot_state(env, obs, env_id) for env_id in range(base.num_envs)]
         assert len(measured_states) == 2
         for env_id, state in enumerate(measured_states):
-            assert abs(state["gripper_closed_fraction"] - obs["policy"]["gripper_pos"][env_id, 0].item()) < 1e-6
+            assert abs(state["policy"]["gripper_pos"][0] - obs["policy"]["gripper_pos"][env_id, 0].item()) < 1e-6
 
         generator = DroidPoseMotionGenerator()
         for env_id, state in enumerate(measured_states):
             response = Command(
-                values=state["position_root_m"] + state["quaternion_root_xyzw"] + [0.0],
+                values=state["command_body_poses"]["arm_action"]["position_root_m"]
+                + state["command_body_poses"]["arm_action"]["quaternion_root_xyzw"]
+                + [0.0],
             )
             goal = action_adapter.decode_command(response, base.arena_world, env_id)
             assert generator.goal_reached(goal, base.arena_world, env_id) == (
-                abs(state["gripper_closed_fraction"]) <= generator.gripper_tolerance
+                abs(state["policy"]["gripper_pos"][0]) <= generator.gripper_tolerance
             )
             goal[0] += 0.1
             assert not generator.goal_reached(goal, base.arena_world, env_id)
@@ -142,7 +146,7 @@ def _test_droid_joint_position_adapters(simulation_app):
     from isaaclab_arena.scene.scene import Scene
     from isaaclab_arena_vlm_agent.action_adapter import ChunkActionAdapter, StepActionAdapter
     from isaaclab_arena_vlm_agent.commands import CommandType
-    from isaaclab_arena_vlm_agent.droid_observation_adapter import DroidObservationAdapter
+    from isaaclab_arena_vlm_agent.observation_adapter import ObservationModality, VLMObservationAdapter
     from isaaclab_arena_vlm_agent.vlm_agent_policy import VLMChunkPolicy, VLMPolicyCfg, VLMStepPolicy
 
     embodiment = DroidAbsoluteJointPositionEmbodiment()
@@ -158,7 +162,7 @@ def _test_droid_joint_position_adapters(simulation_app):
         target = {"values": targets[0].tolist() + [0.0]}
         invalid = {"values": [0.1, 0.2, 0.0]}
         nonfinite = {"values": [float("nan")] * 7 + [0.0]}
-        observation_adapter = DroidObservationAdapter()
+        observation_adapter = VLMObservationAdapter(embodiment, modalities=(ObservationModality.STATE,))
         observation_adapter.build_request_content = Mock(return_value=[])
         for policy_type, adapter in (
             (VLMStepPolicy, StepActionAdapter(embodiment, CommandType.JOINT_POSITION)),

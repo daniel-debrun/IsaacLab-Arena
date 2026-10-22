@@ -23,14 +23,31 @@ from isaaclab_arena.inference.backend import build_strict_schema
 from isaaclab_arena_vlm_agent.action_adapter import ChunkActionAdapter, GoalActionAdapter, StepActionAdapter
 from isaaclab_arena_vlm_agent.commands import Command, CommandChunk, CommandType
 from isaaclab_arena_vlm_agent.droid_motion_generator import DroidPoseMotionGenerator
-from isaaclab_arena_vlm_agent.droid_observation_adapter import DroidObservationAdapter
+from isaaclab_arena_vlm_agent.observation_adapter import VLMObservationAdapter
 from isaaclab_arena_vlm_agent.vlm_agent_policy import VLMChunkPolicy, VLMGoalPolicy, VLMPolicyCfg, VLMStepPolicy
 
+CAMERA_KEYS = ("external_camera_rgb", "external_camera_2_rgb", "wrist_camera_rgb")
 
-def _embodiment(scene_key="robot", body_name="base_link"):
+
+def _embodiment(scene_key="robot", body_name="base_link", camera_keys=CAMERA_KEYS):
+    state_cfg = SimpleNamespace(concatenate_terms=False, gripper_pos=SimpleNamespace(func=Mock()))
+    camera_terms = {}
+    for key in camera_keys:
+        camera_terms[key] = SimpleNamespace(func=Mock(), params={"data_type": "rgb"})
     return SimpleNamespace(
         get_scene_key=Mock(return_value=scene_key),
         get_command_body_name=Mock(return_value=body_name),
+        get_action_cfg=Mock(
+            return_value=SimpleNamespace(
+                arm_action=SimpleNamespace(asset_name=scene_key, body_name=body_name),
+            )
+        ),
+        get_observation_cfg=Mock(
+            return_value=SimpleNamespace(
+                policy=state_cfg,
+                camera_obs=SimpleNamespace(**camera_terms),
+            )
+        ),
     )
 
 
@@ -69,7 +86,7 @@ def _inputs():
     )
     env = SimpleNamespace(unwrapped=SimpleNamespace(num_envs=2, device="cpu", arena_world=world))
     cameras = {}
-    for index, key in enumerate(DroidObservationAdapter.camera_keys):
+    for index, key in enumerate(CAMERA_KEYS):
         cameras[key] = torch.full((2, 4, 4, 3), index * 50, dtype=torch.uint8)
     obs = {"policy": {"gripper_pos": torch.tensor([[0.0], [1.03]])}, "camera_obs": cameras}
     return env, obs
@@ -99,21 +116,23 @@ def test_droid_response_schema_and_json_round_trip():
     assert set(schema["properties"]) == {"values"}
 
 
-def test_observation_returns_only_root_pose_and_measured_gripper():
+def test_observation_selects_configured_state_and_command_body():
     env, obs = _inputs()
-    adapter = DroidObservationAdapter()
+    obs["policy"]["unconfigured_term"] = torch.ones(2, 3)
+    adapter = VLMObservationAdapter(_embodiment())
     states = [adapter.extract_robot_state(env, obs, env_id) for env_id in range(2)]
     assert all(type(state) is dict for state in states)
     assert json.loads(json.dumps(states, allow_nan=False)) == states
     env.unwrapped.arena_world.get_body_pose_in_root.assert_called_with("robot", "base_link")
-    assert set(states[0]) == {"position_root_m", "quaternion_root_xyzw", "gripper_closed_fraction"}
-    assert states[1]["position_root_m"] == [0.5, 0.0, pytest.approx(0.3)]
-    assert states[1]["quaternion_root_xyzw"] == [0.0, 0.0, 1.0, 0.0]
-    assert states[1]["gripper_closed_fraction"] == pytest.approx(1.03)
+    assert set(states[0]) == {"policy", "command_body_poses"}
+    assert set(states[0]["policy"]) == {"gripper_pos"}
+    assert states[1]["command_body_poses"]["arm_action"]["position_root_m"] == [0.5, 0.0, pytest.approx(0.3)]
+    assert states[1]["command_body_poses"]["arm_action"]["quaternion_root_xyzw"] == [0.0, 0.0, 1.0, 0.0]
+    assert states[1]["policy"]["gripper_pos"][0] == pytest.approx(1.03)
     env.unwrapped.arena_world.get_body_pose_in_root.return_value.add_(1)
     obs["policy"]["gripper_pos"].zero_()
-    assert states[1]["position_root_m"][0] == 0.5
-    assert states[1]["gripper_closed_fraction"] == pytest.approx(1.03)
+    assert states[1]["command_body_poses"]["arm_action"]["position_root_m"][0] == 0.5
+    assert states[1]["policy"]["gripper_pos"][0] == pytest.approx(1.03)
 
 
 @pytest.mark.parametrize("closed", [False, True])
@@ -185,7 +204,7 @@ def test_droid_adapters_integrate_with_policy_and_partial_resets(mode):
     policy = policy_type(
         VLMPolicyCfg(system_prompt="Return an absolute base_link target in robot-root coordinates."),
         inference_backend=SimpleNamespace(infer=infer),
-        observation_adapter=DroidObservationAdapter(),
+        observation_adapter=VLMObservationAdapter(_embodiment()),
         action_adapter=adapter,
         **({"max_steps_per_goal": 2} if mode == "goal" else {}),
     )
@@ -195,10 +214,8 @@ def test_droid_adapters_integrate_with_policy_and_partial_resets(mode):
     torch.testing.assert_close(first[:, 0], torch.tensor([0.6, 0.6]))
     assert len(requests) == 2
     content = requests[0].messages[1]["content"]
-    assert json.loads(content[1]["text"])["gripper_closed_fraction"] == 0.0
-    assert [content[index]["text"] for index in (2, 4, 6)] == [
-        f"camera={key}" for key in DroidObservationAdapter.camera_keys
-    ]
+    assert json.loads(content[1]["text"])["policy"]["gripper_pos"][0] == 0.0
+    assert [content[index]["text"] for index in (2, 4, 6)] == [f"camera={key}" for key in CAMERA_KEYS]
     policy.reset(torch.tensor([0]))
     second = policy.get_action(env, obs)
     assert len(requests) == (4 if mode == "single" else 3)
@@ -224,7 +241,7 @@ def test_invalid_droid_chunk_is_corrected_before_any_action():
     policy = VLMChunkPolicy(
         VLMPolicyCfg(system_prompt="Return two absolute pose commands."),
         inference_backend=backend,
-        observation_adapter=DroidObservationAdapter(),
+        observation_adapter=VLMObservationAdapter(_embodiment()),
         action_adapter=adapter,
     )
     policy.set_task_description("Move")
@@ -263,7 +280,7 @@ def test_invalid_droid_pose_is_corrected_before_any_action(mode, field, value):
     policy = policy_type(
         VLMPolicyCfg(system_prompt="Return absolute pose commands."),
         inference_backend=backend,
-        observation_adapter=DroidObservationAdapter(),
+        observation_adapter=VLMObservationAdapter(_embodiment()),
         action_adapter=adapter,
         **({"max_steps_per_goal": 2} if mode == "goal" else {}),
     )
@@ -277,14 +294,14 @@ def test_invalid_droid_pose_is_corrected_before_any_action(mode, field, value):
 @pytest.mark.parametrize("env_id", [0, 1])
 def test_droid_request_content_contains_state_and_resized_camera_views(env_id):
     env, obs = _inputs()
-    for index, key in enumerate(DroidObservationAdapter.camera_keys):
+    for index, key in enumerate(CAMERA_KEYS):
         obs["camera_obs"][key][env_id].fill_(40 + index * 50)
-    content = DroidObservationAdapter().build_request_content(env, obs, env_id, image_max_width_or_height=2)
+    content = VLMObservationAdapter(_embodiment()).build_request_content(env, obs, env_id, image_max_width_or_height=2)
     state = json.loads(content[0]["text"])
-    assert state["position_root_m"][0] == pytest.approx(0.4 + env_id * 0.1)
-    assert state["gripper_closed_fraction"] == pytest.approx(1.03 * env_id)
+    assert state["command_body_poses"]["arm_action"]["position_root_m"][0] == pytest.approx(0.4 + env_id * 0.1)
+    assert state["policy"]["gripper_pos"][0] == pytest.approx(1.03 * env_id)
     assert len(content) == 7
-    for index, key in enumerate(DroidObservationAdapter.camera_keys):
+    for index, key in enumerate(CAMERA_KEYS):
         assert content[1 + index * 2] == {"type": "text", "text": f"camera={key}"}
         url = content[2 + index * 2]["image_url"]["url"]
         image = Image.open(io.BytesIO(base64.b64decode(url.split(",", 1)[1])))
@@ -310,7 +327,7 @@ def test_droid_goal_completion_reads_live_world_without_prompt_state():
     world = env.unwrapped.arena_world
     adapter = GoalActionAdapter(_embodiment(), CommandType.EE_POSE, DroidPoseMotionGenerator())
     _mock_pose_action_space(adapter)
-    observation_adapter = DroidObservationAdapter()
+    observation_adapter = VLMObservationAdapter(_embodiment())
     observation_adapter.build_request_content = Mock(return_value=[])
     backend = SimpleNamespace(infer=Mock(return_value=_target(0.6, closed=True)))
     policy = VLMGoalPolicy(
@@ -339,7 +356,7 @@ def test_chunk_adapter_accepts_an_embodiment_with_default_chunk_size():
     policy = VLMChunkPolicy(
         VLMPolicyCfg(system_prompt="Return absolute pose commands."),
         inference_backend=backend,
-        observation_adapter=DroidObservationAdapter(),
+        observation_adapter=VLMObservationAdapter(_embodiment()),
         action_adapter=adapter,
     )
     policy.set_task_description("Move")

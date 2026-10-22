@@ -23,12 +23,8 @@ from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from isaaclab_arena.inference.backend import InferenceBackend, build_strict_schema
 from isaaclab_arena_vlm_agent.action_adapter import AgentActionAdapter, ChunkActionAdapter, GoalActionAdapter
-<<<<<<< HEAD
-from isaaclab_arena_vlm_agent.image_utils import extract_rgb_images_from_camera_observations
-=======
 from isaaclab_arena_vlm_agent.commands import CommandType
-from isaaclab_arena_vlm_agent.image_utils import extract_rgb_images_from_camera_observations, image_to_jpeg_data_url
->>>>>>> 9b5043b3f2 (Select VLM command formats with an enum)
+from isaaclab_arena_vlm_agent.image_utils import extract_rgb_images_from_camera_observations
 from isaaclab_arena_vlm_agent.motion_generator import MotionGenerator
 from isaaclab_arena_vlm_agent.observation_adapter import CAMERA_OBSERVATION_GROUP, VLMObservationAdapter
 from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError

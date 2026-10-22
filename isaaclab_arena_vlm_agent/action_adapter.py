@@ -99,7 +99,10 @@ class StepActionAdapter(AgentActionAdapter):
         self._binary_values: dict[int, tuple[float, float]] = {}
 
     def is_robot_action_space_supported(self, env) -> bool:
-        """Resolve the live action layout and check it against the embodiment configuration.
+        """Check absolute pose or joint controllers using the embodiment's action configuration.
+
+        Term names, assets, body names, and joint counts come from the configuration.
+        Unscaled, unoffset targets are required because commands pass directly to the controller.
 
         Args:
             env: Arena environment, optionally gym-wrapped.
