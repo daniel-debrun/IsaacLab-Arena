@@ -4,25 +4,23 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
-from copy import deepcopy
 from types import SimpleNamespace
 
 import pytest
 
 from isaaclab_arena.evaluation import prepare_settled_placement as preparation
-from isaaclab_arena.offline_placement.preparation_config import SettledPlacementPreparationCfg
+from isaaclab_arena.evaluation.arena_run import SettledPlacementPreparationCfg
 from isaaclab_arena.offline_placement.settled_placement_params import SettledPlacementParams
 from isaaclab_arena.tests.test_run_execution import _run
 
 
-def test_preparation_closes_sampling_env_and_preserves_config(monkeypatch, tmp_path):
-    from isaaclab_arena.evaluation import run_execution
+def test_preparation_closes_sampling_env_and_preserves_settings(monkeypatch, tmp_path):
     from isaaclab_arena.scripts import record_placement_layouts
 
-    cfg = _run(settled_placement=SettledPlacementPreparationCfg())
-    original = deepcopy(cfg)
+    settings = SettledPlacementPreparationCfg()
     env = SimpleNamespace(unwrapped=SimpleNamespace())
     builder = SimpleNamespace(
+        cfg=SimpleNamespace(num_envs=2),
         arena_env=SimpleNamespace(env_cfg_callback=None, get_placement_assets=lambda: [], task=None, embodiment=None),
         get_all_variations=lambda: {},
         hydra_overrides=None,
@@ -36,7 +34,6 @@ def test_preparation_closes_sampling_env_and_preserves_config(monkeypatch, tmp_p
         return env
 
     builder.make_registered = make_registered
-    monkeypatch.setattr(run_execution, "build_arena_builder_from_run_cfg", lambda cfg: builder)
     monkeypatch.setattr(preparation, "close_environment", lambda env: events.append("close"))
 
     def record(env, path, **kwargs):
@@ -46,13 +43,8 @@ def test_preparation_closes_sampling_env_and_preserves_config(monkeypatch, tmp_p
         return SimpleNamespace(accepted=3, attempted=4, rejections={(1, 0): "moving"})
 
     monkeypatch.setattr(record_placement_layouts, "record_placements_to_jsonl", record)
-    replay = preparation.prepare_settled_placement(cfg, 3, tmp_path, 1)
-    assert cfg == original
-    assert replay.settled_placement is None
-    assert replay.environment_builder.resolve_on_reset
-    assert replay.environment_builder.recorded_variation_samples_path == str(
-        tmp_path / "settled_placements_rebuild1.jsonl"
-    )
+    preparation.prepare_settled_placement(builder, settings, 3, tmp_path / "settled_placements_rebuild1.jsonl")
+    assert not settings.settle.include_embodiment_links
     assert events == ["build", "record", "close"]
     summary = json.loads((tmp_path / "settled_placements_rebuild1_summary.json").read_text())
     assert summary["accepted"] == 3
@@ -65,7 +57,7 @@ def test_preparation_closes_sampling_env_and_preserves_config(monkeypatch, tmp_p
         lambda *args, **kwargs: SimpleNamespace(accepted=0, attempted=4, rejections={(0, 0): "moving"}),
     )
     with pytest.raises(AssertionError, match="Only 0/3"):
-        preparation.prepare_settled_placement(cfg, 3, tmp_path, 2)
+        preparation.prepare_settled_placement(builder, settings, 3, tmp_path / "settled_placements_rebuild2.jsonl")
     assert events == ["build", "close"]
     assert (tmp_path / "settled_placements_rebuild2_summary.json").exists()
 
@@ -76,7 +68,7 @@ def test_preparation_closes_sampling_env_and_preserves_config(monkeypatch, tmp_p
     builder.hydra_overrides = ["enable_variation"]
     monkeypatch.setattr(variations_hydra, "apply_overrides", lambda *args: setattr(variation, "enabled", True))
     with pytest.raises(AssertionError, match="variations to be disabled"):
-        preparation.prepare_settled_placement(cfg, 3, tmp_path, 3)
+        preparation.prepare_settled_placement(builder, settings, 3, tmp_path / "settled_placements_rebuild3.jsonl")
 
 
 def test_preparation_requires_episode_budget_and_compatible_replay():
@@ -89,6 +81,12 @@ def test_preparation_requires_episode_budget_and_compatible_replay():
         _run(
             settled_placement=SettledPlacementPreparationCfg(),
             environment_builder=ArenaEnvBuilderCfg(recorded_variation_samples_path="existing.jsonl"),
+        )
+    from isaaclab_arena.evaluation.run_execution import _resolve_rollout_limit
+
+    with pytest.raises(AssertionError, match="finite-action policy"):
+        _resolve_rollout_limit(
+            _run(settled_placement=SettledPlacementPreparationCfg()), SimpleNamespace(has_length=lambda: True), 3
         )
     with pytest.raises(AssertionError, match="required_settled_steps"):
         SettledPlacementParams(num_steps=2, required_settled_steps=3)
@@ -112,6 +110,7 @@ def test_velocity_validator_requires_sustained_rest():
 def _test_prepare_and_replay(simulation_app, tmp_path, with_robot=False):
     import torch
     import yaml
+    from copy import deepcopy
     from unittest.mock import patch
 
     from isaaclab_arena.assets.registries import AssetRegistry, ensure_assets_registered
@@ -141,6 +140,20 @@ def _test_prepare_and_replay(simulation_app, tmp_path, with_robot=False):
         rollout_limit=RolloutLimitCfg(num_episodes=3),
         settled_placement=SettledPlacementPreparationCfg(max_batches=3),
     )
+    original_cfg = deepcopy(cfg)
+    if with_robot:
+        from isaaclab_arena.embodiments.franka.franka import FrankaEventCfg
+
+        source_events = FrankaEventCfg()
+        compiled_cfg = SimpleNamespace(events=deepcopy(source_events))
+        builder = SimpleNamespace(
+            arena_env=SimpleNamespace(
+                task=None, embodiment=SimpleNamespace(get_events_cfg=lambda: deepcopy(source_events))
+            )
+        )
+        preparation.configure_preparation_resets(builder, compiled_cfg)
+        assert source_events.randomize_franka_joint_state.params["std"] == 0.02
+        assert compiled_cfg.events.randomize_franka_joint_state.params["std"] == 0.0
     observations = []
 
     class InspectFirstObservation(ZeroActionPolicy):
@@ -176,6 +189,7 @@ def _test_prepare_and_replay(simulation_app, tmp_path, with_robot=False):
         patch.object(NoTask, "get_termination_cfg", lambda self: TaskTerminationCfg(timeout_s=0.1)),
     ):
         result = run_execution.build_and_run(cfg, tmp_path / "run")
+    assert cfg == original_cfg
     assert result.status == RunStatus.COMPLETED
     assert len(observations) == 2  # Initial batch plus replacement episode in just one slot.
     output = tmp_path / "run"
