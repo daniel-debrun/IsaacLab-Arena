@@ -165,7 +165,11 @@ def _is_id_list(value: Any) -> bool:
 
 
 def _copy_without_shared_nodes(value: Any) -> Any:
-    """Copy nested dicts and lists, giving each YAML alias its own copy."""
+    """Copy nested dicts and lists, giving each YAML alias its own copy.
+
+    ``copy.deepcopy`` would keep nodes shared through a YAML alias shared, so a later merge into one alias
+    site would also change the others. Copying every dict and list separately avoids this.
+    """
     if isinstance(value, dict):
         return {key: _copy_without_shared_nodes(child_value) for key, child_value in value.items()}
     if isinstance(value, list):
