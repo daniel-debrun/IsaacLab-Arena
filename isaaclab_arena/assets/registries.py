@@ -127,7 +127,9 @@ class AssetRegistry(Registry):
         """
         ensure_assets_registered()
         return sorted(
-            asset.registry_name for asset in self._components.values() if all(tag in asset.tags for tag in tags)
+            registry_name
+            for registry_name, asset_class in self._components.items()
+            if all(tag in asset_class.tags for tag in tags)
         )
 
     def get_random_asset_by_tag(self, tag: str) -> type["Asset"]:
