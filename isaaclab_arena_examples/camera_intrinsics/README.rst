@@ -1,35 +1,38 @@
-Independent wrist-camera rendering prototype
-============================================
+Independent camera intrinsics across environments
+================================================
 
-This draft preserves the working experiment for independent camera intrinsics in
-parallel environments. It is not connected to Arena's camera-tiling flag yet.
-The scripts explicitly select ``SeparateCameraRenderer`` for the wrist camera.
+Enabling a camera intrinsics variation disables tiling for every camera in its
+rig. ``ArenaCameraCfg.get_cfg()`` selects ``SeparateCameraRenderer`` automatically
+when ``use_tiled_camera`` is false. No manual renderer assignment is required.
 
 On the tested Isaac Lab revision, ``Camera`` and the deprecated ``TiledCamera``
-both use the tiled RTX backend. Disabling Arena's tiling flag therefore still
+both use the tiled RTX backend. Selecting ``CameraCfg`` alone therefore still
 creates one tiled render product for all environments. Different reported camera
 intrinsics do not produce independent rendered projections.
 
 ``SeparateCameraRenderer`` creates an ordinary render product and RGB annotator
 for each environment, writing into slices of the existing batched output buffers.
-It reuses Isaac Lab's stage setup, output conversion, and cleanup.
-Only the wrist camera uses this renderer; the external cameras keep stock rendering.
+It reuses Isaac Lab's stage setup, output conversion, and cleanup. The selection
+applies to the entire rig, including cameras without an intrinsics variation.
 
-Manual opt-in
--------------
+Enable the variation
+--------------------
 
-After constructing an ``ArenaEnvBuilder`` inside a running SimulationApp:
+For a DROID experiment, add the existing variation override:
 
-.. code-block:: python
+.. code-block:: yaml
 
-   from isaaclab_arena_examples.camera_intrinsics.separate_camera_renderer import SeparateCameraRenderer
+   variations:
+     droid_abs_joint_pos.camera_intrinsics_wrist_camera.enabled: true
 
-   env_cfg, env_kwargs = builder.build_env_cfg()
-   env_cfg.scene.wrist_camera.renderer_cfg.class_type = SeparateCameraRenderer
-   env = builder.make_registered(env_cfg, env_kwargs)
+The variation's build-time hook calls ``camera_config.set_use_tiled_camera(False)``.
+Direct callers can also use that method to disable tiling for the whole rig.
+The copied rig preserves the renderer's quality and scene-partition settings;
+the source camera configurations remain unchanged.
 
-The prototype accepts RGB/RGBA only and rejects ISP and custom background colors.
-RGB has been exercised; RGBA has not been separately validated.
+Untiled rendering currently supports the Isaac RTX backend and RGB/RGBA outputs.
+Configuration rejects depth, segmentation, ISP, custom background colors, and
+custom renderer implementations instead of silently dropping those settings.
 
 Reproduce the captures
 ----------------------
@@ -55,7 +58,7 @@ variation event. They also exercise ordinary resets with randomized intrinsics.
 Image analysis estimates zoom using SIFT matches and an affine fit with RANSAC,
 and checks that the camera poses stayed fixed.
 
-Previously measured scales for four environments were
+The original wrist-only prototype measured scales for four environments as
 ``[0.6000, 1.0000, 1.2500, 1.5001]`` for requested scales
 ``[0.6, 1.0, 1.25, 1.5]``. Changing only environment 0 produced
 ``[1.5002, 1.0000, 1.2499, 1.5001]``. See
@@ -63,12 +66,14 @@ Previously measured scales for four environments were
 completed eight zero-action episodes and produced 24 camera videos.
 The generated images, videos, logs, and HDF5 datasets remain outside this snapshot.
 
-Reproduce a performance comparison
-----------------------------------
+Measure whole-rig rendering performance
+--------------------------------------
 
 Use a running OpenPI pi05 DROID joint-position server on ``127.0.0.1:8001``.
 ``benchmark.yaml`` declares that endpoint. The script uses normal Arena experiment
-execution and wraps the rollout calls to collect timings. It does not stop the
+execution and wraps the rollout calls to collect timings. ``separate`` uses the
+automatic selection for all cameras; ``tiled`` explicitly restores stock rendering
+for all cameras to provide a comparison. It does not stop the
 policy server.
 
 .. code-block:: bash
@@ -87,6 +92,29 @@ is enabled with zero deltas in both cases for comparable projections. Simulation
 runs at 120 Hz, rendering at 60 Hz, and control at 15 Hz. The six-second episode
 timeout exercises resets during measurement. CUDA synchronization separates policy
 and environment timing. Initialization is excluded; resets are included.
+
+Whole-rig performance check
+---------------------------
+
+A fresh four-environment comparison with all three cameras untiled completed
+successfully: 17.90 aggregate environment steps/s tiled versus 16.74 independent,
+a 6.4% throughput reduction. Simulation time increased from 203.3 to 218.9 ms per
+vector step; policy time remained about 19.7 ms. The independent run used four
+render products per camera (12 total). Each mode ran once, with 60 warm-up steps
+and 180 measured steps, so this is a bounded check rather than a repeated sweep.
+See `whole_rig_performance.json <results/whole_rig_performance.json>`_.
+
+Regression coverage also checks automatic rig-wide selection, preservation of
+source configs and renderer settings, toggling back to tiled rendering,
+unsupported settings, RGB/RGBA buffers, independent rendered zoom in two
+environments, ordinary reset reuse, and cleanup.
+
+Historical wrist-only performance
+--------------------------------
+
+The results below predate the rig-wide integration: only the wrist camera was
+untiled, and both external cameras retained stock rendering. They do not measure
+the cost of untiling every camera.
 
 The recorded sweep ran counts 1, 2, 4, 8, tiled then separate, followed by counts
 8, 4, 2, 1, separate then tiled, each in a fresh process. All 16 runs completed,
@@ -138,16 +166,12 @@ Measurement provenance
 * Physics: PhysX; policy: OpenPI pi05 DROID joint positions.
 * Seed and placement seed: 42; placement solving on reset disabled.
 
-The scripts were relocated from the local experiment output folder for this
-snapshot. Imports and configuration paths were adjusted; the renderer's behavior
-is unchanged. The recorded results above come from the original experiment runs.
+The recorded results above come from the original wrist-only experiment runs.
+The current scripts exercise the rig-wide integration.
 
-Remaining integration work
---------------------------
+Remaining validation
+--------------------
 
-* Wire the existing tiling flag to the independent renderer.
-* Add regression coverage for independent rendered intrinsics across environments.
-* Decide the supported camera-output and backend scope, including explicit handling
-  of unsupported configurations.
-* Validate against the upgraded Isaac Lab / Isaac Sim runtime. The original tiled
-  failure was reproduced there, but this renderer has only been tested on Sim 6.1.
+The original tiled failure was reproduced on the upgraded Isaac Lab / Isaac Sim
+runtime, but the independent renderer has only been exercised on Sim 6.1.
+Depth, segmentation, ISP, and other rendering backends remain unsupported.

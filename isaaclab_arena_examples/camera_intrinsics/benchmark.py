@@ -22,12 +22,14 @@ args = parser.parse_args()
 with SimulationAppContext(args):
     import torch
 
+    from isaaclab_physx.renderers.isaac_rtx_renderer import IsaacRtxRenderer
+
     from isaaclab_arena.evaluation import run_execution
     from isaaclab_arena.evaluation.arena_experiment_config_loader import load_arena_experiment_from_config_file
     from isaaclab_arena.evaluation.experiment_runner import _write_arena_experiment_result
     from isaaclab_arena.evaluation.policy_runner import rollout_policy
+    from isaaclab_arena.utils.isaaclab_utils.separate_camera_renderer import SeparateCameraRenderer
     from isaaclab_arena.visualization.report import build_report
-    from isaaclab_arena_examples.camera_intrinsics.separate_camera_renderer import SeparateCameraRenderer
 
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=False)
@@ -47,8 +49,11 @@ with SimulationAppContext(args):
 
         def build_env_cfg(*a, **kw):
             env_cfg, env_kwargs = original_build(*a, **kw)
-            if args.renderer == "separate":
-                env_cfg.scene.wrist_camera.renderer_cfg.class_type = SeparateCameraRenderer
+            for name in builder.arena_env.embodiment.camera_config.camera_names():
+                camera_cfg = getattr(env_cfg.scene, name)
+                assert camera_cfg.renderer_cfg.class_type is SeparateCameraRenderer
+                if args.renderer == "tiled":
+                    camera_cfg.renderer_cfg.class_type = IsaacRtxRenderer
             return env_cfg, env_kwargs
 
         builder.build_env_cfg = build_env_cfg
@@ -62,6 +67,12 @@ with SimulationAppContext(args):
         camera = env.unwrapped.scene["wrist_camera"]
         metadata.update(
             renderer=type(camera._renderer).__name__,
+            scope="all_cameras",
+            render_products_by_camera={
+                name: len(sensor._render_data.children) if args.renderer == "separate" else 1
+                for name, sensor in env.unwrapped.scene.sensors.items()
+                if hasattr(sensor.cfg, "width")
+            },
             camera_type=type(camera).__name__,
             step_dt=env.unwrapped.step_dt,
             resolution=[camera.cfg.width, camera.cfg.height],

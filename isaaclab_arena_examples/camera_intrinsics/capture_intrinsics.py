@@ -38,10 +38,11 @@ with SimulationAppContext(args):
     cfg.variations[prefix + ".sampler_cfg.low"] = [0.0, 0.0]
     cfg.variations[prefix + ".sampler_cfg.high"] = [0.0, 0.0]
     builder = build_arena_builder_from_run_cfg(cfg)
-    from isaaclab_arena_examples.camera_intrinsics.separate_camera_renderer import SeparateCameraRenderer
+    from isaaclab_arena.utils.isaaclab_utils.separate_camera_renderer import SeparateCameraRenderer
 
     env_cfg, env_kwargs = builder.build_env_cfg()
-    env_cfg.scene.wrist_camera.renderer_cfg.class_type = SeparateCameraRenderer
+    for name in builder.arena_env.embodiment.camera_config.camera_names():
+        assert getattr(env_cfg.scene, name).renderer_cfg.class_type is SeparateCameraRenderer
     env = builder.make_registered(env_cfg, env_kwargs)
     env.reset()
     base = env.unwrapped
