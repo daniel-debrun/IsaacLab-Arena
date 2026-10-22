@@ -261,11 +261,11 @@ file. For example:
      ...
 
 All external yaml files are merged into one spec, but no value may be defined in more than one file.
-A value that appears twice fails with an assertion that names its path and both files:
+A value that appears twice raises a ``ValueError`` that names its path and both files:
 
 .. code-block:: text
 
-   AssertionError: Conflicting env graph spec value at 'env_cfg_override.sim.physics.max_position_iteration_count':
+   ValueError: Conflicting env graph spec value at 'env_cfg_override.sim.physics.max_position_iteration_count':
    defined in both /.../shared_defaults.yaml (value 32) and /.../tasks/banana_in_bowl.yaml (value 16)
 
 Lists, such as ``objects``, are concatenated, and an entry's ``id`` may appear only once.

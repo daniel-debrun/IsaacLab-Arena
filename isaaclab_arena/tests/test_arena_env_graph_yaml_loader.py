@@ -58,7 +58,7 @@ def test_merge_concatenates_id_lists_in_source_order():
 
 def test_merge_rejects_duplicate_top_level_leaf():
     sources = [("a.yaml", {"env_name": "one"}), ("b.yaml", {"env_name": "two"})]
-    with pytest.raises(AssertionError) as exc_info:
+    with pytest.raises(ValueError) as exc_info:
         _merge_env_graph_dicts(sources)
     message = str(exc_info.value)
     assert "'env_name'" in message
@@ -69,7 +69,7 @@ def test_merge_rejects_duplicate_top_level_leaf():
 def test_merge_rejects_nested_leaf_defined_twice_and_reports_full_path():
     first = {"env_cfg_override": {"sim": {"physics": {"max_position_iteration_count": 32}}}}
     second = {"env_cfg_override": {"sim": {"physics": {"max_position_iteration_count": 16}}}}
-    with pytest.raises(AssertionError) as exc_info:
+    with pytest.raises(ValueError) as exc_info:
         _merge_env_graph_dicts([("defaults.yaml", first), ("task.yaml", second)])
     message = str(exc_info.value)
     assert "'env_cfg_override.sim.physics.max_position_iteration_count'" in message
@@ -79,7 +79,7 @@ def test_merge_rejects_nested_leaf_defined_twice_and_reports_full_path():
 
 def test_merge_rejects_identical_values():
     sources = [("a.yaml", {"embodiment": {"id": "droid"}}), ("b.yaml", {"embodiment": {"id": "droid"}})]
-    with pytest.raises(AssertionError, match="'embodiment.id'"):
+    with pytest.raises(ValueError, match="'embodiment.id'"):
         _merge_env_graph_dicts(sources)
 
 
@@ -89,7 +89,7 @@ def test_merge_reports_the_source_that_first_defined_a_conflicting_value():
         ("b.yaml", {"x": {"z": 2}}),
         ("c.yaml", {"x": {"z": 3}}),
     ]
-    with pytest.raises(AssertionError, match=r"'x\.z': defined in both b.yaml .* and c.yaml"):
+    with pytest.raises(ValueError, match=r"'x\.z': defined in both b.yaml .* and c.yaml"):
         _merge_env_graph_dicts(sources)
 
 
@@ -98,7 +98,7 @@ def test_merge_rejects_duplicate_id_in_id_list():
         ("scene.yaml", {"objects": [{"id": "banana"}, {"id": "light"}]}),
         ("defaults.yaml", {"objects": [{"id": "light"}]}),
     ]
-    with pytest.raises(AssertionError) as exc_info:
+    with pytest.raises(ValueError) as exc_info:
         _merge_env_graph_dicts(sources)
     message = str(exc_info.value)
     assert "'objects[id=light]'" in message
@@ -107,19 +107,19 @@ def test_merge_rejects_duplicate_id_in_id_list():
 
 def test_merge_rejects_lists_without_ids():
     sources = [("a.yaml", {"hdr_names": ["x"]}), ("b.yaml", {"hdr_names": ["y"]})]
-    with pytest.raises(AssertionError, match="'hdr_names'"):
+    with pytest.raises(ValueError, match="'hdr_names'"):
         _merge_env_graph_dicts(sources)
 
 
 def test_merge_rejects_mixed_types_at_the_same_path():
     sources = [("a.yaml", {"background": {"id": "table"}}), ("b.yaml", {"background": "table"})]
-    with pytest.raises(AssertionError, match="'background'"):
+    with pytest.raises(ValueError, match="'background'"):
         _merge_env_graph_dicts(sources)
 
 
 def test_merge_rejects_scalar_against_id_list():
     sources = [("a.yaml", {"objects": [{"id": "a"}]}), ("b.yaml", {"objects": None})]
-    with pytest.raises(AssertionError, match="'objects'"):
+    with pytest.raises(ValueError, match="'objects'"):
         _merge_env_graph_dicts(sources)
 
 
@@ -143,7 +143,7 @@ def test_arena_env_graph_spec_from_yaml_resolves_robolab_task_include():
 def test_load_env_graph_spec_dict_rejects_missing_include(tmp_path):
     path = tmp_path / "_missing_include.yaml"
     path.write_text("external_yaml: does_not_exist.yaml\nenv_name: broken\n", encoding="utf-8")
-    with pytest.raises(AssertionError, match="Env graph spec YAML not found"):
+    with pytest.raises(FileNotFoundError, match="Env graph spec YAML not found"):
         load_env_graph_spec_dict(path)
 
 
@@ -162,7 +162,7 @@ def test_load_env_graph_spec_dict_rejects_nested_includes(tmp_path):
     leaf.write_text("env_name: leaf\n", encoding="utf-8")
     mid.write_text("external_yaml: _leaf.yaml\nembodiment: {}\n", encoding="utf-8")
     entry.write_text("external_yaml: _mid.yaml\nenv_name: entry\n", encoding="utf-8")
-    with pytest.raises(AssertionError, match="Nested 'external_yaml' is not allowed"):
+    with pytest.raises(ValueError, match="Nested 'external_yaml' is not allowed"):
         load_env_graph_spec_dict(entry)
 
 
@@ -187,7 +187,7 @@ def test_load_env_graph_spec_dict_error_names_the_conflicting_files(tmp_path):
     (tmp_path / "scene.yaml").write_text("env_cfg_override:\n  sim:\n    dt: 0.01\n", encoding="utf-8")
     entry = tmp_path / "task.yaml"
     entry.write_text("external_yaml: scene.yaml\nenv_cfg_override:\n  sim:\n    dt: 0.02\n", encoding="utf-8")
-    with pytest.raises(AssertionError) as exc_info:
+    with pytest.raises(ValueError) as exc_info:
         load_env_graph_spec_dict(entry)
     message = str(exc_info.value)
     assert "'env_cfg_override.sim.dt'" in message
@@ -200,7 +200,7 @@ def test_load_env_graph_spec_dict_rejects_nested_include_in_a_list(tmp_path):
     (tmp_path / "nested.yaml").write_text("external_yaml: ok.yaml\n", encoding="utf-8")
     entry = tmp_path / "entry.yaml"
     entry.write_text("external_yaml: [ok.yaml, nested.yaml]\n", encoding="utf-8")
-    with pytest.raises(AssertionError, match="Nested 'external_yaml' is not allowed"):
+    with pytest.raises(ValueError, match="Nested 'external_yaml' is not allowed"):
         load_env_graph_spec_dict(entry)
 
 
@@ -208,5 +208,5 @@ def test_load_env_graph_spec_dict_rejects_nested_include_in_a_list(tmp_path):
 def test_load_env_graph_spec_dict_rejects_malformed_include(tmp_path, include):
     entry = tmp_path / "entry.yaml"
     entry.write_text(f"external_yaml: {include}\n", encoding="utf-8")
-    with pytest.raises(AssertionError, match="external_yaml"):
+    with pytest.raises(ValueError, match="external_yaml"):
         load_env_graph_spec_dict(entry)

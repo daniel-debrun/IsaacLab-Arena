@@ -18,7 +18,7 @@ def load_env_graph_spec_dict(path: str | Path) -> dict[str, Any]:
 
     ``external_yaml`` is a file path or a list of file paths, relative to the including file. Only the
     entry YAML may declare ``external_yaml``; included files must not contain a further include (no nesting).
-    The files are merged without overrides: see :func:`_merge_env_graph_dicts`.
+    The files are merged without overrides, so no value may be defined in more than one file.
 
     Args:
         path: Path to the root YAML file.
@@ -33,35 +33,39 @@ def load_env_graph_spec_dict(path: str | Path) -> dict[str, Any]:
     if include is None:
         return raw
     include_entries = [include] if isinstance(include, str) else include
-    assert (
+    if not (
         isinstance(include_entries, list)
         and len(include_entries) > 0
         and all(isinstance(entry, str) for entry in include_entries)
-    ), (
-        f"'{_YAML_INCLUDE_KEY}' must be a file path string or a non-empty list of file path strings, got {include!r} in"
-        f" {path}"
-    )
+    ):
+        raise ValueError(
+            f"'{_YAML_INCLUDE_KEY}' must be a file path string or a non-empty list of file path strings, "
+            f"got {include!r} in {path}"
+        )
 
     sources: list[tuple[str, dict[str, Any]]] = []
     for entry in include_entries:
         include_path = (path.parent / entry).resolve()
         included = _load_yaml_dict(include_path)
-        assert _YAML_INCLUDE_KEY not in included, (
-            f"Nested '{_YAML_INCLUDE_KEY}' is not allowed; only the top-level env graph spec YAML "
-            f"may declare an include: {include_path}"
-        )
+        if _YAML_INCLUDE_KEY in included:
+            raise ValueError(
+                f"Nested '{_YAML_INCLUDE_KEY}' is not allowed; only the top-level env graph spec YAML "
+                f"may declare an include: {include_path}"
+            )
         sources.append((str(include_path), included))
     sources.append((str(path), raw))
     return _merge_env_graph_dicts(sources)
 
 
 def _load_yaml_dict(path: str | Path) -> dict[str, Any]:
-    """Read a single YAML file and assert it parses to a mapping."""
+    """Read a single YAML file that must parse to a mapping."""
     path = Path(path).resolve()
-    assert path.is_file(), f"Env graph spec YAML not found: {path}"
+    if not path.is_file():
+        raise FileNotFoundError(f"Env graph spec YAML not found: {path}")
     with path.open("r", encoding="utf-8") as f:
         raw = yaml.safe_load(f)
-    assert isinstance(raw, dict), f"Env graph spec must be a dict, got {type(raw).__name__}"
+    if not isinstance(raw, dict):
+        raise ValueError(f"Env graph spec must be a dict, got {type(raw).__name__} in {path}")
     return raw
 
 
@@ -99,7 +103,7 @@ def _merge_mapping(
         elif _is_id_list(target[key]) and _is_id_list(value):
             _merge_id_lists(target[key], value, key_path, label, origins)
         else:
-            raise AssertionError(
+            raise ValueError(
                 f"Conflicting env graph spec value at '{key_path}': defined in both {origins[key_path]} "
                 f"(value {target[key]!r}) and {label} (value {value!r})"
             )
@@ -108,14 +112,15 @@ def _merge_mapping(
 def _merge_id_lists(
     target: list[dict[str, Any]], incoming: list[dict[str, Any]], path: str, label: str, origins: dict[str, str]
 ) -> None:
-    """Append the elements of ``incoming`` to ``target``, asserting that no ``id`` repeats."""
+    """Append the elements of ``incoming`` to ``target``, failing if an ``id`` repeats."""
     existing_ids = {element["id"] for element in target}
     for element in incoming:
         element_path = f"{path}[id={element['id']}]"
-        assert element["id"] not in existing_ids, (
-            f"Conflicting env graph spec entry at '{element_path}': an element with this id is defined in both "
-            f"{origins[element_path]} and {label}"
-        )
+        if element["id"] in existing_ids:
+            raise ValueError(
+                f"Conflicting env graph spec entry at '{element_path}': an element with this id is defined in both "
+                f"{origins[element_path]} and {label}"
+            )
         existing_ids.add(element["id"])
         target.append(copy.deepcopy(element))
         origins[element_path] = label
