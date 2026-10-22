@@ -55,10 +55,11 @@ def object_bounds_center_over_destination(
 ) -> torch.Tensor:
     """Check whether an object's bounds center is over a destination.
 
-    The check requires the object's bounds center to be inside the destination's
-    X/Y footprint and above its lower Z bound. The upper Z bound is intentionally
-    ignored so the same check works for open containers and supporting surfaces.
-    This is a center-point test, not full-object containment.
+    The center must lie inside the destination's oriented bounds or vertically
+    above them in world frame. A downward ray must intersect those bounds, so
+    pitched and rolled destinations use world up rather than their local Z axis.
+    The top remains open for containers and supporting surfaces. This is a
+    center-point test, not full-object containment or a contact check.
 
     Args:
         object_centroid_W: Object geometry centroid expressed in world frame
@@ -78,12 +79,29 @@ def object_bounds_center_over_destination(
         q_W_D,
         object_centroid_W - t_W_D,
     )
-    center_inside_horizontal_bounds = (
-        (object_centroid_D[:, :2] >= destination_bounds_D.min_point[:, :2])
-        & (object_centroid_D[:, :2] <= destination_bounds_D.max_point[:, :2])
+    downward_W = torch.zeros_like(object_centroid_W)
+    downward_W[:, 2] = -1.0
+    downward_D = quat_apply_inverse(q_W_D, downward_W)
+
+    # Intersect the ray with each pair of local box planes. Their distance intervals
+    # must overlap at or below the center. This preserves the rotated footprint,
+    # unlike checking the larger world-axis-aligned enclosing box.
+    parallel = downward_D.abs() < 1e-6
+    safe_direction_D = torch.where(parallel, torch.ones_like(downward_D), downward_D)
+    distance_to_min = (destination_bounds_D.min_point - object_centroid_D) / safe_direction_D
+    distance_to_max = (destination_bounds_D.max_point - object_centroid_D) / safe_direction_D
+    entry_distance = torch.minimum(distance_to_min, distance_to_max)
+    exit_distance = torch.maximum(distance_to_min, distance_to_max)
+    entry_distance = torch.where(parallel, -torch.inf, entry_distance)
+    exit_distance = torch.where(parallel, torch.inf, exit_distance)
+    inside_parallel_slabs = (
+        ~parallel
+        | (
+            (object_centroid_D >= destination_bounds_D.min_point)
+            & (object_centroid_D <= destination_bounds_D.max_point)
+        )
     ).all(dim=-1)
-    center_above_destination_bottom = object_centroid_D[:, 2] >= destination_bounds_D.min_point[:, 2]
-    return center_inside_horizontal_bounds & center_above_destination_bottom
+    return inside_parallel_slabs & (exit_distance.amin(dim=-1) >= entry_distance.amax(dim=-1).clamp_min(0.0))
 
 
 def contact_force_is_upward_support(
