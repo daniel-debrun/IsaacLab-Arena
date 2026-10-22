@@ -89,7 +89,7 @@ class AgentActionAdapter:
         return supported
 
     def decode_command(self, response: Command, arena_world: ArenaWorld, env_id: int) -> np.ndarray:
-        """Pack an absolute target followed by binary gripper closure.
+        """Return command values in the adapter-defined order.
 
         Args:
             response: Validated response in the configured command space.
@@ -97,9 +97,9 @@ class AgentActionAdapter:
             env_id: Environment index within the batched world state.
 
         Returns:
-            Pose or joint-position vector, followed by zero/open or one/closed.
+            One command vector in the configured coordinate space.
         """
-        return np.asarray([*response.arm_target, float(response.gripper_closed)], dtype=np.float32)
+        return np.asarray(response.values, dtype=np.float32)
 
     def is_command_valid(self, command: np.ndarray) -> bool:
         """Check dimensions, finite values, and constraints for the selected command type.

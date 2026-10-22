@@ -64,8 +64,7 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         actions = []
         for env_id, state in enumerate(states):
             response = Command(
-                arm_target=state["position_root_m"] + state["quaternion_root_xyzw"],
-                gripper_closed=False,
+                values=state["position_root_m"] + state["quaternion_root_xyzw"] + [0.0],
             )
             command = action_adapter.decode_command(response, base.arena_world, env_id)
             actions.append(action_adapter.command_to_action(env, command))
@@ -100,8 +99,7 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         generator = DroidPoseMotionGenerator()
         for env_id, state in enumerate(measured_states):
             response = Command(
-                arm_target=state["position_root_m"] + state["quaternion_root_xyzw"],
-                gripper_closed=False,
+                values=state["position_root_m"] + state["quaternion_root_xyzw"] + [0.0],
             )
             goal = action_adapter.decode_command(response, base.arena_world, env_id)
             assert generator.goal_reached(goal, base.arena_world, env_id) == (
@@ -154,9 +152,9 @@ def _test_droid_joint_position_adapters(simulation_app):
         arm = base.action_manager.get_term("arm_action")
         joint_names = tuple(f"panda_joint{i}" for i in range(1, 8))
         targets = base.arena_world.get_joint_positions("robot", joint_names)[:1].expand(2, -1)
-        target = {"arm_target": targets[0].tolist(), "gripper_closed": False}
-        invalid = {"arm_target": [0.1, 0.2], "gripper_closed": False}
-        nonfinite = {"arm_target": [float("nan")] * 7, "gripper_closed": False}
+        target = {"values": targets[0].tolist() + [0.0]}
+        invalid = {"values": [0.1, 0.2, 0.0]}
+        nonfinite = {"values": [float("nan")] * 7 + [0.0]}
         observation_adapter = DroidObservationAdapter()
         observation_adapter.build_request_content = Mock(return_value=[])
         for policy_type, adapter in (

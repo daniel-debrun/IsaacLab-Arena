@@ -21,13 +21,10 @@ class CommandType(str, Enum):
 
 
 class Command(BaseModel):
-    """Request an absolute arm target and binary gripper state."""
+    """Request one command in the adapter-defined layout."""
 
-    arm_target: list[float] = Field(min_length=1)
-    """EE_POSE: root-relative [x, y, z, qx, qy, qz, qw]; JOINT_POSITION: joints in controller order."""
-
-    gripper_closed: bool
-    """True closes the gripper; False opens it."""
+    values: list[float] = Field(min_length=1)
+    """Ordered targets; the adapter defines dimensions, units, and interpretation for the embodiment."""
 
 
 class CommandChunk(BaseModel):
