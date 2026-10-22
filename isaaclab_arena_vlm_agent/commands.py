@@ -5,19 +5,11 @@
 
 """VLM command types and response schemas."""
 
-from enum import Enum
-
 from pydantic import BaseModel, Field
 
+from isaaclab_arena.embodiments.common.command_space import CommandType
 
-class CommandType(str, Enum):
-    """Coordinate space of absolute commands, independent of execution strategy."""
-
-    EE_POSE = "ee_pose"
-    """Command-body pose in the robot-root frame, in meters and XYZW quaternions."""
-
-    JOINT_POSITION = "joint_position"
-    """Joint positions in controller order, in radians or meters for prismatic joints."""
+__all__ = ["Command", "CommandChunk", "CommandType"]
 
 
 class Command(BaseModel):

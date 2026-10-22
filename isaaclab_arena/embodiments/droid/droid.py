@@ -35,6 +35,7 @@ from isaaclab.utils.configclass import configclass
 from isaaclab_arena.assets.nucleus import ARENA_NUCLEUS_DIR
 from isaaclab_arena.assets.register import register_asset
 from isaaclab_arena.embodiments.common.arm_mode import ArmMode
+from isaaclab_arena.embodiments.common.command_space import CommandSpace, CommandType
 from isaaclab_arena.embodiments.droid.actions import BinaryJointPositionZeroToOneAction
 from isaaclab_arena.embodiments.droid.observations import (
     _DROID_NEWTON_GRIPPER_CLOSE_RAD,
@@ -354,6 +355,7 @@ class DroidAbsoluteJointPositionEmbodiment(DroidEmbodimentBase):
             collision_mode=collision_mode,
         )
         self.action_config = DroidAbsoluteJointPositionActionsCfg()
+        self.command_space = CommandSpace(CommandType.JOINT_POSITION, 8, binary_values={7: (0.0, 1.0)})
 
 
 @configclass

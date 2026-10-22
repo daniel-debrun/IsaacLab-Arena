@@ -19,6 +19,7 @@ import pytest
 from PIL import Image
 from pydantic import ValidationError
 
+from isaaclab_arena.embodiments.common.command_space import CommandSpace
 from isaaclab_arena.inference.backend import build_strict_schema
 from isaaclab_arena_vlm_agent.action_adapter import ChunkActionAdapter, GoalActionAdapter, StepActionAdapter
 from isaaclab_arena_vlm_agent.commands import Command, CommandChunk, CommandType
@@ -35,6 +36,7 @@ def _embodiment(scene_key="robot", body_name="base_link", camera_keys=CAMERA_KEY
     for key in camera_keys:
         camera_terms[key] = SimpleNamespace(func=Mock(), params={"data_type": "rgb"})
     return SimpleNamespace(
+        command_space=CommandSpace(CommandType.EE_POSE, 8, quaternion_offsets=(3,), binary_values={7: (0.0, 1.0)}),
         get_scene_key=Mock(return_value=scene_key),
         get_command_body_name=Mock(return_value=body_name),
         get_action_cfg=Mock(
@@ -51,11 +53,9 @@ def _embodiment(scene_key="robot", body_name="base_link", camera_keys=CAMERA_KEY
     )
 
 
-def _mock_pose_action_space(adapter):
-    adapter._command_dim = 8
-    adapter._quaternion_slices = [slice(3, 7)]
-    adapter._binary_values = {7: (0.0, 1.0)}
-    adapter.is_robot_action_space_supported = Mock(return_value=True)
+def _configure_pose_action_space(adapter):
+    env = SimpleNamespace(unwrapped=SimpleNamespace(single_action_space=SimpleNamespace(shape=(8,))))
+    assert adapter.is_robot_action_space_supported(env)
 
 
 def _target(x=0.4, closed=False):
@@ -84,7 +84,11 @@ def _inputs():
         get_body_pose_in_root=Mock(return_value=poses),
         get_joint_position=Mock(return_value=torch.tensor([0.0, 1.03]) * (math.pi / 4)),
     )
-    env = SimpleNamespace(unwrapped=SimpleNamespace(num_envs=2, device="cpu", arena_world=world))
+    env = SimpleNamespace(
+        unwrapped=SimpleNamespace(
+            num_envs=2, device="cpu", arena_world=world, single_action_space=SimpleNamespace(shape=(8,))
+        )
+    )
     cameras = {}
     for index, key in enumerate(CAMERA_KEYS):
         cameras[key] = torch.full((2, 4, 4, 3), index * 50, dtype=torch.uint8)
@@ -138,7 +142,7 @@ def test_observation_selects_configured_state_and_command_body():
 @pytest.mark.parametrize("closed", [False, True])
 def test_absolute_action_preserves_xyzw_and_binary_gripper(closed):
     adapter = StepActionAdapter(_embodiment(), CommandType.EE_POSE)
-    _mock_pose_action_space(adapter)
+    _configure_pose_action_space(adapter)
     response = Command.model_validate(_target(closed=closed))
     # A different current pose must not be added to an absolute command.
     command = adapter.decode_command(response, _world(_state(position_root_m=[9.0, 8.0, 7.0])), 0)
@@ -174,7 +178,7 @@ def test_goal_completion_requires_measured_pose_and_gripper(field, value):
 @pytest.mark.parametrize("length", [1, 3])
 def test_chunk_length_is_checked_before_execution(length):
     adapter = ChunkActionAdapter(_embodiment(), CommandType.EE_POSE, chunk_size=2)
-    _mock_pose_action_space(adapter)
+    _configure_pose_action_space(adapter)
     command = adapter.decode_command(
         CommandChunk.model_validate({"commands": [_target()] * length}), _world(_state()), 0
     )
@@ -191,8 +195,7 @@ def test_droid_adapters_integrate_with_policy_and_partial_resets(mode):
         policy_type, adapter = VLMGoalPolicy, GoalActionAdapter(
             _embodiment(), CommandType.EE_POSE, DroidPoseMotionGenerator()
         )
-    # Real action-manager compatibility is covered by the simulation test.
-    _mock_pose_action_space(adapter)
+    _configure_pose_action_space(adapter)
     requests = []
 
     def infer(request):
@@ -228,7 +231,7 @@ def test_droid_adapters_integrate_with_policy_and_partial_resets(mode):
 
 def test_invalid_droid_chunk_is_corrected_before_any_action():
     adapter = ChunkActionAdapter(_embodiment(), CommandType.EE_POSE, chunk_size=2)
-    _mock_pose_action_space(adapter)
+    _configure_pose_action_space(adapter)
     backend = SimpleNamespace(
         infer=Mock(
             side_effect=[
@@ -272,7 +275,7 @@ def test_invalid_droid_pose_is_corrected_before_any_action(mode, field, value):
         policy_type, adapter = VLMGoalPolicy, GoalActionAdapter(
             _embodiment(), CommandType.EE_POSE, DroidPoseMotionGenerator()
         )
-    _mock_pose_action_space(adapter)
+    _configure_pose_action_space(adapter)
     responses = [_target() | {field: value}, _target(0.6), _target(0.8)]
     if mode == "chunk":
         responses = [{"commands": [response, _target()]} for response in responses]
@@ -326,7 +329,7 @@ def test_droid_goal_completion_reads_live_world_without_prompt_state():
     env, _ = _inputs()
     world = env.unwrapped.arena_world
     adapter = GoalActionAdapter(_embodiment(), CommandType.EE_POSE, DroidPoseMotionGenerator())
-    _mock_pose_action_space(adapter)
+    _configure_pose_action_space(adapter)
     observation_adapter = VLMObservationAdapter(_embodiment())
     observation_adapter.build_request_content = Mock(return_value=[])
     backend = SimpleNamespace(infer=Mock(return_value=_target(0.6, closed=True)))
@@ -351,7 +354,7 @@ def test_droid_goal_completion_reads_live_world_without_prompt_state():
 def test_chunk_adapter_accepts_an_embodiment_with_default_chunk_size():
     embodiment = _embodiment()
     adapter = ChunkActionAdapter(embodiment, CommandType.EE_POSE)
-    _mock_pose_action_space(adapter)
+    _configure_pose_action_space(adapter)
     backend = SimpleNamespace(infer=Mock(return_value={"commands": [_target(0.6)]}))
     policy = VLMChunkPolicy(
         VLMPolicyCfg(system_prompt="Return absolute pose commands."),

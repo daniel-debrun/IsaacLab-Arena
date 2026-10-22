@@ -11,10 +11,10 @@ from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_wi
 def _test_droid_absolute_pose_adapters(simulation_app):
     import math
     import torch
-    from types import SimpleNamespace
 
     from isaaclab.utils.math import combine_frame_transforms
 
+    from isaaclab_arena.embodiments.common.command_space import CommandSpace
     from isaaclab_arena.embodiments.droid.droid import DroidDifferentialIKEmbodiment
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
@@ -37,6 +37,9 @@ def _test_droid_absolute_pose_adapters(simulation_app):
     def absolute_pose_actions(cfg):
         cfg.actions.arm_action.controller.use_relative_mode = False
         cfg.actions.arm_action.scale = 1.0
+        embodiment.command_space = CommandSpace(
+            CommandType.EE_POSE, 8, quaternion_offsets=(3,), binary_values={7: (0.0, 1.0)}
+        )
         return cfg
 
     arena_env = IsaacLabArenaEnvironment(
@@ -54,14 +57,6 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         assert action_adapter.embodiment is embodiment
         assert action_adapter.is_robot_action_space_supported(env)
         assert not StepActionAdapter(embodiment, CommandType.JOINT_POSITION).is_robot_action_space_supported(env)
-        for scene_key, body_name in (("other_robot", "base_link"), ("robot", "panda_link7")):
-            other_embodiment = SimpleNamespace(
-                get_action_cfg=lambda: SimpleNamespace(
-                    arm_action=SimpleNamespace(asset_name=scene_key, body_name=body_name),
-                    gripper_action=SimpleNamespace(asset_name=scene_key),
-                ),
-            )
-            assert not StepActionAdapter(other_embodiment, CommandType.EE_POSE).is_robot_action_space_supported(env)
         states = [observation_adapter.extract_robot_state(env, obs, env_id) for env_id in range(base.num_envs)]
         actions = []
         for env_id, state in enumerate(states):
@@ -114,17 +109,6 @@ def _test_droid_absolute_pose_adapters(simulation_app):
             goal[0] += 0.1
             assert not generator.goal_reached(goal, base.arena_world, env_id)
 
-        # Reject configurations whose native action semantics differ from the response contract.
-        for field, value in (("scale", 0.5), ("body_name", "panda_link7"), ("body_offset", object()), ("clip", {})):
-            original = getattr(arm.cfg, field)
-            setattr(arm.cfg, field, value)
-            assert not action_adapter.is_robot_action_space_supported(env), field
-            setattr(arm.cfg, field, original)
-        arm.cfg.controller.use_relative_mode = True
-        assert not action_adapter.is_robot_action_space_supported(env)
-        arm.cfg.controller.use_relative_mode = False
-        assert action_adapter.is_robot_action_space_supported(env)
-        _check_multi_pose_layout(env, arm, gripper)
     finally:
         env.close()
     return True
@@ -195,26 +179,6 @@ def _test_droid_joint_position_adapters(simulation_app):
                 assert backend.infer.call_count == 4
             env.step(actions)
 
-        # Absolute positions must not be sent through scaled, offset, or clipped controllers.
-        for field, value in (("scale", 0.5), ("offset", 0.1), ("use_default_offset", True), ("clip", {})):
-            original = getattr(arm.cfg, field)
-            setattr(arm.cfg, field, value)
-            assert not adapter.is_robot_action_space_supported(env), field
-            setattr(arm.cfg, field, original)
-        assert adapter.is_robot_action_space_supported(env)
-        # A joint-only embodiment needs neither a gripper slot nor a fixed arm dimension.
-        joint_embodiment = SimpleNamespace(get_action_cfg=lambda: SimpleNamespace(body_joints=arm.cfg))
-        joint_env = SimpleNamespace(
-            unwrapped=SimpleNamespace(
-                action_manager=SimpleNamespace(
-                    active_terms=["body_joints"],
-                    get_term=lambda name: arm,
-                )
-            )
-        )
-        joint_adapter = ChunkActionAdapter(joint_embodiment, CommandType.JOINT_POSITION)
-        assert joint_adapter.is_robot_action_space_supported(joint_env)
-        assert joint_adapter.is_command_valid(targets[:1].cpu().numpy())
     finally:
         env.close()
     return True
@@ -222,47 +186,3 @@ def _test_droid_joint_position_adapters(simulation_app):
 
 def test_droid_joint_position_adapters():
     assert run_function_with_persistent_simulation_app(_test_droid_joint_position_adapters)
-
-
-def _check_multi_pose_layout(env, arm, gripper):
-    import numpy as np
-    from types import SimpleNamespace
-
-    from isaaclab.envs.mdp.actions.binary_joint_actions import BinaryJointPositionAction
-
-    from isaaclab_arena_vlm_agent.action_adapter import ChunkActionAdapter
-    from isaaclab_arena_vlm_agent.commands import CommandType
-
-    # Reuse live term types to check layout discovery without requiring a second robot asset.
-    terms = {"left_pose": arm, "left_hand": gripper, "right_pose": arm, "right_hand": gripper}
-    cfg = SimpleNamespace(**{name: term.cfg for name, term in terms.items()})
-    embodiment = SimpleNamespace(get_action_cfg=lambda: cfg)
-    layout_env = SimpleNamespace(
-        unwrapped=SimpleNamespace(
-            action_manager=SimpleNamespace(
-                active_terms=list(terms),
-                get_term=terms.__getitem__,
-            )
-        )
-    )
-    adapter = ChunkActionAdapter(embodiment, CommandType.EE_POSE, chunk_size=2)
-    assert adapter.embodiment is embodiment
-    assert adapter.is_robot_action_space_supported(layout_env)
-    row = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0] * 2
-    response = adapter.response_model.model_validate({"commands": [{"values": row}] * 2})
-    commands = adapter.decode_command(response, env.unwrapped.arena_world, 0)
-    assert commands.shape == (2, 16)
-    assert adapter.is_command_valid(commands)
-    commands[1, 11:15] = 0.0
-    assert not adapter.is_command_valid(commands)
-    commands[1] = row
-    # Standard Isaac Lab binary grippers have different native input values from DROID.
-    standard_gripper = BinaryJointPositionAction(gripper.cfg, env.unwrapped)
-    terms["left_hand"] = terms["right_hand"] = standard_gripper
-    assert adapter.is_robot_action_space_supported(layout_env)
-    assert not adapter.is_command_valid(commands)
-    commands[:, 7] = -1.0
-    commands[:, 15] = 1.0
-    assert adapter.is_command_valid(commands)
-    commands[0, 15] = np.nan
-    assert not adapter.is_command_valid(commands)

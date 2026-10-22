@@ -15,6 +15,7 @@ from isaaclab.envs import ManagerBasedRLMimicEnv
 from isaaclab.managers import EventTermCfg
 
 from isaaclab_arena.embodiments.common.arm_mode import ArmMode
+from isaaclab_arena.embodiments.common.command_space import CommandSpace
 from isaaclab_arena.embodiments.gripper import Gripper
 from isaaclab_arena.relations.collision_mode import CollisionMode
 from isaaclab_arena.relations.placement_asset import PlaceableAsset
@@ -76,6 +77,8 @@ class EmbodimentBase(PlaceableAsset):
         self.scene_config: Any | None = None
         self.camera_config: Any | None = None
         self.action_config: Any | None = None
+        self.command_space: CommandSpace | None = None
+        """Declared native command contract; None means unspecified or unsupported."""
         self.observation_config: Any | None = None
         self.event_config: Any | None = None
         self.reward_config: Any | None = None

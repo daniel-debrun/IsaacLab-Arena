@@ -86,10 +86,10 @@ class AgentActionAdapter(ABC):
 
 
 class StepActionAdapter(AgentActionAdapter):
-    """Use absolute native action terms in the embodiment's configured order.
+    """Use absolute targets in the embodiment's declared command layout.
 
-    Pose terms use root-relative XYZ and XYZW. Joint terms use controller joint order.
-    Binary terms retain their controller's native open/close values.
+    Pose targets use root-relative XYZ and XYZW. Joint targets use controller joint order.
+    Binary controls retain their declared native open/close values.
     """
 
     def __init__(self, embodiment: EmbodimentBase, command_type: CommandType):
@@ -99,68 +99,26 @@ class StepActionAdapter(AgentActionAdapter):
         self._binary_values: dict[int, tuple[float, float]] = {}
 
     def is_robot_action_space_supported(self, env) -> bool:
-        """Check absolute pose or joint controllers using the embodiment's action configuration.
-
-        Term names, assets, body names, and joint counts come from the configuration.
-        Unscaled, unoffset targets are required because commands pass directly to the controller.
+        """Check the embodiment's declared command type and per-environment dimension.
 
         Args:
             env: Arena environment, optionally gym-wrapped.
         """
-        from isaaclab.envs.mdp.actions.binary_joint_actions import BinaryJointPositionAction
-        from isaaclab.envs.mdp.actions.joint_actions import JointPositionAction
-        from isaaclab.envs.mdp.actions.task_space_actions import DifferentialInverseKinematicsAction
-
         self._command_dim = None
         self._quaternion_slices = []
         self._binary_values = {}
-        action_cfg = self.embodiment.get_action_cfg()
-        manager = env.unwrapped.action_manager
-        dimension = 0
-        has_target = False
-        for name in manager.active_terms:
-            term = manager.get_term(name)
-            cfg = term.cfg
-            expected = getattr(action_cfg, name, None)
-            if expected is None or cfg.asset_name != expected.asset_name or cfg.clip is not None:
-                return False
-            if isinstance(term, BinaryJointPositionAction):
-                values = getattr(term, "binary_action_values", None)
-                if values is None and type(term).process_actions is BinaryJointPositionAction.process_actions:
-                    values = (1.0, -1.0)
-                if values is None or term.action_dim != 1:
-                    return False
-                self._binary_values[dimension] = values
-            elif self.command_type == CommandType.EE_POSE and isinstance(term, DifferentialInverseKinematicsAction):
-                if not (
-                    term.action_dim == 7
-                    and cfg.body_name == getattr(expected, "body_name", None)
-                    and cfg.controller.command_type == "pose"
-                    and not cfg.controller.use_relative_mode
-                    and np.all(np.asarray(cfg.scale) == 1.0)
-                    and cfg.body_offset is None
-                ):
-                    return False
-                self._quaternion_slices.append(slice(dimension + 3, dimension + 7))
-                has_target = True
-            elif self.command_type == CommandType.JOINT_POSITION and isinstance(term, JointPositionAction):
-                if not (
-                    term.action_dim > 0
-                    and not cfg.use_default_offset
-                    and np.all(np.asarray(cfg.scale) == 1.0)
-                    and np.all(np.asarray(cfg.offset) == 0.0)
-                ):
-                    return False
-                has_target = True
-            else:
-                return False
-            dimension += term.action_dim
-        if has_target:
-            self._command_dim = dimension
-        return has_target
+        space = self.embodiment.command_space
+        if space is None or space.command_type != self.command_type:
+            return False
+        if space.dimension <= 0 or env.unwrapped.single_action_space.shape != (space.dimension,):
+            return False
+        self._command_dim = space.dimension
+        self._quaternion_slices = [slice(offset, offset + 4) for offset in space.quaternion_offsets]
+        self._binary_values = space.binary_values
+        return True
 
     def decode_command(self, response: Command, arena_world: ArenaWorld, env_id: int) -> np.ndarray:
-        """Return absolute targets in native action-term order.
+        """Return absolute targets in declared command order.
 
         Args:
             response: Validated command values.
@@ -176,7 +134,7 @@ class StepActionAdapter(AgentActionAdapter):
         """Validate targets against the layout resolved by is_robot_action_space_supported.
 
         Args:
-            command: One command in native action-term order.
+            command: One command in declared command order.
         """
         if not (
             self._command_dim is not None
