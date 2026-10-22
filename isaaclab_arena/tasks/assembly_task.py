@@ -71,10 +71,15 @@ class AssemblyTask(TaskBase):
         )
 
     def get_task_description(self) -> str:
-        """Return the task description passed to the task, or one that names the spawned assets."""
+        """Return the task description passed to the task, or one that names the spawned assets.
+
+        Each asset is named by its registry_name, or by its name when it has none.
+        """
         if self.task_description is not None:
             return self.task_description
-        return f"Assemble the {self.held_asset.spawned_asset_name} with the {self.fixed_asset.spawned_asset_name}"
+        held_asset_label = self.held_asset.registry_name or self.held_asset.name
+        fixed_asset_label = self.fixed_asset.registry_name or self.fixed_asset.name
+        return f"Assemble the {held_asset_label} with the {fixed_asset_label}"
 
     def disable_default_pose_resets(self):
         for asset in [self.fixed_asset, self.held_asset, *self.auxiliary_asset_list]:

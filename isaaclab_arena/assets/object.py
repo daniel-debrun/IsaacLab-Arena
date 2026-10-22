@@ -76,14 +76,16 @@ class Object(RootedObjectBase):
         self.object_cfg = self._init_object_cfg()
         self._pose_event_cfg = self._build_reset_event()
 
-    def set_asset(self, spawned_asset_name: str, spawn_cfg: SpawnerCfg) -> None:
-        """Spawn the asset ``spawned_asset_name`` from ``spawn_cfg`` instead of the current asset.
+    def set_asset(self, registry_name: str, spawn_cfg: SpawnerCfg) -> None:
+        """Spawn the registered asset ``registry_name`` from ``spawn_cfg`` instead of the current asset.
+
+        The object keeps its name, and its registry_name becomes ``registry_name``.
 
         Args:
-            spawned_asset_name: Name of the asset, for example its registry name.
+            registry_name: Key of the asset's class in the asset registry.
             spawn_cfg: Spawn configuration of the asset.
         """
-        self.spawned_asset_name = spawned_asset_name
+        self.registry_name = registry_name
         self.object_cfg.spawn = spawn_cfg
 
     def get_bounding_box(self) -> AxisAlignedBoundingBox:

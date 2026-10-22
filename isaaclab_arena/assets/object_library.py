@@ -80,7 +80,6 @@ class LibraryObject(Object):
             initial_pose=initial_pose,
             spawn_cfg_addon=self.spawn_cfg_addon,
             asset_cfg_addon=self.asset_cfg_addon,
-            spawned_asset_name=type(self).name,
             **kwargs,
         )
         if self.object_type == ObjectType.RIGID:
@@ -1951,7 +1950,6 @@ class ProceduralTable(Object):
             object_type=ObjectType.RIGID,
             usd_path="",
             initial_pose=initial_pose,
-            spawned_asset_name=type(self).name,
         )
 
     def _generate_rigid_cfg(self) -> RigidObjectCfg:
@@ -2004,7 +2002,6 @@ class ProceduralCube(Object):
             object_type=ObjectType.RIGID,
             usd_path="",
             initial_pose=initial_pose,
-            spawned_asset_name=type(self).name,
         )
 
     def _generate_rigid_cfg(self) -> RigidObjectCfg:

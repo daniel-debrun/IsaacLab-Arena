@@ -584,13 +584,13 @@ def _test_pick_and_place_uses_typed_success_failure_and_timeout(simulation_app):
 
     pick_up_object = SimpleNamespace(
         name="object",
-        spawned_asset_name="object",
+        registry_name=None,
         object_type=ObjectType.RIGID,
         get_contact_sensor_cfg=Mock(return_value=ContactSensorCfg(prim_path="{ENV_REGEX_NS}/Object")),
     )
     task = PickAndPlaceTask(
         pick_up_object,
-        SimpleNamespace(name="destination", spawned_asset_name="destination", object_type=ObjectType.RIGID),
+        SimpleNamespace(name="destination", registry_name=None, object_type=ObjectType.RIGID),
         SimpleNamespace(object_min_z=-0.1),
         episode_length_s=12.0,
     )
@@ -634,7 +634,7 @@ def _test_pick_and_place_uses_typed_success_failure_and_timeout(simulation_app):
 
     held_placement_task = PickAndPlaceTask(
         pick_up_object,
-        SimpleNamespace(name="destination", spawned_asset_name="destination", object_type=ObjectType.RIGID),
+        SimpleNamespace(name="destination", registry_name=None, object_type=ObjectType.RIGID),
         SimpleNamespace(object_min_z=-0.1),
         placement_consecutive_steps=10,
     )

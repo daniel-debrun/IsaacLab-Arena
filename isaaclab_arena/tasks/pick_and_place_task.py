@@ -106,12 +106,16 @@ class PickAndPlaceTask(TaskBase):
         self.events_cfg = None
 
     def get_task_description(self) -> str:
-        """Return the task description passed to the task, or one that names the spawned assets."""
+        """Return the task description passed to the task, or one that names the spawned assets.
+
+        Each object is named by its registry_name, or by its name when it has none.
+        """
         if self.task_description is not None:
             return self.task_description
-        pick_up_asset_name = self.pick_up_object.spawned_asset_name
-        destination_asset_name = self.destination_location.spawned_asset_name
-        return f"Pick up the {pick_up_asset_name}, and place it into the {destination_asset_name}"
+        pick_up_object_label = self.pick_up_object.registry_name or self.pick_up_object.name
+        # An ObjectReference destination has no registry name.
+        destination_label = self.destination_location.registry_name or self.destination_location.name
+        return f"Pick up the {pick_up_object_label}, and place it into the {destination_label}"
 
     def apply_reachability_constraints(self) -> None:
         """The robot must reach the object it picks up and the location it places onto."""

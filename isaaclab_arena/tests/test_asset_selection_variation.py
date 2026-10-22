@@ -49,7 +49,7 @@ def make_pickup():
     """Return the registered cracker box, named ``pickup``."""
     from isaaclab_arena.assets.registries import AssetRegistry
 
-    return AssetRegistry().get_asset_by_name(DEFAULT_ASSET_NAME)(instance_name="pickup")
+    return AssetRegistry().get_asset_by_name(DEFAULT_ASSET_NAME)(name="pickup")
 
 
 def compose_pick_and_place_with_selection(
@@ -139,7 +139,9 @@ def _test_selected_asset_is_spawned_placed_recorded_and_described(simulation_app
     selection_record = env_kwargs["variation_recorder"][SELECTION_KEY]
     recorded_names = [selection_record.sample_for_episode(env_id, 0) for env_id in range(NUM_ENVS)]
     assert recorded_names == ["sugar_box"] * NUM_ENVS
-    # The pickup is named by its role, and the description names the asset it spawns.
+    # The pickup keeps the name of its role, and its registry name and the description name the selected asset.
+    assert pickup.name == "pickup"
+    assert pickup.registry_name == "sugar_box"
     assert env_cfg.task_description == "Pick up the sugar_box, and place it into the plate"
     return True
 

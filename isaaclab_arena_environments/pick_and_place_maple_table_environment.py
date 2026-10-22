@@ -53,9 +53,9 @@ class PickAndPlaceMapleTableEnvironment(ArenaEnvironmentFactory[PickAndPlaceMapl
         # Step 1: Retrieve assets from the registry
         background = self.asset_registry.get_asset_by_name("maple_table_robolab")()
         # Named by role, so variation keys such as pick_up_object.asset_selection do not depend on the asset.
-        pick_up_object = self.asset_registry.get_asset_by_name(cfg.pick_up_object)(instance_name="pick_up_object")
+        pick_up_object = self.asset_registry.get_asset_by_name(cfg.pick_up_object)(name="pick_up_object")
         destination_location = self.asset_registry.get_asset_by_name(cfg.destination_location)(
-            instance_name="destination_location"
+            name="destination_location"
         )
 
         # Step 2: Describe spatial relationships
