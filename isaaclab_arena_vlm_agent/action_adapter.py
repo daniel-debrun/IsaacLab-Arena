@@ -113,7 +113,7 @@ class StepActionAdapter(AgentActionAdapter):
         manager = env.unwrapped.action_manager
         if self.embodiment.get_command_type() != self.command_type:
             return False
-        quaternion_offsets = self.embodiment.get_quaternion_indices(env)
+        quaternion_offsets = self.embodiment.get_quaternion_indices()
         self._command_dim = manager.total_action_dim
         self._quaternion_slices = [slice(offset, offset + 4) for offset in quaternion_offsets]
         self._binary_values = self.embodiment.get_binary_action_values(env)

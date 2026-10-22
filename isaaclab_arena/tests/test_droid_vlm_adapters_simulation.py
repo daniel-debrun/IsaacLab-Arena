@@ -52,7 +52,7 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         observation_adapter = StateObservationAdapter(embodiment)
         action_adapter = StepActionAdapter(embodiment, CommandType.EE_POSE)
         assert embodiment.get_command_type() == CommandType.EE_POSE
-        assert embodiment.get_quaternion_indices(env) == (3,)
+        assert embodiment.get_quaternion_indices() == (3,)
         assert embodiment.get_binary_action_values(env) == {7: (0.0, 1.0)}
         assert action_adapter.embodiment is embodiment
         assert action_adapter.is_robot_action_space_supported(env)
@@ -171,7 +171,7 @@ def _test_droid_joint_position_adapters(simulation_app):
         assert not StepActionAdapter(embodiment, CommandType.EE_POSE).is_robot_action_space_supported(env)
         arm = base.action_manager.get_term("arm_action")
         assert embodiment.get_command_type() == CommandType.JOINT_POSITION
-        assert embodiment.get_quaternion_indices(env) == ()
+        assert embodiment.get_quaternion_indices() == ()
         assert embodiment.get_binary_action_values(env) == {arm.action_dim: (0.0, 1.0)}
         joint_names = tuple(f"panda_joint{i}" for i in range(1, 8))
         targets = base.arena_world.get_joint_positions("robot", joint_names)[:1].expand(2, -1)

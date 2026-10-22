@@ -60,7 +60,7 @@ class PoseTargetMotionGenerator(MotionGenerator):
         """
         assert self.embodiment.get_command_type() == self.command_type, "Expected absolute pose controllers"
         command_dim = env.unwrapped.action_manager.total_action_dim
-        quaternion_offsets = self.embodiment.get_quaternion_indices(env)
+        quaternion_offsets = self.embodiment.get_quaternion_indices()
         binary_values = self.embodiment.get_binary_action_values(env)
         measured = self.embodiment.get_measured_pose_and_gripper_closure(env)[env_id].detach().cpu().numpy()
         assert measured.shape == goal.shape == (command_dim,)

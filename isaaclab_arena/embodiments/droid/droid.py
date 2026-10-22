@@ -234,10 +234,6 @@ class DroidEmbodimentBase(EmbodimentBase, ABC):
         assert robot is not None, "scene_config.robot must be populated before setting the joint pose"
         robot.init_state = robot.init_state.replace(joint_pos=dict(zip(_DROID_JOINT_NAMES, initial_joint_pose)))
 
-    def get_quaternion_indices(self, env) -> tuple[int, ...]:
-        """Return the XYZW start index for absolute pose commands, or no indices for joint commands."""
-        return (3,) if self.get_command_type() == CommandType.EE_POSE else ()
-
     def get_binary_action_values(self, env) -> dict[int, tuple[float, float]]:
         """Return the gripper index and its native (open, close) inputs."""
         manager = env.unwrapped.action_manager
@@ -290,6 +286,10 @@ class DroidDifferentialIKEmbodiment(DroidEmbodimentBase):
     def get_command_type(self) -> CommandType:
         """Return the end-effector pose command type."""
         return CommandType.EE_POSE
+
+    def get_quaternion_indices(self) -> tuple[int, ...]:
+        """Return the XYZW quaternion start index in the pose command."""
+        return (3,)
 
     def get_measured_pose_and_gripper_closure(self, env) -> torch.Tensor:
         """Return root-relative command-body XYZ, XYZW, and gripper closure, shaped (num_envs, 8).
@@ -363,6 +363,10 @@ class DroidRelativeJointPositionEmbodiment(DroidEmbodimentBase):
     def get_command_type(self) -> None:
         """Return None because relative joint targets are outside the absolute-command interface."""
 
+    def get_quaternion_indices(self) -> tuple[int, ...]:
+        """Return no quaternion indices for joint commands."""
+        return ()
+
 
 @register_asset
 class DroidAbsoluteJointPositionEmbodiment(DroidEmbodimentBase):
@@ -399,6 +403,10 @@ class DroidAbsoluteJointPositionEmbodiment(DroidEmbodimentBase):
     def get_command_type(self) -> CommandType:
         """Return the absolute joint-position command type."""
         return CommandType.JOINT_POSITION
+
+    def get_quaternion_indices(self) -> tuple[int, ...]:
+        """Return no quaternion indices for joint commands."""
+        return ()
 
 
 @configclass
