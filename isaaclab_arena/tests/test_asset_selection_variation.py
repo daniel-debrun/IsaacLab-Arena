@@ -258,20 +258,29 @@ def _test_placement_replay_needs_recorded_asset_selection(simulation_app, tmp_pa
     from isaaclab_arena.scene.scene import Scene
     from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariationCfg
 
-    pickup = make_pickup()
-    pickup.get_variation("asset_selection").apply_cfg(
-        AssetSelectionVariationCfg(enabled=True, asset_names=["sugar_box"])
-    )
+    def build_replaying(record_row, record_name):
+        """Return the env_cfg of a scene holding only the pickup, with its selection on, that replays ``record_row``."""
+        pickup = make_pickup()
+        pickup.get_variation("asset_selection").apply_cfg(
+            AssetSelectionVariationCfg(enabled=True, asset_names=["mustard_bottle", "sugar_box"])
+        )
+        record_path = tmp_path / f"{record_name}.jsonl"
+        record_path.write_text(json.dumps(record_row) + "\n")
+        arena_env = IsaacLabArenaEnvironment(name=record_name, scene=Scene(assets=[pickup]))
+        builder_cfg = ArenaEnvBuilderCfg(num_envs=1, recorded_variation_samples_path=str(record_path))
+        env_cfg, _ = ArenaEnvBuilder(arena_env, builder_cfg).build_env_cfg()
+        return env_cfg
+
     # One layout row as write_placement_samples writes it: a pose for pickup and no variation values.
     pickup_pose = {"position_xyz": [0.0, 0.0, 0.05], "rotation_xyzw": [0.0, 0.0, 0.0, 1.0]}
     layout_row = {"placement": {"layout_id": "layout_000000", "poses": {"pickup": pickup_pose}}}
-    layouts_path = tmp_path / "layouts.jsonl"
-    layouts_path.write_text(json.dumps(layout_row) + "\n")
-    arena_env = IsaacLabArenaEnvironment(name="placement_replay_without_selection", scene=Scene(assets=[pickup]))
-    builder_cfg = ArenaEnvBuilderCfg(num_envs=1, recorded_variation_samples_path=str(layouts_path))
-
     with pytest.raises(AssertionError, match=r"no 'pickup\.asset_selection' value"):
-        ArenaEnvBuilder(arena_env, builder_cfg).build_env_cfg()
+        build_replaying(layout_row, "layout_without_selection")
+
+    # In order with seed 42, a live draw would take "mustard_bottle" (42 % 2 == 0).
+    layout_row_with_selection = {**layout_row, "variations": {SELECTION_KEY: "sugar_box"}}
+    env_cfg = build_replaying(layout_row_with_selection, "layout_with_selection")
+    assert env_cfg.scene.pickup.spawn.usd_path == get_registered_usd_path("sugar_box")
     return True
 
 
