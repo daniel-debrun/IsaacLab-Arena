@@ -20,38 +20,18 @@ class CommandType(str, Enum):
     """Joint positions in controller order, in radians or meters for prismatic joints."""
 
 
-class PoseCommand(BaseModel):
-    """Request absolute T_R_E (robot root R, embodiment command body E) and a binary gripper target."""
+class Command(BaseModel):
+    """Request an absolute arm target and binary gripper state."""
 
-    position_root_m: list[float] = Field(min_length=3, max_length=3)
-    """Target translation t_R_E in meters for the embodiment command body relative to robot root."""
-
-    quaternion_root_xyzw: list[float] = Field(min_length=4, max_length=4)
-    """Target rotation q_R_E as a unit quaternion in XYZW order."""
+    arm_target: list[float] = Field(min_length=1)
+    """EE_POSE: root-relative [x, y, z, qx, qy, qz, qw]; JOINT_POSITION: joints in controller order."""
 
     gripper_closed: bool
     """True closes the gripper; False opens it."""
 
 
-class PoseChunk(BaseModel):
-    """Ordered absolute pose commands, one per environment step."""
+class CommandChunk(BaseModel):
+    """Ordered commands, one per environment step."""
 
-    commands: list[PoseCommand] = Field(min_length=1)
-    """Commands in execution order; the action adapter enforces its configured chunk length."""
-
-
-class JointPositionCommand(BaseModel):
-    """Request absolute arm joint positions and a binary gripper target."""
-
-    joint_positions: list[float] = Field(min_length=1)
-    """Targets in the arm action term's resolved joint order, in radians or meters."""
-
-    gripper_closed: bool
-    """True closes the gripper; False opens it."""
-
-
-class JointPositionChunk(BaseModel):
-    """Ordered absolute joint-position commands, one per environment step."""
-
-    commands: list[JointPositionCommand] = Field(min_length=1)
-    """Commands in execution order; the action adapter enforces its configured chunk length."""
+    commands: list[Command] = Field(min_length=1)
+    """The action adapter validates each target and enforces the configured chunk length."""

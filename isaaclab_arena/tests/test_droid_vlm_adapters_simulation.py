@@ -22,7 +22,7 @@ def _test_droid_absolute_pose_adapters(simulation_app):
     from isaaclab_arena.scene.scene import Scene
     from isaaclab_arena.utils.pose import Pose
     from isaaclab_arena_vlm_agent.action_adapter import AgentActionAdapter
-    from isaaclab_arena_vlm_agent.commands import CommandType, PoseCommand
+    from isaaclab_arena_vlm_agent.commands import Command, CommandType
     from isaaclab_arena_vlm_agent.droid_motion_generator import DroidPoseMotionGenerator
     from isaaclab_arena_vlm_agent.droid_observation_adapter import DroidObservationAdapter
 
@@ -63,9 +63,8 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         states = [observation_adapter.extract_robot_state(env, obs, env_id) for env_id in range(base.num_envs)]
         actions = []
         for env_id, state in enumerate(states):
-            response = PoseCommand(
-                position_root_m=state["position_root_m"],
-                quaternion_root_xyzw=state["quaternion_root_xyzw"],
+            response = Command(
+                arm_target=state["position_root_m"] + state["quaternion_root_xyzw"],
                 gripper_closed=False,
             )
             command = action_adapter.decode_command(response, base.arena_world, env_id)
@@ -100,9 +99,8 @@ def _test_droid_absolute_pose_adapters(simulation_app):
 
         generator = DroidPoseMotionGenerator()
         for env_id, state in enumerate(measured_states):
-            response = PoseCommand(
-                position_root_m=state["position_root_m"],
-                quaternion_root_xyzw=state["quaternion_root_xyzw"],
+            response = Command(
+                arm_target=state["position_root_m"] + state["quaternion_root_xyzw"],
                 gripper_closed=False,
             )
             goal = action_adapter.decode_command(response, base.arena_world, env_id)
@@ -156,9 +154,9 @@ def _test_droid_joint_position_adapters(simulation_app):
         arm = base.action_manager.get_term("arm_action")
         joint_names = tuple(f"panda_joint{i}" for i in range(1, 8))
         targets = base.arena_world.get_joint_positions("robot", joint_names)[:1].expand(2, -1)
-        target = {"joint_positions": targets[0].tolist(), "gripper_closed": False}
-        invalid = {"joint_positions": [0.1, 0.2], "gripper_closed": False}
-        nonfinite = {"joint_positions": [float("nan")] * 7, "gripper_closed": False}
+        target = {"arm_target": targets[0].tolist(), "gripper_closed": False}
+        invalid = {"arm_target": [0.1, 0.2], "gripper_closed": False}
+        nonfinite = {"arm_target": [float("nan")] * 7, "gripper_closed": False}
         observation_adapter = DroidObservationAdapter()
         observation_adapter.build_request_content = Mock(return_value=[])
         for policy_type, adapter in (

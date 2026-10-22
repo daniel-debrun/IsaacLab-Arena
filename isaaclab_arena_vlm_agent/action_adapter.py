@@ -11,13 +11,7 @@ import numpy as np
 import torch
 from typing import TYPE_CHECKING
 
-from isaaclab_arena_vlm_agent.commands import (
-    CommandType,
-    JointPositionChunk,
-    JointPositionCommand,
-    PoseChunk,
-    PoseCommand,
-)
+from isaaclab_arena_vlm_agent.commands import Command, CommandChunk, CommandType
 from isaaclab_arena_vlm_agent.motion_generator import MotionGenerator
 from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
 
@@ -33,8 +27,10 @@ class AgentActionAdapter:
     Joint targets follow the arm action term's resolved joint order.
     """
 
+    response_model = Command
+
     def __init__(self, embodiment: EmbodimentBase, command_type: CommandType):
-        """Select the command schema independently of the robot controller.
+        """Select the command interpretation independently of the robot controller.
 
         Args:
             embodiment: Robot receiving the commands.
@@ -45,7 +41,6 @@ class AgentActionAdapter:
         """Robot defining the scene entity and, for pose commands, the command body."""
         self.command_type = command_type
         """Coordinate space of the decoded commands."""
-        self.response_model = PoseCommand if command_type == CommandType.EE_POSE else JointPositionCommand
         self._command_dim = 8 if command_type == CommandType.EE_POSE else None
 
     def is_robot_action_space_supported(self, env) -> bool:
@@ -93,9 +88,7 @@ class AgentActionAdapter:
         self._command_dim = arm.action_dim + 1 if supported else None
         return supported
 
-    def decode_command(
-        self, response: PoseCommand | JointPositionCommand, arena_world: ArenaWorld, env_id: int
-    ) -> np.ndarray:
+    def decode_command(self, response: Command, arena_world: ArenaWorld, env_id: int) -> np.ndarray:
         """Pack an absolute target followed by binary gripper closure.
 
         Args:
@@ -106,11 +99,7 @@ class AgentActionAdapter:
         Returns:
             Pose or joint-position vector, followed by zero/open or one/closed.
         """
-        if self.command_type == CommandType.EE_POSE:
-            values = [*response.position_root_m, *response.quaternion_root_xyzw]
-        else:
-            values = response.joint_positions
-        return np.asarray([*values, float(response.gripper_closed)], dtype=np.float32)
+        return np.asarray([*response.arm_target, float(response.gripper_closed)], dtype=np.float32)
 
     def is_command_valid(self, command: np.ndarray) -> bool:
         """Check dimensions, finite values, and constraints for the selected command type.
@@ -147,6 +136,8 @@ class AgentActionAdapter:
 class ChunkActionAdapter(AgentActionAdapter):
     """Execute fixed-length command sequences in the selected coordinate space."""
 
+    response_model = CommandChunk
+
     def __init__(self, embodiment: EmbodimentBase, command_type: CommandType, chunk_size: int = 1):
         """Bind fixed-length command chunks to an embodiment.
 
@@ -158,11 +149,8 @@ class ChunkActionAdapter(AgentActionAdapter):
         super().__init__(embodiment, command_type)
         assert type(chunk_size) is int and chunk_size > 0, "chunk_size must be a positive integer"
         self.chunk_size = chunk_size
-        self.response_model = PoseChunk if command_type == CommandType.EE_POSE else JointPositionChunk
 
-    def decode_command(
-        self, response: PoseChunk | JointPositionChunk, arena_world: ArenaWorld, env_id: int
-    ) -> np.ndarray:
+    def decode_command(self, response: CommandChunk, arena_world: ArenaWorld, env_id: int) -> np.ndarray:
         """Pack each validated command in execution order.
 
         Args:
