@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Build-time variation that chooses which registered rigid object an Object spawns in a build."""
+"""Build-time variation that picks the registered asset a rigid object spawns."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ class AssetSelectionVariationCfg(VariationBaseCfg):
 
 
 class AssetSelectionVariation(BuildTimeVariationBase):
-    """Choose the registered rigid object that an Object spawns; every environment of a build spawns it.
+    """Pick the registered asset a rigid object spawns; every environment of a build spawns the same asset.
 
     Args:
         rigid_object: Object whose asset the selection sets.

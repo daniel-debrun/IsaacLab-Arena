@@ -181,7 +181,7 @@ variations are sampled once and applied to asset configs before the environment 
      - Description
    * - ``AssetSelectionVariation``
      - build-time
-     - Chooses which registered rigid object an object spawns.
+     - Picks the registered asset a rigid object spawns, from a list of names, when the environment is built.
    * - ``CameraExtrinsicsVariation``
      - run-time
      - Adds a small sampled offset to a camera's nominal local position on every reset.
@@ -215,7 +215,7 @@ Asset selection
 Every rigid object of the object library (a ``LibraryObject``, such as ``rubiks_cube_hot3d_robolab``)
 has a disabled ``asset_selection`` variation. When it is enabled, each build chooses one name from its
 ``asset_names``, a list of registered rigid objects, and every parallel environment of that build
-spawns that object. While the selection is off, the object spawns its own registered asset. For
+spawns that asset. While the selection is off, the object spawns its own registered asset. For
 different objects in the environments of one build, use a
 :doc:`RigidObjectSet <../scene/concept_rigid_object_set>`, which has no ``asset_selection``.
 
