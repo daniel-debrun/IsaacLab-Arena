@@ -19,10 +19,10 @@ import pytest
 from PIL import Image
 from pydantic import ValidationError
 
-from isaaclab_arena.embodiments.common.command_space import CommandSpace
+from isaaclab_arena.embodiments.common.command_space import CommandSpace, CommandType
 from isaaclab_arena.inference.backend import build_strict_schema
 from isaaclab_arena_vlm_agent.action_adapter import ChunkActionAdapter, GoalActionAdapter, StepActionAdapter
-from isaaclab_arena_vlm_agent.commands import Command, CommandChunk, CommandType
+from isaaclab_arena_vlm_agent.commands import Command, CommandChunk
 from isaaclab_arena_vlm_agent.droid_motion_generator import DroidPoseMotionGenerator
 from isaaclab_arena_vlm_agent.observation_adapter import VLMObservationAdapter
 from isaaclab_arena_vlm_agent.vlm_agent_policy import VLMChunkPolicy, VLMGoalPolicy, VLMPolicyCfg, VLMStepPolicy

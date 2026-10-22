@@ -11,7 +11,7 @@ import numpy as np
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
-from isaaclab_arena_vlm_agent.commands import CommandType
+from isaaclab_arena.embodiments.common.command_space import CommandType
 
 if TYPE_CHECKING:
     from isaaclab_arena.environments.arena_world import ArenaWorld

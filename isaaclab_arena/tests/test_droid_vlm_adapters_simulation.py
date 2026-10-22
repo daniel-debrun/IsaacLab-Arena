@@ -14,7 +14,7 @@ def _test_droid_absolute_pose_adapters(simulation_app):
 
     from isaaclab.utils.math import combine_frame_transforms
 
-    from isaaclab_arena.embodiments.common.command_space import CommandSpace
+    from isaaclab_arena.embodiments.common.command_space import CommandSpace, CommandType
     from isaaclab_arena.embodiments.droid.droid import DroidDifferentialIKEmbodiment
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
@@ -22,7 +22,7 @@ def _test_droid_absolute_pose_adapters(simulation_app):
     from isaaclab_arena.scene.scene import Scene
     from isaaclab_arena.utils.pose import Pose
     from isaaclab_arena_vlm_agent.action_adapter import StepActionAdapter
-    from isaaclab_arena_vlm_agent.commands import Command, CommandType
+    from isaaclab_arena_vlm_agent.commands import Command
     from isaaclab_arena_vlm_agent.droid_motion_generator import DroidPoseMotionGenerator
     from isaaclab_arena_vlm_agent.observation_adapter import ObservationModality, VLMObservationAdapter
 
@@ -123,13 +123,13 @@ def _test_droid_joint_position_adapters(simulation_app):
     from types import SimpleNamespace
     from unittest.mock import Mock
 
+    from isaaclab_arena.embodiments.common.command_space import CommandType
     from isaaclab_arena.embodiments.droid.droid import DroidAbsoluteJointPositionEmbodiment
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
     from isaaclab_arena.scene.scene import Scene
     from isaaclab_arena_vlm_agent.action_adapter import ChunkActionAdapter, StepActionAdapter
-    from isaaclab_arena_vlm_agent.commands import CommandType
     from isaaclab_arena_vlm_agent.observation_adapter import ObservationModality, VLMObservationAdapter
     from isaaclab_arena_vlm_agent.vlm_agent_policy import VLMChunkPolicy, VLMPolicyCfg, VLMStepPolicy
 

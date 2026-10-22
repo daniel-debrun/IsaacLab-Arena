@@ -3,13 +3,9 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""VLM command types and response schemas."""
+"""VLM command response schemas."""
 
 from pydantic import BaseModel, Field
-
-from isaaclab_arena.embodiments.common.command_space import CommandType
-
-__all__ = ["Command", "CommandChunk", "CommandType"]
 
 
 class Command(BaseModel):

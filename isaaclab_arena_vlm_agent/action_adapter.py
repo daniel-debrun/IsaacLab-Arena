@@ -14,7 +14,8 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from isaaclab_arena_vlm_agent.commands import Command, CommandChunk, CommandType
+from isaaclab_arena.embodiments.common.command_space import CommandType
+from isaaclab_arena_vlm_agent.commands import Command, CommandChunk
 from isaaclab_arena_vlm_agent.motion_generator import MotionGenerator
 from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
 
