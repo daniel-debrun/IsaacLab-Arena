@@ -21,7 +21,6 @@ import pytest
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
-from isaaclab_arena.embodiments.common.command_type import CommandType
 from isaaclab_arena.inference.backend import InferenceBackend, build_strict_schema
 from isaaclab_arena_vlm_agent.action_adapter import AgentActionAdapter, ChunkActionAdapter, GoalActionAdapter
 from isaaclab_arena_vlm_agent.image_utils import extract_rgb_images_from_camera_observations
@@ -65,8 +64,6 @@ class ActionAdapter(AgentActionAdapter):
     response_model = JointTargetResponse
 
     def __init__(self, scale=1.0, action_dim=2):
-        super().__init__(SimpleNamespace(), CommandType.ABS_JOINT_POSITION)
-        self.response_model = JointTargetResponse
         self.scale = scale
         self.joint_names = tuple(f"joint_{i}" for i in range(action_dim))
 
@@ -270,15 +267,8 @@ class JointChunkAdapter(ChunkActionAdapter):
     def is_robot_action_space_supported(self, env):
         return env.unwrapped.action_dim > 0
 
-    def is_command_valid(self, command):
-        return bool(
-            command.ndim == 2
-            and command.shape[0] == self.chunk_size
-            and all(AgentActionAdapter.is_command_valid(self, row) for row in command)
-        )
-
     def __init__(self, chunk_size: int, action_dim=2):
-        super().__init__(SimpleNamespace(), CommandType.ABS_JOINT_POSITION, chunk_size=chunk_size)
+        super().__init__(chunk_size)
         self.joint_names = tuple(f"joint_{i}" for i in range(action_dim))
         self.response_model = create_model(
             "JointChunkResponse",
@@ -296,18 +286,14 @@ class JointChunkAdapter(ChunkActionAdapter):
 class JointGoalAdapter(GoalActionAdapter):
     response_model = JointTargetResponse
 
-    def is_robot_action_space_supported(self, env):
-        return env.unwrapped.action_dim > 0
-
-    def is_command_valid(self, command):
-        return AgentActionAdapter.is_command_valid(self, command)
-
     def __init__(self, action_dim=2, *, motion_generator=None):
         if motion_generator is None:
             motion_generator = JointMotionGenerator(action_dim=action_dim)
-        super().__init__(SimpleNamespace(), CommandType.ABS_JOINT_POSITION, motion_generator=motion_generator)
-        self.response_model = JointTargetResponse
+        super().__init__(motion_generator=motion_generator)
         self.joint_names = tuple(f"joint_{i}" for i in range(action_dim))
+
+    def is_robot_action_space_supported(self, env):
+        return env.unwrapped.action_dim > 0
 
     def decode_command(self, response, arena_world, env_id):
         positions = arena_world.get_joint_positions("robot", self.joint_names)[env_id].cpu().numpy()
@@ -318,8 +304,6 @@ class JointGoalAdapter(GoalActionAdapter):
 
 
 class JointMotionGenerator(MotionGenerator):
-    command_type = CommandType.ABS_JOINT_POSITION
-
     def __init__(self, action_dim=2, max_step=0.25):
         self.joint_names = tuple(f"joint_{i}" for i in range(action_dim))
         self.max_step = max_step
@@ -482,12 +466,6 @@ def test_goal_decoder_can_use_different_motion_generators(backend, max_step):
     assert backend.client.chat.completions.create.call_count == 2
 
 
-def test_joint_goals_require_an_explicit_motion_generator(backend):
-    adapter = GoalActionAdapter(SimpleNamespace(), CommandType.ABS_JOINT_POSITION)
-    with pytest.raises(AssertionError, match="Provide a motion_generator for non-pose goals"):
-        make_multi_step_policy(backend, adapter)
-
-
 def test_invalid_goals_are_rejected_before_motion_generation(backend):
     backend.client.chat.completions.create.return_value = response('{"target": [1]}')
     generator = JointMotionGenerator()
@@ -596,17 +574,3 @@ def test_missing_camera_keys_fail_before_inference(backend):
     with pytest.raises(AssertionError, match="camera observation key"):
         policy.get_action(*inputs())
     backend.client.chat.completions.create.assert_not_called()
-
-
-def test_action_adapter_requires_controller_compatibility_override():
-    with pytest.raises(TypeError, match="is_robot_action_space_supported"):
-        AgentActionAdapter(SimpleNamespace(), CommandType.ABS_JOINT_POSITION)
-
-
-def test_action_adapter_requires_decode_override():
-    class CompatibilityOnlyAdapter(AgentActionAdapter):
-        def is_robot_action_space_supported(self, env):
-            return True
-
-    with pytest.raises(TypeError, match="decode_command"):
-        CompatibilityOnlyAdapter(SimpleNamespace(), CommandType.ABS_JOINT_POSITION)

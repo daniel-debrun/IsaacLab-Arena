@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Check pose tracking with embodiment-defined measured state."""
+"""Check pose completion, stalled grasps, and partial episode resets."""
 
 import numpy as np
 import torch
@@ -12,78 +12,129 @@ from unittest.mock import Mock
 
 import pytest
 
-from isaaclab_arena.embodiments.common.command_type import CommandType
+from isaaclab_arena_vlm_agent.command_indices import AbsoluteCommandIndices, GripperCommandIndex, PoseCommandIndices
 from isaaclab_arena_vlm_agent.pose_target_motion_generator import PoseTargetMotionGenerator
 
 
-@pytest.mark.parametrize("binary_values", [(0.0, 1.0), (1.0, -1.0)])
-@pytest.mark.parametrize("joint_targets", [(0.1, 0.461), (0.04, 0.0)])
-def test_completion_checks_every_pose_and_unclamped_binary_state(binary_values, joint_targets):
-    row = [0, 0, 0, 0, 0, 0, 1, binary_values[1]] * 2
-    measured = torch.tensor([row, row], dtype=torch.float32)
-
-    def get_measured_joint_position(env, name):
-        native_value = measured[:, {"left_gripper": 7, "right_gripper": 15}[name]]
-        closure = (native_value - binary_values[0]) / (binary_values[1] - binary_values[0])
-        return joint_targets[0] + closure * (joint_targets[1] - joint_targets[0])
-
-    embodiment = SimpleNamespace(
-        get_measured_command_body_pose_in_root=Mock(
-            side_effect=lambda env: torch.stack((measured[:, :7], measured[:, 8:15]), dim=1)
-        ),
-        get_gripper=Mock(
-            return_value=SimpleNamespace(
-                get_measured_joint_position=get_measured_joint_position,
-                get_open_close_joint_positions=Mock(return_value=joint_targets),
-            )
-        ),
-        get_command_type=Mock(return_value=CommandType.ABS_EE_POSE),
-        get_quaternion_indices=Mock(return_value=(3, 11)),
-        get_binary_action_values=Mock(return_value={7: binary_values, 15: binary_values}),
+@pytest.fixture
+def setup(monkeypatch):
+    indices = AbsoluteCommandIndices(
+        8, (PoseCommandIndices(slice(0, 7), "robot", "tool"),), (), (GripperCommandIndex(7, "gripper", 0.0, 1.0),)
     )
-    generator = PoseTargetMotionGenerator(embodiment)
+    monkeypatch.setattr(
+        "isaaclab_arena_vlm_agent.pose_target_motion_generator.read_absolute_command_indices", lambda env: indices
+    )
+    pose = torch.tensor([[0, 0, 0, 0, 0, 0, 1]] * 2, dtype=torch.float32)
+    error, gap = torch.zeros(2), torch.zeros(2)
+    gripper = SimpleNamespace(get_closing_error_m=Mock(return_value=error), get_opening_width_m=Mock(return_value=gap))
+    goal = np.array([0, 0, 0, 0, 0, 0, 1, 1], dtype=np.float32)
     env = SimpleNamespace(
         unwrapped=SimpleNamespace(
-            action_manager=SimpleNamespace(
-                total_action_dim=16,
-                active_terms=["left_arm", "left_gripper", "right_arm", "right_gripper"],
-                action_term_dim=[7, 1, 7, 1],
-            )
+            arena_world=SimpleNamespace(get_body_pose_in_root=Mock(return_value=pose)),
+            action_manager=SimpleNamespace(action=torch.tensor(np.stack([goal, goal]))),
+            episode_length_buf=torch.ones(2, dtype=torch.long),
         )
     )
-    goal = np.asarray(row, dtype=np.float32)
+    generator = PoseTargetMotionGenerator({"gripper": gripper})
+    return generator, env, goal, pose, error, gap
+
+
+def test_pose_translation_rotation_and_independent_command(setup):
+    generator, env, goal, pose, _, _ = setup
     assert generator.goal_reached(goal, env, 0)
-    embodiment.get_measured_command_body_pose_in_root.assert_called_with(env)
-    measured[1, 8] = 0.2  # Only the second pose in environment 1 misses its target.
+    env.unwrapped.arena_world.get_body_pose_in_root.assert_called_with("robot", "tool")
+    pose[1, 0] = 0.2
     assert not generator.goal_reached(goal, env, 1)
-    measured[1, 8] = 0
-    measured[1, 11:15] *= -1  # Equivalent quaternion sign must not prevent completion.
+    pose[1, 0] = 0
+    pose[1, 3:] *= -1
     assert generator.goal_reached(goal, env, 1)
-    # Overshoot stays visible regardless of the native binary input convention.
-    measured[1, 15] += 0.2 * (binary_values[1] - binary_values[0])
+    pose[1, 3:] = torch.tensor([0, 0, 1, 0])
     assert not generator.goal_reached(goal, env, 1)
-    assert generator.goal_reached(goal, env, 0)
     command = generator.compute_command(goal, env, 0)
     np.testing.assert_array_equal(command, goal)
     assert not np.shares_memory(command, goal)
 
 
-@pytest.mark.parametrize("invalid_state", [[0] * 7, [float("nan")] * 7])
-def test_pose_only_layout_rejects_invalid_measured_rotation(invalid_state):
-    measured = torch.tensor([[0, 0, 0, 0, 0, 0, 1]], dtype=torch.float32)
-    embodiment = SimpleNamespace(
-        get_measured_command_body_pose_in_root=Mock(return_value=measured),
-        get_command_type=Mock(return_value=CommandType.ABS_EE_POSE),
-        get_quaternion_indices=Mock(return_value=(3,)),
-        get_binary_action_values=Mock(return_value={}),
-    )
-    generator = PoseTargetMotionGenerator(embodiment)
-    env = SimpleNamespace(
-        unwrapped=SimpleNamespace(
-            action_manager=SimpleNamespace(total_action_dim=7, active_terms=["arm"], action_term_dim=[7])
-        )
-    )
-    goal = measured[0].numpy().copy()
-    assert generator.goal_reached(goal, env, 0)
-    measured[0] = torch.tensor(invalid_state)
+@pytest.mark.parametrize("invalid", [[0] * 7, [float("nan")] * 7])
+def test_invalid_pose_cannot_complete(setup, invalid):
+    generator, env, goal, pose, _, _ = setup
+    pose[0] = torch.tensor(invalid)
     assert not generator.goal_reached(goal, env, 0)
+
+
+def test_closed_grasp_completes_after_stall_but_not_while_moving(setup):
+    generator, env, goal, _, error, gap = setup
+    error[0], gap[0] = 0.02, 0.04
+    assert not generator.goal_reached(goal, env, 0)
+    for _ in range(5):
+        env.unwrapped.episode_length_buf[0] += 1
+        gap[0] -= 0.001
+        assert not generator.goal_reached(goal, env, 0)
+    # A blocked grasp remains wider than fully closed, but stops changing.
+    for _ in range(5):
+        assert not generator.goal_reached(goal, env, 0)  # Repeated queries do not count as steps.
+    env.unwrapped.episode_length_buf[0] += 3
+    assert not generator.goal_reached(goal, env, 0)  # Skipped observations cannot establish stillness.
+    for index in range(generator.stall_steps):
+        env.unwrapped.episode_length_buf[0] += 1
+        assert generator.goal_reached(goal, env, 0) == (index == generator.stall_steps - 1)
+    assert generator.goal_reached(goal, env, 1)  # Other environments have independent state.
+    env.unwrapped.episode_length_buf[0] = 0
+    assert not generator.goal_reached(goal, env, 0)
+
+
+def test_open_goal_needs_target_and_cannot_use_a_stall(setup):
+    generator, env, goal, _, error, gap = setup
+    goal[7] = 0
+    error[0], gap[0] = -0.02, 0.04
+    env.unwrapped.action_manager.action[0, 7] = 0
+    for _ in range(6):
+        env.unwrapped.episode_length_buf[0] += 1
+        assert not generator.goal_reached(goal, env, 0)
+    error[0] = 0
+    assert generator.goal_reached(goal, env, 0)
+    goal[7] = 1
+    assert not generator.goal_reached(goal, env, 0)  # The old open command cannot complete a new close goal.
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf")])
+def test_nonfinite_gripper_measurements_do_not_complete(setup, value):
+    generator, env, goal, _, error, _ = setup
+    error[0] = value
+    assert not generator.goal_reached(goal, env, 0)
+
+
+def test_pose_generator_rejects_joint_controllers_before_execution(setup, monkeypatch):
+    generator, env, goal, _, _, _ = setup
+    indices = AbsoluteCommandIndices(8, (), (slice(0, 8),), ())
+    monkeypatch.setattr(
+        "isaaclab_arena_vlm_agent.pose_target_motion_generator.read_absolute_command_indices", lambda env: indices
+    )
+    with pytest.raises(AssertionError, match="Expected absolute pose controllers"):
+        generator.compute_command(goal, env, 0)
+
+
+def test_each_controlled_body_must_reach_its_target(setup, monkeypatch):
+    generator, env, goal, pose, _, _ = setup
+    indices = AbsoluteCommandIndices(
+        14,
+        (
+            PoseCommandIndices(slice(0, 7), "left_robot", "left_tool"),
+            PoseCommandIndices(slice(7, 14), "right_robot", "right_tool"),
+        ),
+        (),
+        (),
+    )
+    monkeypatch.setattr(
+        "isaaclab_arena_vlm_agent.pose_target_motion_generator.read_absolute_command_indices", lambda env: indices
+    )
+    right_pose = pose.clone()
+    right_pose[0, 0] += 0.2
+    env.unwrapped.arena_world.get_body_pose_in_root.side_effect = lambda asset, body: (
+        pose if asset == "left_robot" else right_pose
+    )
+    target = np.concatenate([goal[:7], goal[:7]])
+    assert not generator.goal_reached(target, env, 0)
+    assert generator.goal_reached(target, env, 1)
+    right_pose[0, 0] = 0
+    assert generator.goal_reached(target, env, 0)

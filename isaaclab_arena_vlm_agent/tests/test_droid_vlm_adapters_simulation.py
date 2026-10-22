@@ -14,14 +14,13 @@ def _test_droid_absolute_pose_adapters(simulation_app):
 
     from isaaclab.utils.math import combine_frame_transforms
 
-    from isaaclab_arena.embodiments.common.command_type import CommandType
     from isaaclab_arena.embodiments.droid.droid import DroidDifferentialIKEmbodiment
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
     from isaaclab_arena.scene.scene import Scene
     from isaaclab_arena.utils.pose import Pose
-    from isaaclab_arena_vlm_agent.action_adapter import StepActionAdapter
+    from isaaclab_arena_vlm_agent.absolute_action_adapter import AbsoluteStepActionAdapter
     from isaaclab_arena_vlm_agent.commands import Command
     from isaaclab_arena_vlm_agent.observation_adapter import StateObservationAdapter
     from isaaclab_arena_vlm_agent.pose_target_motion_generator import PoseTargetMotionGenerator
@@ -50,8 +49,7 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         obs, _ = env.reset()
         base = env.unwrapped
         observation_adapter = StateObservationAdapter(embodiment)
-        action_adapter = StepActionAdapter(embodiment, CommandType.ABS_EE_POSE)
-        assert embodiment.get_binary_action_values(env) == {7: (0.0, 1.0)}
+        action_adapter = AbsoluteStepActionAdapter()
         assert action_adapter.is_robot_action_space_supported(env)
         states = [observation_adapter.extract_robot_state(env, obs, env_id) for env_id in range(base.num_envs)]
         actions = []
@@ -63,7 +61,7 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         actions = torch.stack(actions)
         assert actions.shape == (2, 8)
         T_R_E = actions[:, :7]
-        torch.testing.assert_close(embodiment.get_measured_command_body_pose_in_root(env), T_R_E)
+        torch.testing.assert_close(base.arena_world.get_body_pose_in_root("robot", "base_link"), T_R_E)
         T_W_R = base.arena_world.get_pose_w("robot")
         t_W_E, q_W_E = combine_frame_transforms(T_W_R[:, :3], T_W_R[:, 3:], T_R_E[:, :3], T_R_E[:, 3:])
         torch.testing.assert_close(
@@ -88,13 +86,13 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         for env_id, state in enumerate(measured_states):
             assert abs(state["policy"]["gripper_pos"][0] - obs["policy"]["gripper_pos"][env_id, 0].item()) < 1e-6
 
-        generator = PoseTargetMotionGenerator(embodiment)
+        generator = PoseTargetMotionGenerator({"gripper_action": embodiment.get_gripper()})
         for env_id, state in enumerate(measured_states):
             pose = state["command_body_poses"]["arm_action"]
             response = Command(values=pose["position_root_m"] + pose["quaternion_root_xyzw"] + [0.0])
             goal = action_adapter.decode_command(response, base.arena_world, env_id)
             assert generator.goal_reached(goal, env, env_id) == (
-                abs(state["policy"]["gripper_pos"][0]) <= generator.gripper_tolerance
+                abs(float(embodiment.get_gripper().get_closing_error_m(base)[env_id])) <= generator.gripper_tolerance_m
             )
             goal[0] += 0.1
             assert not generator.goal_reached(goal, env, env_id)
@@ -111,13 +109,12 @@ def test_droid_absolute_pose_adapters():
 def _test_droid_joint_position_adapters(simulation_app):
     import torch
 
-    from isaaclab_arena.embodiments.common.command_type import CommandType
     from isaaclab_arena.embodiments.droid.droid import DroidAbsoluteJointPositionEmbodiment
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
     from isaaclab_arena.scene.scene import Scene
-    from isaaclab_arena_vlm_agent.action_adapter import StepActionAdapter
+    from isaaclab_arena_vlm_agent.absolute_action_adapter import AbsoluteStepActionAdapter
     from isaaclab_arena_vlm_agent.commands import Command
 
     embodiment = DroidAbsoluteJointPositionEmbodiment()
@@ -126,7 +123,7 @@ def _test_droid_joint_position_adapters(simulation_app):
     try:
         env.reset()
         base = env.unwrapped
-        adapter = StepActionAdapter(embodiment, CommandType.ABS_JOINT_POSITION)
+        adapter = AbsoluteStepActionAdapter()
         assert adapter.is_robot_action_space_supported(env)
         joint_names = tuple(f"panda_joint{i}" for i in range(1, 8))
         targets = base.arena_world.get_joint_positions("robot", joint_names)
@@ -147,3 +144,68 @@ def _test_droid_joint_position_adapters(simulation_app):
 
 def test_droid_joint_position_adapters():
     assert run_function_with_persistent_simulation_app(_test_droid_joint_position_adapters)
+
+
+def _test_absolute_controller_compatibility(simulation_app):
+    from types import SimpleNamespace
+
+    from isaaclab.envs.mdp.actions.binary_joint_actions import BinaryJointPositionAction
+    from isaaclab.envs.mdp.actions.joint_actions import JointPositionAction, RelativeJointPositionAction
+    from isaaclab.envs.mdp.actions.task_space_actions import DifferentialInverseKinematicsAction
+
+    from isaaclab_arena.embodiments.droid.actions import BinaryJointPositionZeroToOneAction
+    from isaaclab_arena_vlm_agent.command_indices import read_absolute_command_indices
+
+    def term(cls, **kwargs):
+        value = object.__new__(cls)
+        value.cfg = SimpleNamespace(clip=None, **kwargs)
+        return value
+
+    arm = term(
+        DifferentialInverseKinematicsAction,
+        controller=SimpleNamespace(command_type="pose", use_relative_mode=False),
+        scale=1.0,
+        body_offset=None,
+        asset_name="robot",
+        body_name="tool",
+    )
+    gripper = term(BinaryJointPositionZeroToOneAction)
+    terms = {"arm": arm, "gripper": gripper}
+    manager = SimpleNamespace(
+        active_terms=["arm", "gripper"], action_term_dim=[7, 1], total_action_dim=8, get_term=lambda name: terms[name]
+    )
+    env = SimpleNamespace(unwrapped=SimpleNamespace(action_manager=manager))
+    indices = read_absolute_command_indices(env)
+    assert indices.poses[0].columns == slice(0, 7)
+    assert indices.grippers[0].column == 7
+    assert (indices.grippers[0].open_value, indices.grippers[0].close_value) == (0, 1)
+    for name, value in [("scale", 0.5), ("scale", (1, 1, 1, 1, 1, 1, 0.5)), ("body_offset", object()), ("clip", {})]:
+        original = getattr(arm.cfg, name)
+        setattr(arm.cfg, name, value)
+        assert read_absolute_command_indices(env) is None
+        setattr(arm.cfg, name, original)
+    arm.cfg.controller.use_relative_mode = True
+    assert read_absolute_command_indices(env) is None
+    arm.cfg.controller.use_relative_mode = False
+    arm.cfg.controller.command_type = "position"
+    assert read_absolute_command_indices(env) is None
+    arm.cfg.controller.command_type = "pose"
+    terms["gripper"] = term(BinaryJointPositionAction)
+    indices = read_absolute_command_indices(env)
+    assert (indices.grippers[0].open_value, indices.grippers[0].close_value) == (1, -1)
+    terms["arm"] = term(JointPositionAction, use_default_offset=False, scale=1.0, offset=0.0)
+    assert read_absolute_command_indices(env).joints == (slice(0, 7),)
+    for name, value in [("use_default_offset", True), ("scale", {".*": 0.5}), ("offset", {".*": 0.1})]:
+        original = getattr(terms["arm"].cfg, name)
+        setattr(terms["arm"].cfg, name, value)
+        assert read_absolute_command_indices(env) is None
+        setattr(terms["arm"].cfg, name, original)
+    terms["arm"] = term(RelativeJointPositionAction, scale=1.0, offset=0.0)
+    assert read_absolute_command_indices(env) is None
+    terms["arm"] = SimpleNamespace(cfg=SimpleNamespace(clip=None))
+    assert read_absolute_command_indices(env) is None
+    return True
+
+
+def test_absolute_controller_compatibility():
+    assert run_function_with_persistent_simulation_app(_test_absolute_controller_compatibility)

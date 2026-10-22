@@ -9,9 +9,6 @@ from isaaclab.envs.mdp.actions.binary_joint_actions import BinaryJointPositionAc
 
 
 class BinaryJointPositionZeroToOneAction(BinaryJointPositionAction):
-    binary_action_values = (0.0, 1.0)
-    """Native open and close inputs used by process_actions."""
-
     # override
     def process_actions(self, actions: torch.Tensor):
         # store the raw actions

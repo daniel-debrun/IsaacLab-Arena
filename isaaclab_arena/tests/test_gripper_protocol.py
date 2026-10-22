@@ -117,7 +117,6 @@ def test_robotiq_gripper_measurement_sources_are_independent() -> None:
 
 def _test_robotiq_gripper_encapsulates_driver_joint_and_body_point_details(_simulation_app) -> bool:
     import torch
-    from types import SimpleNamespace
 
     from isaaclab_arena.embodiments.gripper import RobotiqGripper
 
@@ -135,20 +134,6 @@ def _test_robotiq_gripper_encapsulates_driver_joint_and_body_point_details(_simu
         gripper.get_position_w(world),
         torch.tensor([[0.2, 0.2, 0.457], [0.4, 0.3, 0.657]]),
     )
-    cfg = SimpleNamespace(
-        asset_name="robot",
-        open_command_expr={"left_driver_joint": 0.0},
-        close_command_expr={"left_driver_joint": 0.4},
-    )
-    terms = {"left_gripper": SimpleNamespace(cfg=cfg, binary_action_values=(1.0, -1.0))}
-    manager = SimpleNamespace(
-        get_term=terms.__getitem__, active_terms=["base", "left_arm", "left_gripper"], action_term_dim=[3, 7, 1]
-    )
-    env = SimpleNamespace(unwrapped=SimpleNamespace(arena_world=world, action_manager=manager))
-    assert gripper.get_binary_action_values(env, "left_gripper") == {10: (1.0, -1.0)}
-    # Measured radians remain unclamped beyond the configured closed target.
-    torch.testing.assert_close(gripper.get_measured_joint_position(env, "left_gripper"), torch.tensor([0.0, 0.8]))
-    assert gripper.get_open_close_joint_positions(env, "left_gripper") == (0.0, 0.4)
     return True
 
 

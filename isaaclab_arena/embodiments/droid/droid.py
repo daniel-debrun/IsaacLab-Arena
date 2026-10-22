@@ -35,7 +35,6 @@ from isaaclab.utils.configclass import configclass
 from isaaclab_arena.assets.nucleus import ARENA_NUCLEUS_DIR
 from isaaclab_arena.assets.register import register_asset
 from isaaclab_arena.embodiments.common.arm_mode import ArmMode
-from isaaclab_arena.embodiments.common.command_type import CommandType
 from isaaclab_arena.embodiments.droid.actions import BinaryJointPositionZeroToOneAction
 from isaaclab_arena.embodiments.droid.observations import (
     _DROID_NEWTON_GRIPPER_CLOSE_RAD,
@@ -57,7 +56,6 @@ from isaaclab_arena.utils.pose import Pose
 
 if TYPE_CHECKING:
     import trimesh
-
 
 _DROID_ROBOT_PRIM = RobotPrimSpec(
     robot_usd_path=f"{ARENA_NUCLEUS_DIR}/Arena/assets/robot_library/droid/franka_robotiq_2f_85_flattened.usd",
@@ -234,10 +232,6 @@ class DroidEmbodimentBase(EmbodimentBase, ABC):
         assert robot is not None, "scene_config.robot must be populated before setting the joint pose"
         robot.init_state = robot.init_state.replace(joint_pos=dict(zip(_DROID_JOINT_NAMES, initial_joint_pose)))
 
-    def get_binary_action_values(self, env) -> dict[int, tuple[float, float]]:
-        """Return the gripper index and its native (open, close) inputs."""
-        return self.get_gripper().get_binary_action_values(env, "gripper_action")
-
     def get_ee_frame_name(self, arm_mode: ArmMode) -> str:
         return "ee_frame"
 
@@ -279,22 +273,6 @@ class DroidDifferentialIKEmbodiment(DroidEmbodimentBase):
             collision_mode=collision_mode,
         )
         self.action_config = DroidDifferentialIKActionsCfg()
-
-    def get_command_type(self) -> CommandType:
-        """Return the end-effector pose command type."""
-        return CommandType.ABS_EE_POSE
-
-    def get_quaternion_indices(self) -> tuple[int, ...]:
-        """Return the XYZW quaternion start index in the pose command."""
-        return (3,)
-
-    def get_measured_command_body_pose_in_root(self, env) -> torch.Tensor:
-        """Return root-relative command-body XYZ and XYZW, shaped (num_envs, 7).
-
-        Args:
-            env: Arena environment, optionally gym-wrapped.
-        """
-        return env.unwrapped.arena_world.get_body_pose_in_root(self.get_scene_key(), self.get_command_body_name())
 
     def _configure_physics_backend(self, backend: PhysicsBackend) -> None:
         """Apply shared Newton spawn setup, then diff-IK-specific Newton tuning."""
@@ -344,13 +322,6 @@ class DroidRelativeJointPositionEmbodiment(DroidEmbodimentBase):
         )
         self.action_config = DroidRelativeJointPositionActionsCfg()
 
-    def get_command_type(self) -> None:
-        """Return None because relative joint targets are outside the absolute-command interface."""
-
-    def get_quaternion_indices(self) -> tuple[int, ...]:
-        """Return no quaternion indices for joint commands."""
-        return ()
-
 
 @register_asset
 class DroidAbsoluteJointPositionEmbodiment(DroidEmbodimentBase):
@@ -383,14 +354,6 @@ class DroidAbsoluteJointPositionEmbodiment(DroidEmbodimentBase):
             collision_mode=collision_mode,
         )
         self.action_config = DroidAbsoluteJointPositionActionsCfg()
-
-    def get_command_type(self) -> CommandType:
-        """Return the absolute joint-position command type."""
-        return CommandType.ABS_JOINT_POSITION
-
-    def get_quaternion_indices(self) -> tuple[int, ...]:
-        """Return no quaternion indices for joint commands."""
-        return ()
 
 
 @configclass

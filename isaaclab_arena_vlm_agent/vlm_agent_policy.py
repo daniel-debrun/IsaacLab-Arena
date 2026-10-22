@@ -18,13 +18,11 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
 
-from isaaclab_arena.embodiments.common.command_type import CommandType
 from isaaclab_arena.inference.backend import InferenceBackend, InferenceRequest, build_strict_schema
 from isaaclab_arena.policy.policy_base import PolicyBase, PolicyCfg
 from isaaclab_arena_vlm_agent.action_adapter import AgentActionAdapter, ChunkActionAdapter, GoalActionAdapter
 from isaaclab_arena_vlm_agent.image_utils import image_to_jpeg_data_url
 from isaaclab_arena_vlm_agent.observation_adapter import VLMObservationAdapter
-from isaaclab_arena_vlm_agent.pose_target_motion_generator import PoseTargetMotionGenerator
 from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
 
 if TYPE_CHECKING:
@@ -84,7 +82,7 @@ class VLMPolicy(PolicyBase[VLMPolicyCfg]):
         observation_adapter: VLMObservationAdapter,
         action_adapter: AgentActionAdapter,
     ):
-        """Create a policy with a shared inference backend and configurable adapters.
+        """Create a policy with a shared inference backend and stateless adapters.
 
         Args:
             config: Prompt, image encoding, and action-validation settings.
@@ -246,7 +244,7 @@ class VLMChunkPolicy(VLMPolicy):
 
 
 class VLMGoalPolicy(VLMPolicy, PolicyBase[VLMGoalPolicyCfg]):
-    """Execute goals until completion or a step limit, defaulting to pose-target tracking for absolute poses."""
+    """Use a motion generator to execute decoded goals until completion or a step limit."""
 
     def __init__(
         self,
@@ -257,11 +255,6 @@ class VLMGoalPolicy(VLMPolicy, PolicyBase[VLMGoalPolicyCfg]):
         action_adapter: GoalActionAdapter,
     ):
         assert isinstance(action_adapter, GoalActionAdapter)
-        if action_adapter.motion_generator is None:
-            assert (
-                action_adapter.command_type == CommandType.ABS_EE_POSE
-            ), "Provide a motion_generator for non-pose goals"
-            action_adapter.motion_generator = PoseTargetMotionGenerator(action_adapter.embodiment)
         super().__init__(
             config,
             inference_backend=inference_backend,

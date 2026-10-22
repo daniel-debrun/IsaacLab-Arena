@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Hold absolute pose targets using embodiment-provided state feedback."""
+"""Track absolute pose targets and grippers using live controller and scene state."""
 
 from __future__ import annotations
 
@@ -11,104 +11,128 @@ import math
 import numpy as np
 from typing import TYPE_CHECKING
 
-from isaaclab_arena.embodiments.common.command_type import CommandType
+from isaaclab_arena_vlm_agent.command_indices import read_absolute_command_indices
 from isaaclab_arena_vlm_agent.motion_generator import MotionGenerator
 
 if TYPE_CHECKING:
-    from isaaclab_arena.embodiments.embodiment_base import EmbodimentBase
+    from isaaclab_arena.embodiments.gripper import Gripper
 
 
 class PoseTargetMotionGenerator(MotionGenerator):
-    """Hold an absolute IK target until measured pose and gripper tolerances are met."""
-
-    command_type = CommandType.ABS_EE_POSE
+    """Hold absolute pose targets until pose and gripper completion conditions are met."""
 
     def __init__(
         self,
-        embodiment: EmbodimentBase,
+        grippers: dict[str, Gripper] | None = None,
         position_tolerance_m: float = 0.01,
         rotation_tolerance_rad: float = 0.1,
-        gripper_tolerance: float = 0.1,
+        gripper_tolerance_m: float = 0.001,
+        stall_margin_m: float = 0.001,
+        stall_motion_tolerance_m: float = 0.0001,
+        stall_steps: int = 3,
     ):
-        """Configure pose tracking and normalized binary-control completion tolerances.
+        """Configure pose accuracy and closed-gripper stall detection.
 
         Args:
-            embodiment: Robot supplying root-relative command-body poses, gripper measurements,
-                and command metadata. Multiple poses follow quaternion-index order.
+            grippers: Gripper measurements keyed by binary action term name; omit for pose-only robots.
             position_tolerance_m: Maximum translation error per pose.
             rotation_tolerance_rad: Maximum shortest rotation error per pose.
-            gripper_tolerance: Maximum error as a fraction of each binary control's range.
+            gripper_tolerance_m: Maximum absolute measured-minus-commanded finger displacement.
+            stall_margin_m: Minimum closing error for a gripper blocked before its closed target.
+            stall_motion_tolerance_m: Maximum change in opening width per step during a stall.
+            stall_steps: Consecutive stationary steps required to accept a blocked closing goal.
         """
         assert math.isfinite(position_tolerance_m) and position_tolerance_m > 0
         assert math.isfinite(rotation_tolerance_rad) and 0 < rotation_tolerance_rad <= math.pi
-        assert math.isfinite(gripper_tolerance) and 0 < gripper_tolerance < 0.5
-        self.embodiment = embodiment
+        assert math.isfinite(gripper_tolerance_m) and gripper_tolerance_m > 0
+        assert math.isfinite(stall_margin_m) and stall_margin_m >= gripper_tolerance_m
+        assert math.isfinite(stall_motion_tolerance_m) and stall_motion_tolerance_m >= 0
+        assert type(stall_steps) is int and stall_steps > 0
+        self.grippers = dict(grippers or {})
         self.position_tolerance_m = position_tolerance_m
         self.rotation_tolerance_rad = rotation_tolerance_rad
-        self.gripper_tolerance = gripper_tolerance
+        self.gripper_tolerance_m = gripper_tolerance_m
+        self.stall_margin_m = stall_margin_m
+        self.stall_motion_tolerance_m = stall_motion_tolerance_m
+        self.stall_steps = stall_steps
+        self._gripper_history: dict[tuple[int, int, str], tuple[bytes, int, float, int]] = {}
 
     def goal_reached(self, goal: np.ndarray, env, env_id: int) -> bool:
-        """Compare the target to measured translation, rotation, and gripper closure.
+        """Check measured poses and accept grippers at target or stably blocked while closing.
 
         Args:
-            goal: Validated target in native controller order.
+            goal: Validated absolute target in native controller order.
             env: Arena environment, optionally gym-wrapped.
             env_id: Environment index within the batched world state.
 
         Returns:
-            Whether every pose and binary control is within its configured tolerance.
+            Whether all poses and grippers have completed the requested command.
         """
-        assert self.embodiment.get_command_type() == self.command_type, "Expected absolute pose controllers"
-        assert goal.shape == (env.unwrapped.action_manager.total_action_dim,)
-        return self._poses_reached(goal, env, env_id) and self._grippers_reached(goal, env, env_id)
+        indices = self._command_indices(goal, env)
+        poses_reached = self._poses_reached(goal, env, env_id, indices)
+        grippers_reached = self._grippers_reached(goal, env, env_id, indices)
+        return poses_reached and grippers_reached
 
-    def _poses_reached(self, goal: np.ndarray, env, env_id: int) -> bool:
-        """Check every measured command-body pose against translation and rotation tolerances."""
-        quaternion_offsets = self.embodiment.get_quaternion_indices()
-        poses = (
-            self.embodiment.get_measured_command_body_pose_in_root(env)[env_id].detach().cpu().numpy().reshape(-1, 7)
-        )
-        assert poses.shape == (len(quaternion_offsets), 7)
-        if not np.isfinite(poses).all():
-            return False
-        for pose, offset in zip(poses, quaternion_offsets):
-            pose_start = offset - 3
-            target_pose = goal[pose_start : offset + 4]
-            if _position_error_m(pose[:3], target_pose[:3]) > self.position_tolerance_m:
+    def _command_indices(self, goal, env):
+        """Check that the target uses supported pose controllers and known gripper measurements."""
+        indices = read_absolute_command_indices(env)
+        assert indices is not None and indices.poses and not indices.joints, "Expected absolute pose controllers"
+        assert goal.shape == (indices.action_dim,)
+        for command in indices.grippers:
+            assert command.term_name in self.grippers, f"Provide gripper measurements for {command.term_name}"
+        return indices
+
+    def _poses_reached(self, goal, env, env_id, indices) -> bool:
+        """Compare controlled bodies to their root-relative XYZ/XYZW targets."""
+        for command in indices.poses:
+            pose = env.unwrapped.arena_world.get_body_pose_in_root(command.asset_name, command.body_name)
+            pose = pose[env_id].detach().cpu().numpy()
+            target = goal[command.columns]
+            if not np.isfinite(pose).all():
                 return False
-            if _rotation_error_rad(pose[3:7], target_pose[3:7]) > self.rotation_tolerance_rad:
+            if _position_error_m(pose[:3], target[:3]) > self.position_tolerance_m:
+                return False
+            if _rotation_error_rad(pose[3:], target[3:]) > self.rotation_tolerance_rad:
                 return False
         return True
 
-    def _grippers_reached(self, goal: np.ndarray, env, env_id: int) -> bool:
-        """Check every gripper against its normalized joint-travel tolerance."""
-        manager = env.unwrapped.action_manager
-        binary_values = self.embodiment.get_binary_action_values(env)
-        action_names = {}
-        action_index = 0
-        for name, dimension in zip(manager.active_terms, manager.action_term_dim):
-            action_names[action_index] = name
-            action_index += dimension
-        for index, (open_value, closed_value) in binary_values.items():
-            closure = self._get_gripper_closure_fraction(env, action_names[index], env_id)
-            if not math.isfinite(closure):
-                return False
-            # Normalize the target to 0=open and 1=closed; retain measured physical overshoot.
-            target_closure = (float(goal[index]) - open_value) / (closed_value - open_value)
-            gripper_error = abs(target_closure - closure)
-            if gripper_error > self.gripper_tolerance:
-                return False
-        return True
-
-    def _get_gripper_closure_fraction(self, env, action_name: str, env_id: int) -> float:
-        """Return dimensionless joint-travel closure: 0=open, 1=closed, with overshoot preserved."""
-        gripper = self.embodiment.get_gripper()
-        measured = gripper.get_measured_joint_position(env, action_name)[env_id].item()
-        open_position, closed_position = gripper.get_open_close_joint_positions(env, action_name)
-        return (measured - open_position) / (closed_position - open_position)
+    def _grippers_reached(self, goal, env, env_id, indices) -> bool:
+        """Use existing gripper measurements, requiring sustained stillness for blocked closing."""
+        base = env.unwrapped
+        reached = True
+        for command in indices.grippers:
+            gripper = self.grippers[command.term_name]
+            error = float(gripper.get_closing_error_m(base)[env_id])
+            gap = float(gripper.get_opening_width_m(base.arena_world)[env_id])
+            step = int(base.episode_length_buf[env_id])
+            key = (id(base), env_id, command.term_name)
+            previous = self._gripper_history.get(key)
+            target = goal.tobytes()
+            stationary_steps = 0
+            if previous is not None:
+                previous_target, previous_step, previous_gap, previous_count = previous
+                if target == previous_target and step == previous_step:
+                    stationary_steps = previous_count
+                elif target == previous_target and step == previous_step + 1:
+                    if abs(gap - previous_gap) <= self.stall_motion_tolerance_m:
+                        stationary_steps = previous_count + 1
+            self._gripper_history[key] = (target, step, gap, stationary_steps)
+            # Closing error refers to the last applied command, which must match this goal.
+            applied = float(base.action_manager.action[env_id, command.column])
+            if not (math.isfinite(error) and math.isfinite(gap) and applied == goal[command.column]):
+                reached = False
+                continue
+            at_target = abs(error) <= self.gripper_tolerance_m
+            blocked_closing = (
+                goal[command.column] == command.close_value
+                and error > self.stall_margin_m
+                and stationary_steps >= self.stall_steps
+            )
+            reached = reached and (at_target or blocked_closing)
+        return reached
 
     def compute_command(self, goal: np.ndarray, env, env_id: int) -> np.ndarray:
-        """Hold the absolute target while the environment's IK controller tracks measured state.
+        """Return an independent copy of the absolute pose command to hold.
 
         Args:
             goal: Validated target in native controller order.
@@ -116,8 +140,9 @@ class PoseTargetMotionGenerator(MotionGenerator):
             env_id: Environment index within the batched world state.
 
         Returns:
-            An independent absolute pose command for the next environment step.
+            The absolute target for the next environment step.
         """
+        self._command_indices(goal, env)
         return goal.copy()
 
 

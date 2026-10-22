@@ -36,38 +36,6 @@ def _robotiq_jaw_gap_m(driver_position: torch.Tensor) -> torch.Tensor:
 class Gripper(Protocol):
     """Gripper state exposed to embodiment-agnostic tasks."""
 
-    def get_binary_action_values(self, env, action_name: str) -> dict[int, tuple[float, float]]:
-        """Map the gripper's action-tensor index to its native (open, close) input values.
-
-        Args:
-            env: Arena environment, optionally gym-wrapped.
-            action_name: Binary gripper action term exposing binary_action_values.
-        """
-        manager = env.unwrapped.action_manager
-        term_index = manager.active_terms.index(action_name)
-        action_index = sum(manager.action_term_dim[:term_index])
-        return {action_index: manager.get_term(action_name).binary_action_values}
-
-    def get_measured_joint_position(self, env, action_name: str) -> torch.Tensor:
-        """Return the driven joint's measured position, shaped (num_envs,).
-
-        Positions use radians for revolute joints and meters for prismatic joints.
-
-        Args:
-            env: Arena environment, optionally gym-wrapped.
-            action_name: Gripper action term identifying the robot.
-        """
-        raise NotImplementedError(f"{type(self).__name__} does not expose a driven joint position.")
-
-    def get_open_close_joint_positions(self, env, action_name: str) -> tuple[float, float]:
-        """Return configured (open, closed) targets in the measured joint's units: radians or meters.
-
-        Args:
-            env: Arena environment, optionally gym-wrapped.
-            action_name: Gripper action term supplying the joint targets.
-        """
-        raise NotImplementedError(f"{type(self).__name__} does not expose open/closed joint targets.")
-
     def get_position_w(self, world: ArenaWorld) -> torch.Tensor:
         """Return the gripper position in world frame with shape ``(num_envs, 3)``."""
         ...
@@ -181,29 +149,6 @@ class RobotiqGripper(ParallelJawGripper):
         assert self.body_name is not None or all(
             value == 0.0 for value in self.body_point_offset_xyz
         ), "body_point_offset_xyz requires body_name when nonzero."
-
-    def get_measured_joint_position(self, env, action_name: str) -> torch.Tensor:
-        """Return unclamped driver-joint angles in radians, shaped (num_envs,).
-
-        Args:
-            env: Arena environment, optionally gym-wrapped.
-            action_name: Gripper action term identifying the robot.
-        """
-        base = env.unwrapped
-        cfg = base.action_manager.get_term(action_name).cfg
-        joint_name = self.driver_joint_name or "finger_joint"
-        return base.arena_world.get_joint_position(cfg.asset_name, joint_name)
-
-    def get_open_close_joint_positions(self, env, action_name: str) -> tuple[float, float]:
-        """Return configured (open, closed) driver-joint targets in radians.
-
-        Args:
-            env: Arena environment, optionally gym-wrapped.
-            action_name: Binary action whose target mappings name the driver joint explicitly.
-        """
-        cfg = env.unwrapped.action_manager.get_term(action_name).cfg
-        joint_name = self.driver_joint_name or "finger_joint"
-        return cfg.open_command_expr[joint_name], cfg.close_command_expr[joint_name]
 
     def get_jaw_gap_m(self, world: ArenaWorld) -> torch.Tensor:
         """Return the physical distance between the two finger pads."""

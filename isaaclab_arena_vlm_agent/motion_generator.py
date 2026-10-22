@@ -10,14 +10,9 @@ from __future__ import annotations
 import numpy as np
 from abc import ABC, abstractmethod
 
-from isaaclab_arena.embodiments.common.command_type import CommandType
-
 
 class MotionGenerator(ABC):
     """Generate commands toward goals using live Arena scene state."""
-
-    command_type: CommandType
-    """Coordinate space of the accepted goals and generated commands."""
 
     @abstractmethod
     def goal_reached(self, goal: np.ndarray, env, env_id: int) -> bool:
