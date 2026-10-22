@@ -140,8 +140,9 @@ def build_and_run(
 
 
 def _cfg_for_rebuild(cfg: ArenaRunCfg, rebuild_index: int) -> ArenaRunCfg:
-    """Return an isolated config with this rebuild's seed and replay source."""
+    """Return an isolated config with this rebuild's index, seed and replay source."""
     cfg = deepcopy(cfg)
+    cfg.environment_builder.rebuild_index = rebuild_index
     cfg.environment_builder.seed += rebuild_index
     if cfg.recorded_variation_samples_paths is not None:
         cfg.environment_builder.recorded_variation_samples_path = cfg.recorded_variation_samples_paths[rebuild_index]

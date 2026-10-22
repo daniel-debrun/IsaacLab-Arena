@@ -131,15 +131,16 @@ def test_build_and_run_splits_episode_budget_without_mutating_config(monkeypatch
     )
 
     base_seed = run.environment_builder.seed
-    run_seed_0 = deepcopy(run)  # Rebuild 0 keeps the configured seed.
-    run_seed_1 = deepcopy(run)
-    run_seed_1.environment_builder.seed = base_seed + 1
+    rebuild_0_run = deepcopy(run)  # Rebuild 0 keeps the configured seed.
+    rebuild_1_run = deepcopy(run)
+    rebuild_1_run.environment_builder.seed = base_seed + 1
+    rebuild_1_run.environment_builder.rebuild_index = 1
 
     assert result.run_name == "test_run"
     assert result.status is RunStatus.COMPLETED
     assert rollout_limits == [(None, 3), (None, 2)]
-    # Runs are the same except for their seeds.
-    assert received_run_cfgs == [run_seed_0, run_seed_1]
+    # Runs are the same except for their seeds and rebuild indices.
+    assert received_run_cfgs == [rebuild_0_run, rebuild_1_run]
     # The original config is never mutated.
     assert run.rollout_limit == RolloutLimitCfg(num_episodes=5)
     assert run.environment_builder.seed == base_seed
@@ -253,14 +254,16 @@ def test_recorded_variation_replay_rejects_finite_action_policy():
         run_execution._resolve_rollout_limit(run, _FinitePolicy(), num_episodes=1)
 
 
-def test_cfg_for_rebuild_offsets_seed_per_rebuild():
+def test_cfg_for_rebuild_sets_rebuild_index_and_offsets_seed():
     run = _run(num_rebuilds=3)
     base_seed = run.environment_builder.seed
 
-    assert run_execution._cfg_for_rebuild(run, 0).environment_builder.seed == base_seed
-    assert run_execution._cfg_for_rebuild(run, 1).environment_builder.seed == base_seed + 1
-    assert run_execution._cfg_for_rebuild(run, 2).environment_builder.seed == base_seed + 2
+    for rebuild_index in range(3):
+        rebuild_builder_cfg = run_execution._cfg_for_rebuild(run, rebuild_index).environment_builder
+        assert rebuild_builder_cfg.rebuild_index == rebuild_index
+        assert rebuild_builder_cfg.seed == base_seed + rebuild_index
     # The original config is never mutated.
+    assert run.environment_builder.rebuild_index == 0
     assert run.environment_builder.seed == base_seed
 
 

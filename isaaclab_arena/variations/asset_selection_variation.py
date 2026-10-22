@@ -77,10 +77,10 @@ class AssetSelectionVariation(BuildTimeVariationBase):
         ), f"'{self._variation_key}.asset_names' repeats a name in {cfg.asset_names}; list each name once."
         super().apply_cfg(cfg)
 
-    def configure_at_build_time(self, seed: int, variation_key: str) -> None:
+    def configure_at_build_time(self, seed: int, variation_key: str, rebuild_index: int = 0) -> None:
         # VariationBase does not keep the seed, and in-order selection needs it.
         self._build_seed = seed
-        super().configure_at_build_time(seed, variation_key)
+        super().configure_at_build_time(seed, variation_key, rebuild_index)
 
     def _realize_at_build_time(self) -> None:
         asset_names = list(self.cfg.asset_names)

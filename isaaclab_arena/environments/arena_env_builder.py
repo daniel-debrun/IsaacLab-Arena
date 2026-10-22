@@ -225,7 +225,9 @@ class ArenaEnvBuilder:
         texture), so this must run before ``scene_cfg`` is materialised.
         """
         for variation_key, variation in get_enabled_variations_by_key(self.get_all_variations()).items():
-            variation.configure_at_build_time(seed=self.cfg.seed, variation_key=variation_key)
+            variation.configure_at_build_time(
+                seed=self.cfg.seed, variation_key=variation_key, rebuild_index=self.cfg.rebuild_index
+            )
 
     def _modify_recorder_cfg_dataset_filename(self, recorder_cfg: RecorderManagerBaseCfg) -> RecorderManagerBaseCfg:
         """Modify the recorder dataset filename to include the timestamp and rank."""
