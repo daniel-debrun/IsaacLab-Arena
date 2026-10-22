@@ -172,7 +172,7 @@ an unsuccessful attempt discards that attempt. The script exits after saving ``-
 demonstrations. Press ``Ctrl+C`` in the terminal to stop earlier.
 
 .. note::
-  It make take a few seconds for the environment to reset after a successful demonstration as it saves the epsiode to the HDF5 dataset.
+  It make take a few seconds for the environment to reset after a successful demonstration as it saves the episode to the HDF5 dataset.
 
 The recording options used here are:
 
