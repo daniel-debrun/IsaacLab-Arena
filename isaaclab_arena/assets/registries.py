@@ -93,14 +93,14 @@ class AssetRegistry(Registry):
     def __init__(self):
         super().__init__()
 
-    def get_asset_by_name(self, name: str) -> type["Asset"]:
-        """Gets an asset by name.
+    def get_asset_by_name(self, registry_name: str) -> type["Asset"]:
+        """Return the asset class registered under ``registry_name``. Call the class to create an asset.
 
         Args:
-            name (str): The name of the asset.
+            registry_name: Key of the asset class in the asset registry.
         """
         ensure_assets_registered()
-        return self.get_component_by_name(name)
+        return self.get_component_by_name(registry_name)
 
     def get_assets_by_tag(self, tag: str) -> list[type["Asset"]]:
         """Gets a list of assets by tag.
@@ -229,14 +229,14 @@ class HDRImageRegistry(Registry):
     def __init__(self):
         super().__init__()
 
-    def get_hdr_by_name(self, name: str) -> type["HDRImage"]:
-        """Gets an HDRImage class by name.
+    def get_hdr_by_name(self, registry_name: str) -> type["HDRImage"]:
+        """Return the HDR image class registered under ``registry_name``.
 
         Args:
-            name (str): The name of the HDRImage.
+            registry_name: Key of the HDR image class in the HDR image registry.
         """
         ensure_assets_registered()
-        return self.get_component_by_name(name)
+        return self.get_component_by_name(registry_name)
 
     def get_hdrs_by_tag(self, tag: str) -> list[type["HDRImage"]]:
         """Gets a list of HDRImage classes that have the given tag.
