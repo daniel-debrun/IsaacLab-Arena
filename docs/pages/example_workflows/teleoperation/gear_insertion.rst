@@ -165,18 +165,20 @@ Choose the tab for your input device.
 
 Use the selected teleop device to pick up the gear and insert it onto the **middle peg** of the peg board.
 
-When the environment reports success, the script saves the demonstration and automatically exists.
-Change ``--num_demos`` to record more demonstrations.
-The terminal reports the number of successful demonstrations recorded. Resetting
-an unsuccessful attempt discards that attempt. The script exits after saving ``--num_demos`` successful
-demonstrations. Press ``Ctrl+C`` in the terminal to stop earlier.
+When the environment reports success, the script saves the demonstration and reports the
+number of successful demonstrations recorded in the terminal. If more demonstrations are
+needed, the environment resets for the next attempt. Resetting an unsuccessful attempt
+discards that attempt.
+
+The script exits after saving ``--num_demos`` successful demonstrations. Increase
+``--num_demos`` to record more demonstrations, or press ``Ctrl+C`` in the terminal to stop earlier.
 
 .. note::
   It may take a few seconds for the environment to reset after a successful demonstration as it saves the episode to the HDF5 dataset.
 
 The recording options used here are:
 
-* ``--num_demos 1``: collect 10 successful demonstrations.
+* ``--num_demos 1``: collect one successful demonstration.
 * ``--num_success_steps 1``: save as soon as the environment reports success. The task's own
   checks still require the gear to remain seated and settled before reporting success.
 * ``--no-reset_sim_buffer_each_episode``: Newton requirement. Preserve simulation buffers between attempts.
