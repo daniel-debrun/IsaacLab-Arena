@@ -93,11 +93,11 @@ def _test_droid_absolute_pose_adapters(simulation_app):
             pose = state["command_body_poses"]["arm_action"]
             response = Command(values=pose["position_root_m"] + pose["quaternion_root_xyzw"] + [0.0])
             goal = action_adapter.decode_command(response, base.arena_world, env_id)
-            assert generator.is_goal_reached(goal, env, env_id) == (
+            assert generator.goal_reached(goal, env, env_id) == (
                 abs(state["policy"]["gripper_pos"][0]) <= generator.gripper_tolerance
             )
             goal[0] += 0.1
-            assert not generator.is_goal_reached(goal, env, env_id)
+            assert not generator.goal_reached(goal, env, env_id)
 
     finally:
         env.close()
