@@ -108,11 +108,17 @@ def build_and_run(
                 camera_name_prefix=f"robot-cam-rebuild{rebuild_index}",
             )
             rebuild_cfg = _cfg_for_rebuild(cfg, rebuild_index)
+            prepared_placement = rebuild_cfg.settled_placement is not None
+            if prepared_placement:
+                from isaaclab_arena.evaluation.prepare_settled_placement import prepare_settled_placement
+
+                rebuild_cfg = prepare_settled_placement(rebuild_cfg, num_episodes, Path(output_dir), rebuild_index)
             env = _build_environment_from_cfg(
                 rebuild_cfg,
                 rebuild_video_cfg.render_mode,
                 output_dir=output_dir,
                 rebuild_index=rebuild_index,
+                prepared_placement=prepared_placement,
             )
             results_path = os.path.join(output_dir, f"episode_results_rebuild{rebuild_index}.jsonl")
             env.unwrapped.episode_recorder.set_job_name(cfg.name)
@@ -153,6 +159,7 @@ def _build_environment_from_cfg(
     render_mode: str | None,
     output_dir: str | Path,
     rebuild_index: int = 0,
+    prepared_placement: bool = False,
 ) -> gym.Env:
     """Compile and instantiate a run's environment.
 
@@ -161,6 +168,7 @@ def _build_environment_from_cfg(
         render_mode: Render mode required by the enabled video recorders.
         output_dir: Directory the run's recorded dataset is exported to.
         rebuild_index: Index of the rebuild this environment serves.
+        prepared_placement: Use the same deterministic robot reset as preparation.
     """
     # Copy runtime-derived recorder output options into the builder cfg so
     # ArenaEnvBuilder.build_env_cfg sees them without mutating the caller's run config.
@@ -168,6 +176,10 @@ def _build_environment_from_cfg(
     run_cfg.environment_builder.recorder_dataset_export_dir_path = str(output_dir)
     run_cfg.environment_builder.recorder_dataset_filename = f"dataset_{cfg.name}_rebuild{rebuild_index}"
     arena_builder = build_arena_builder_from_run_cfg(run_cfg)
+    if prepared_placement:
+        from isaaclab_arena.evaluation.prepare_settled_placement import configure_preparation_resets
+
+        configure_preparation_resets(arena_builder)
     return arena_builder.make_registered(render_mode=render_mode)
 
 
