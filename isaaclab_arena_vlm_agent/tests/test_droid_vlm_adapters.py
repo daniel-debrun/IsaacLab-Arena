@@ -20,12 +20,9 @@ from PIL import Image
 from pydantic import ValidationError
 
 from isaaclab_arena.inference.backend import build_strict_schema
+from isaaclab_arena_vlm_agent.action_adapter import ChunkActionAdapter, GoalActionAdapter
 from isaaclab_arena_vlm_agent.commands import Command, CommandChunk, CommandType
-from isaaclab_arena_vlm_agent.droid_action_adapter import (
-    DroidActionAdapter,
-    DroidChunkActionAdapter,
-    DroidGoalActionAdapter,
-)
+from isaaclab_arena_vlm_agent.droid_action_adapter import DroidActionAdapter
 from isaaclab_arena_vlm_agent.droid_motion_generator import DroidPoseMotionGenerator
 from isaaclab_arena_vlm_agent.droid_observation_adapter import DroidObservationAdapter
 from isaaclab_arena_vlm_agent.vlm_agent_policy import VLMChunkPolicy, VLMGoalPolicy, VLMPolicyCfg, VLMStepPolicy
@@ -135,7 +132,7 @@ def test_absolute_action_preserves_xyzw_and_binary_gripper(closed):
 )
 def test_goal_completion_requires_measured_pose_and_gripper(field, value):
     generator = DroidPoseMotionGenerator()
-    adapter = DroidGoalActionAdapter(_embodiment(), CommandType.EE_POSE, generator)
+    adapter = GoalActionAdapter(DroidActionAdapter(_embodiment(), CommandType.EE_POSE), generator)
     world = _world(_state(), _state(**{field: value}), _state(quaternion_root_xyzw=[0.0, 0.0, 0.0, -1.0]))
     goal = adapter.decode_command(Command.model_validate(_target()), world, 0)
     assert generator.goal_reached(goal, world, 0)
@@ -150,9 +147,9 @@ def test_goal_completion_requires_measured_pose_and_gripper(field, value):
 
 @pytest.mark.parametrize("length", [1, 3])
 def test_chunk_length_is_checked_before_execution(length):
-    adapter = DroidChunkActionAdapter(_embodiment(), CommandType.EE_POSE, chunk_size=2)
+    adapter = ChunkActionAdapter(DroidActionAdapter(_embodiment(), CommandType.EE_POSE), chunk_size=2)
     command = adapter.decode_command(
-        CommandChunk.model_validate({"commands": [_target()] * length}), _world(_state()), 0
+        CommandChunk[Command].model_validate({"commands": [_target()] * length}), _world(_state()), 0
     )
     assert not adapter.is_command_valid(command)
 
@@ -162,10 +159,12 @@ def test_droid_adapters_integrate_with_policy_and_partial_resets(mode):
     if mode == "single":
         policy_type, adapter = VLMStepPolicy, DroidActionAdapter(_embodiment(), CommandType.EE_POSE)
     elif mode == "chunk":
-        policy_type, adapter = VLMChunkPolicy, DroidChunkActionAdapter(_embodiment(), CommandType.EE_POSE, chunk_size=2)
+        policy_type, adapter = VLMChunkPolicy, ChunkActionAdapter(
+            DroidActionAdapter(_embodiment(), CommandType.EE_POSE), chunk_size=2
+        )
     else:
-        policy_type, adapter = VLMGoalPolicy, DroidGoalActionAdapter(
-            _embodiment(), CommandType.EE_POSE, DroidPoseMotionGenerator()
+        policy_type, adapter = VLMGoalPolicy, GoalActionAdapter(
+            DroidActionAdapter(_embodiment(), CommandType.EE_POSE), DroidPoseMotionGenerator()
         )
     # Real action-manager compatibility is covered by the simulation test.
     adapter.is_robot_action_space_supported = Mock(return_value=True)
@@ -205,7 +204,7 @@ def test_droid_adapters_integrate_with_policy_and_partial_resets(mode):
 
 
 def test_invalid_droid_chunk_is_corrected_before_any_action():
-    adapter = DroidChunkActionAdapter(_embodiment(), CommandType.EE_POSE, chunk_size=2)
+    adapter = ChunkActionAdapter(DroidActionAdapter(_embodiment(), CommandType.EE_POSE), chunk_size=2)
     adapter.is_robot_action_space_supported = Mock(return_value=True)
     backend = SimpleNamespace(
         infer=Mock(
@@ -245,10 +244,12 @@ def test_invalid_droid_pose_is_corrected_before_any_action(mode, field, value):
     if mode == "single":
         policy_type, adapter = VLMStepPolicy, DroidActionAdapter(_embodiment(), CommandType.EE_POSE)
     elif mode == "chunk":
-        policy_type, adapter = VLMChunkPolicy, DroidChunkActionAdapter(_embodiment(), CommandType.EE_POSE, chunk_size=2)
+        policy_type, adapter = VLMChunkPolicy, ChunkActionAdapter(
+            DroidActionAdapter(_embodiment(), CommandType.EE_POSE), chunk_size=2
+        )
     else:
-        policy_type, adapter = VLMGoalPolicy, DroidGoalActionAdapter(
-            _embodiment(), CommandType.EE_POSE, DroidPoseMotionGenerator()
+        policy_type, adapter = VLMGoalPolicy, GoalActionAdapter(
+            DroidActionAdapter(_embodiment(), CommandType.EE_POSE), DroidPoseMotionGenerator()
         )
     adapter.is_robot_action_space_supported = Mock(return_value=True)
     responses = [_target() | {field: value}, _target(0.6), _target(0.8)]
@@ -303,7 +304,7 @@ def test_droid_motion_generator_uses_configured_gripper_close_position(close_pos
 def test_droid_goal_completion_reads_live_world_without_prompt_state():
     env, _ = _inputs()
     world = env.unwrapped.arena_world
-    adapter = DroidGoalActionAdapter(_embodiment(), CommandType.EE_POSE, DroidPoseMotionGenerator())
+    adapter = GoalActionAdapter(DroidActionAdapter(_embodiment(), CommandType.EE_POSE), DroidPoseMotionGenerator())
     adapter.is_robot_action_space_supported = Mock(return_value=True)
     observation_adapter = DroidObservationAdapter()
     observation_adapter.build_request_content = Mock(return_value=[])
@@ -328,7 +329,7 @@ def test_droid_goal_completion_reads_live_world_without_prompt_state():
 
 def test_chunk_adapter_accepts_an_embodiment_with_default_chunk_size():
     embodiment = _embodiment()
-    adapter = DroidChunkActionAdapter(embodiment, CommandType.EE_POSE)
+    adapter = ChunkActionAdapter(DroidActionAdapter(embodiment, CommandType.EE_POSE))
     adapter.is_robot_action_space_supported = Mock(return_value=True)
     backend = SimpleNamespace(infer=Mock(return_value={"commands": [_target(0.6)]}))
     policy = VLMChunkPolicy(
@@ -352,7 +353,7 @@ def test_command_type_must_be_explicit_enum():
 
 def test_goal_adapter_rejects_mismatching_motion_generator():
     with pytest.raises(AssertionError, match="command types must match"):
-        DroidGoalActionAdapter(_embodiment(), CommandType.JOINT_POSITION, DroidPoseMotionGenerator())
+        GoalActionAdapter(DroidActionAdapter(_embodiment(), CommandType.JOINT_POSITION), DroidPoseMotionGenerator())
 
 
 def test_command_schema_is_shared_across_coordinate_spaces():

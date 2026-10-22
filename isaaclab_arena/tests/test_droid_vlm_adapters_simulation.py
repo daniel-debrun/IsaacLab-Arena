@@ -137,8 +137,9 @@ def _test_droid_joint_position_adapters(simulation_app):
     from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
     from isaaclab_arena.scene.scene import Scene
+    from isaaclab_arena_vlm_agent.action_adapter import ChunkActionAdapter
     from isaaclab_arena_vlm_agent.commands import CommandType
-    from isaaclab_arena_vlm_agent.droid_action_adapter import DroidActionAdapter, DroidChunkActionAdapter
+    from isaaclab_arena_vlm_agent.droid_action_adapter import DroidActionAdapter
     from isaaclab_arena_vlm_agent.droid_observation_adapter import DroidObservationAdapter
     from isaaclab_arena_vlm_agent.vlm_agent_policy import VLMChunkPolicy, VLMPolicyCfg, VLMStepPolicy
 
@@ -159,7 +160,10 @@ def _test_droid_joint_position_adapters(simulation_app):
         observation_adapter.build_request_content = Mock(return_value=[])
         for policy_type, adapter in (
             (VLMStepPolicy, DroidActionAdapter(embodiment, CommandType.JOINT_POSITION)),
-            (VLMChunkPolicy, DroidChunkActionAdapter(embodiment, CommandType.JOINT_POSITION, chunk_size=2)),
+            (
+                VLMChunkPolicy,
+                ChunkActionAdapter(DroidActionAdapter(embodiment, CommandType.JOINT_POSITION), chunk_size=2),
+            ),
         ):
             assert adapter.is_robot_action_space_supported(env)
             responses = [invalid, nonfinite, target, target]

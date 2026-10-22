@@ -271,11 +271,8 @@ def test_goal_config_rejects_invalid_step_budget(max_steps):
 
 class JointChunkAdapter(ChunkActionAdapter):
 
-    def is_robot_action_space_supported(self, env):
-        return env.unwrapped.action_dim > 0
-
     def __init__(self, chunk_size: int, action_dim=2):
-        super().__init__(SimpleNamespace(), CommandType.JOINT_POSITION, chunk_size=chunk_size)
+        super().__init__(ActionAdapter(action_dim=action_dim), chunk_size=chunk_size)
         self.joint_names = tuple(f"joint_{i}" for i in range(action_dim))
         self.response_model = create_model(
             "JointChunkResponse",
@@ -296,12 +293,9 @@ class JointGoalAdapter(GoalActionAdapter):
     def __init__(self, action_dim=2, *, motion_generator=None):
         if motion_generator is None:
             motion_generator = JointMotionGenerator(action_dim=action_dim)
-        super().__init__(SimpleNamespace(), CommandType.JOINT_POSITION, motion_generator=motion_generator)
+        super().__init__(ActionAdapter(action_dim=action_dim), motion_generator=motion_generator)
         self.response_model = JointTargetResponse
         self.joint_names = tuple(f"joint_{i}" for i in range(action_dim))
-
-    def is_robot_action_space_supported(self, env):
-        return env.unwrapped.action_dim > 0
 
     def decode_command(self, response, arena_world, env_id):
         positions = arena_world.get_joint_positions("robot", self.joint_names)[env_id].cpu().numpy()
@@ -584,7 +578,31 @@ def test_missing_camera_keys_fail_before_inference(backend):
     backend.client.chat.completions.create.assert_not_called()
 
 
-@pytest.mark.parametrize("adapter_class", [AgentActionAdapter, ChunkActionAdapter, GoalActionAdapter])
-def test_action_adapter_requires_controller_compatibility_override(adapter_class):
+def test_action_adapter_requires_controller_compatibility_override():
     with pytest.raises(TypeError, match="is_robot_action_space_supported"):
-        adapter_class(SimpleNamespace(), CommandType.JOINT_POSITION)
+        AgentActionAdapter(SimpleNamespace(), CommandType.JOINT_POSITION)
+
+
+@pytest.mark.parametrize("mode", ["chunk", "goal"])
+def test_wrappers_delegate_custom_schema_decoding_validation_and_conversion(mode):
+    robot_adapter = ActionAdapter(scale=3.0)
+    if mode == "chunk":
+        adapter = ChunkActionAdapter(robot_adapter, chunk_size=2)
+        payload = {"commands": [{"target": [2.0, 4.0]}, {"target": [3.0, 5.0]}]}
+    else:
+        adapter = GoalActionAdapter(robot_adapter, JointMotionGenerator())
+        payload = {"target": [2.0, 4.0]}
+    env = SimpleNamespace(unwrapped=SimpleNamespace(action_dim=2, device="cpu"))
+    world = SimpleNamespace(get_joint_positions=Mock(return_value=torch.tensor([[1.0, 2.0]])))
+    assert adapter.action_adapter is robot_adapter
+    assert adapter.is_robot_action_space_supported(env)
+    response = adapter.response_model.model_validate(payload)
+    command = adapter.decode_command(response, world, 0)
+    assert adapter.is_command_valid(command)
+    row = command[0] if mode == "chunk" else command
+    np.testing.assert_array_equal(row, [1.0, 2.0])
+    torch.testing.assert_close(adapter.command_to_action(env, row), torch.tensor([3.0, 6.0]))
+    robot_adapter.is_command_valid = Mock(return_value=False)
+    assert not adapter.is_command_valid(command)
+    env.unwrapped.action_dim = 0
+    assert not adapter.is_robot_action_space_supported(env)

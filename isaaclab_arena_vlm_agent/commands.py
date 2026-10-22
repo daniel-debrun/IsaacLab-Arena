@@ -6,6 +6,7 @@
 """VLM command types and response schemas."""
 
 from enum import Enum
+from typing import Generic, TypeVar
 
 from pydantic import BaseModel, Field
 
@@ -27,8 +28,11 @@ class Command(BaseModel):
     """Ordered targets; the adapter defines dimensions, units, and interpretation for the embodiment."""
 
 
-class CommandChunk(BaseModel):
+CommandT = TypeVar("CommandT", bound=BaseModel)
+
+
+class CommandChunk(BaseModel, Generic[CommandT]):
     """Ordered commands, one per environment step."""
 
-    commands: list[Command] = Field(min_length=1)
+    commands: list[CommandT] = Field(min_length=1)
     """The action adapter validates each target and enforces the configured chunk length."""

@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 from typing import TYPE_CHECKING
 
-from isaaclab_arena_vlm_agent.action_adapter import AgentActionAdapter, ChunkActionAdapter, GoalActionAdapter
+from isaaclab_arena_vlm_agent.action_adapter import AgentActionAdapter
 from isaaclab_arena_vlm_agent.commands import CommandType
 
 if TYPE_CHECKING:
@@ -87,11 +87,3 @@ class DroidActionAdapter(AgentActionAdapter):
         if self.command_type == CommandType.EE_POSE:
             return bool(np.isclose(np.linalg.norm(command[3:7]), 1.0, atol=1e-3))
         return True
-
-
-class DroidChunkActionAdapter(ChunkActionAdapter, DroidActionAdapter):
-    """Validate DROID commands individually before executing a chunk."""
-
-
-class DroidGoalActionAdapter(GoalActionAdapter, DroidActionAdapter):
-    """Validate DROID goals for the configured motion generator."""
