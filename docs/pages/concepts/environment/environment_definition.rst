@@ -265,6 +265,7 @@ All external YAML files are merged into one spec under the following rules:
   even if both files hold the same value.
 * Exception: lists of dicts with an ``id`` (such as ``objects:``) are concatenated in file
   order. Each ``id`` may appear only once across all files.
+  Other lists, such as ``relations``, may be defined in only one file.
 * Nested includes are not allowed. An included file cannot declare ``external_yaml`` itself.
 
 **Declared CLI overrides.** ``cli_override_specs`` turns a node into a CLI flag

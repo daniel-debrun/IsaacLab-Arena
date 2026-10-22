@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import copy
 import yaml
 from pathlib import Path
 from typing import Any
@@ -118,7 +117,7 @@ class _ConflictFreeMerger:
         for key, new_value in new_dict.items():
             value_path = f"{parent_path}.{key}" if parent_path else str(key)
             if key not in merged_dict:
-                merged_dict[key] = copy.deepcopy(new_value)
+                merged_dict[key] = _copy_without_shared_nodes(new_value)
                 self._record_source_name(source_name, new_value, value_path)
                 continue
             merged_value = merged_dict[key]
@@ -146,7 +145,7 @@ class _ConflictFreeMerger:
                     f"both {self._source_name_by_value_path[element_path]} and {source_name}"
                 )
             merged_ids.add(new_element["id"])
-            merged_list.append(copy.deepcopy(new_element))
+            merged_list.append(_copy_without_shared_nodes(new_element))
             self._source_name_by_value_path[element_path] = source_name
 
     def _record_source_name(self, source_name: str, value: Any, value_path: str) -> None:
@@ -163,3 +162,12 @@ class _ConflictFreeMerger:
 def _is_id_list(value: Any) -> bool:
     """Whether ``value`` is a list whose elements are all dicts with an ``id`` (an empty list qualifies)."""
     return isinstance(value, list) and all(isinstance(element, dict) and "id" in element for element in value)
+
+
+def _copy_without_shared_nodes(value: Any) -> Any:
+    """Copy nested dicts and lists, giving each YAML alias its own copy."""
+    if isinstance(value, dict):
+        return {key: _copy_without_shared_nodes(child_value) for key, child_value in value.items()}
+    if isinstance(value, list):
+        return [_copy_without_shared_nodes(element) for element in value]
+    return value

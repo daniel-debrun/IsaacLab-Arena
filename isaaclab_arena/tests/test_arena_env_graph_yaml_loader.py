@@ -5,6 +5,7 @@
 
 """Tests for env-graph YAML include loading."""
 
+import yaml
 from pathlib import Path
 
 import pytest
@@ -103,6 +104,26 @@ def test_merge_rejects_duplicate_id_in_id_list():
     message = str(exc_info.value)
     assert "'objects[id=light]'" in message
     assert "scene.yaml" in message and "defaults.yaml" in message
+
+
+def test_merge_reports_the_source_of_an_id_added_by_an_earlier_source():
+    sources = [
+        ("a.yaml", {"objects": [{"id": "banana"}]}),
+        ("b.yaml", {"objects": [{"id": "light"}]}),
+        ("c.yaml", {"objects": [{"id": "light"}]}),
+    ]
+    with pytest.raises(ValueError) as exc_info:
+        _merge_env_graph_dicts(sources)
+    message = str(exc_info.value)
+    assert "'objects[id=light]'" in message
+    assert "b.yaml" in message and "c.yaml" in message
+
+
+def test_merge_gives_yaml_aliases_independent_copies():
+    included = yaml.safe_load("env_cfg_override: {a: &shared {x: 1}, b: *shared}")
+    task = {"env_cfg_override": {"a": {"y": 2}}}
+    merged = _merge_env_graph_dicts([("defaults.yaml", included), ("task.yaml", task)])
+    assert merged["env_cfg_override"] == {"a": {"x": 1, "y": 2}, "b": {"x": 1}}
 
 
 def test_merge_rejects_lists_without_ids():
