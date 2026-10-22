@@ -277,8 +277,9 @@ We encourage the community to build and publish benchmarks on Isaac Lab-Arena. T
 We welcome contributions — bug reports, feature suggestions, and code. This is an alpha project, so community input directly shapes the framework's direction.
 
 1. Read the [Contribution Guidelines](CONTRIBUTING.md)
-2. Sign off your commits (DCO required — see `CONTRIBUTING.md`)
-3. Open a [Pull Request](https://github.com/isaac-sim/IsaacLab-Arena/pulls)
+2. For new features, public API changes, or significant design changes, open a [Design Proposal](https://github.com/isaac-sim/IsaacLab-Arena/issues/new?template=design-proposal.yml) before submitting a full implementation
+3. Sign off your commits (DCO required — see `CONTRIBUTING.md`)
+4. Open a [Pull Request](https://github.com/isaac-sim/IsaacLab-Arena/pulls)
 
 Areas where contributions are especially valuable:
 - New task definitions and benchmark suites

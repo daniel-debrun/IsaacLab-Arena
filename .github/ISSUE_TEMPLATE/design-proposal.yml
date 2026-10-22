@@ -7,7 +7,7 @@ name: Design proposal
 description: Propose a feature, public API, or significant design change.
 title: "[Design]: "
 labels:
-  - design
+  - enhancement
 body:
   - type: markdown
     attributes:
@@ -15,7 +15,7 @@ body:
         Thank you for proposing an improvement to IsaacLab-Arena.
 
         Use this form for new features, public API changes, or significant design changes.
-        Please read `docs/community-contributions.md` before submitting.
+        Please read the [Community Contributions Guide](https://github.com/isaac-sim/IsaacLab-Arena/blob/main/docs/community-contributions.md) before submitting.
 
         For smaller proposals, Proof of Concept and Alternatives Considered are optional.
 
@@ -47,19 +47,6 @@ body:
       required: true
 
   - type: textarea
-    id: design
-    attributes:
-      label: Proposed design
-      description: |
-        Describe the high-level approach, main components, data flow, and expected behavior.
-      placeholder: |
-        The proposal adds...
-        The main components are...
-        Users will...
-    validations:
-      required: true
-
-  - type: textarea
     id: api
     attributes:
       label: High-level API
@@ -69,6 +56,19 @@ body:
         ```python
         # Example intended usage
         ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Implementation
+      description: |
+        Describe how the proposed API will be implemented, including the main components and data flow.
+      placeholder: |
+        The implementation adds...
+        The main components are...
+        Data flows from...
     validations:
       required: true
 
@@ -90,9 +90,9 @@ body:
     attributes:
       label: Proof of concept (optional)
       description: |
-        Link a draft PR/MR, branch, experiment, benchmark, or minimal implementation if available.
+        Link a draft pull request, branch, experiment, benchmark, or minimal implementation if available.
       placeholder: |
-        Draft PR/MR:
+        Draft pull request:
         Branch:
         Validation results:
     validations:
@@ -115,17 +115,15 @@ body:
     attributes:
       label: Implementation readiness
       description: |
-        If a PR/MR is available, link it and state its readiness.
+        Who will implement and maintain this change? If a pull request exists, link it and tick the checks it passes.
 
-        Contributors are responsible for the correctness of all submitted code, including AI-assisted or agent-generated code. A ready-to-merge change must be focused, tested, documented, consistent with project conventions, and pass required formatting, linting, type checks, tests, benchmarks, and CI.
-      placeholder: |
-        PR/MR:
+        Contributors are responsible for the correctness of all submitted code, including AI-assisted or agent-generated code. A ready-to-merge change must be focused, tested, documented, consistent with project conventions, and pass pre-commit and CI.
+      value: |
+        Implemented and maintained by:
+        Pull request (if any):
         Completed checks:
-        - [ ] Formatting
-        - [ ] Linting
-        - [ ] Type checks
-        - [ ] Unit/integration tests
-        - [ ] Benchmarks, if applicable
+        - [ ] pre-commit (formatting, linting, spelling)
+        - [ ] Tests
         - [ ] Documentation updates
         - [ ] CI
     validations:
