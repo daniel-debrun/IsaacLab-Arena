@@ -16,13 +16,15 @@ and new assets can be added by registering them in the asset library.
    cracker_box = asset_registry.get_asset_by_name("cracker_box")()
 
 Building an object from the registry names it after its asset.
-Pass ``object_name`` to give the object its own name, for example after its
-role in the task, so the name does not depend on the asset:
+``asset_registry.get_asset_by_name("cracker_box")`` returns the registered asset, the class
+``CrackerBox``. Calling it creates an object. Pass ``object_name`` to give the object its own
+name, for example after its role in the task, so the name does not depend on the asset:
 
 .. code-block:: python
 
-   cracker_box = asset_registry.get_asset_by_name("cracker_box")()  # named "cracker_box"
-   pick_up_object = asset_registry.get_asset_by_name("cracker_box")(object_name="pick_up_object")
+   cracker_box_asset = asset_registry.get_asset_by_name("cracker_box")  # the asset: the class CrackerBox
+   cracker_box = cracker_box_asset()  # an object named "cracker_box"
+   pick_up_object = cracker_box_asset(object_name="pick_up_object")  # an object named "pick_up_object"
 
 Registering a new asset
 -----------------------
