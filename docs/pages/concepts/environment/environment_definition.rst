@@ -246,9 +246,8 @@ Isaac Sim starts. Python has no equivalent; the same mistakes show up later as a
 background USD? The loader adds a dome light and a directional light (off until a
 lighting-direction variation turns it on). In Python, no light means no light.
 
-**Reuse across task files.** ``external_yaml`` merges one or more YAML files
-into a task file. It takes a single path or a list of paths, relative to the including
-file. For example:
+**Reuse across task files.** ``external_yaml`` reuses external definitions across
+tasks. It takes a single path or a list of paths, relative to the including file. For example:
 
 .. code-block:: yaml
 
@@ -260,16 +259,13 @@ file. For example:
      composition: atomic
      ...
 
-All external yaml files are merged into one spec, but no value may be defined in more than one file.
-A value that appears twice raises a ``ValueError`` that names its path and both files:
+All external YAML files are merged into one spec under the following rules:
 
-.. code-block:: text
-
-   ValueError: Conflicting env graph spec value at 'env_cfg_override.sim.physics.max_position_iteration_count':
-   defined in both /.../shared_defaults.yaml (value 32) and /.../tasks/banana_in_bowl.yaml (value 16)
-
-Lists, such as ``objects``, are concatenated, and an entry's ``id`` may appear only once.
-An included file cannot include further files.
+* A value can be defined in only one file. A file can never silently override another,
+  even if both files hold the same value.
+* Exception: lists of dicts with an ``id`` (such as ``objects:``) are concatenated in file
+  order. Each ``id`` may appear only once across all files.
+* Nested includes are not allowed. An included file cannot declare ``external_yaml`` itself.
 
 **Declared CLI overrides.** ``cli_override_specs`` turns a node into a CLI flag
 with no code change. Below, ``--object`` replaces that node's ``registry_name``:
