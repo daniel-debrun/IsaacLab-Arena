@@ -27,21 +27,21 @@ def test_completion_checks_every_pose_and_unclamped_binary_state(binary_values):
         ),
     )
     generator = PoseTargetMotionGenerator(embodiment)
-    generator.configure(SimpleNamespace(unwrapped=SimpleNamespace(action_manager=SimpleNamespace(total_action_dim=16))))
+    env = SimpleNamespace(unwrapped=SimpleNamespace(action_manager=SimpleNamespace(total_action_dim=16)))
+    generator.configure(env)
     goal = np.asarray(row, dtype=np.float32)
-    world = object()
-    assert generator.goal_reached(goal, world, 0)
-    embodiment.get_measured_pose_and_gripper_closure.assert_called_with(world)
+    assert generator.goal_reached(goal, env, 0)
+    embodiment.get_measured_pose_and_gripper_closure.assert_called_with(env)
     measured[1, 8] = 0.2  # Only the second pose in environment 1 misses its target.
-    assert not generator.goal_reached(goal, world, 1)
+    assert not generator.goal_reached(goal, env, 1)
     measured[1, 8] = 0
     measured[1, 11:15] *= -1  # Equivalent quaternion sign must not prevent completion.
-    assert generator.goal_reached(goal, world, 1)
+    assert generator.goal_reached(goal, env, 1)
     # Overshoot stays visible regardless of the native binary input convention.
     measured[1, 15] += 0.2 * (binary_values[1] - binary_values[0])
-    assert not generator.goal_reached(goal, world, 1)
-    assert generator.goal_reached(goal, world, 0)
-    command = generator.compute_command(goal, world, 0)
+    assert not generator.goal_reached(goal, env, 1)
+    assert generator.goal_reached(goal, env, 0)
+    command = generator.compute_command(goal, env, 0)
     np.testing.assert_array_equal(command, goal)
     assert not np.shares_memory(command, goal)
 
@@ -54,8 +54,9 @@ def test_pose_only_layout_rejects_invalid_measured_rotation(invalid_state):
         get_controller_command_layout=Mock(return_value=(CommandType.EE_POSE, (3,), {})),
     )
     generator = PoseTargetMotionGenerator(embodiment)
-    generator.configure(SimpleNamespace(unwrapped=SimpleNamespace(action_manager=SimpleNamespace(total_action_dim=7))))
+    env = SimpleNamespace(unwrapped=SimpleNamespace(action_manager=SimpleNamespace(total_action_dim=7)))
+    generator.configure(env)
     goal = measured[0].numpy().copy()
-    assert generator.goal_reached(goal, None, 0)
+    assert generator.goal_reached(goal, env, 0)
     measured[0] = torch.tensor(invalid_state)
-    assert not generator.goal_reached(goal, None, 0)
+    assert not generator.goal_reached(goal, env, 0)

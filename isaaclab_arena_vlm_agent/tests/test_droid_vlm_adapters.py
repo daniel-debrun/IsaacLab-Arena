@@ -36,7 +36,8 @@ def _embodiment(scene_key="robot", body_name="base_link", camera_keys=CAMERA_KEY
     for key in camera_keys:
         camera_terms[key] = SimpleNamespace(func=Mock(), params={"data_type": "rgb"})
 
-    def get_measured_pose_and_gripper_closure(world):
+    def get_measured_pose_and_gripper_closure(env):
+        world = env.unwrapped.arena_world
         pose = world.get_body_pose_in_root(scene_key, body_name)
         closure = world.get_joint_position(scene_key, "finger_joint") / close_position
         return torch.cat((pose, closure.unsqueeze(-1)), dim=-1)
@@ -172,12 +173,13 @@ def test_goal_completion_requires_measured_pose_and_gripper(field, value):
     adapter = GoalActionAdapter(_embodiment(), CommandType.EE_POSE, generator)
     _configure_pose_action_space(adapter)
     world = _world(_state(), _state(**{field: value}), _state(quaternion_root_xyzw=[0.0, 0.0, 0.0, -1.0]))
+    env = SimpleNamespace(unwrapped=SimpleNamespace(arena_world=world))
     goal = adapter.decode_command(Command.model_validate(_target()), world, 0)
-    assert generator.goal_reached(goal, world, 0)
-    assert not generator.goal_reached(goal, world, 1)
-    assert generator.goal_reached(goal, world, 2)
+    assert generator.goal_reached(goal, env, 0)
+    assert not generator.goal_reached(goal, env, 1)
+    assert generator.goal_reached(goal, env, 2)
     world.get_joint_position.assert_called_with("robot", "finger_joint")
-    command = generator.compute_command(goal, world, 1)
+    command = generator.compute_command(goal, env, 1)
     np.testing.assert_array_equal(command, goal)
     command[0] += 1
     assert goal[0] == pytest.approx(0.4)
@@ -329,11 +331,12 @@ def test_pose_target_uses_embodiment_gripper_measurement(close_position):
     world = _world(
         _state(gripper_closed_fraction=1.03), _state(gripper_closed_fraction=0.5), close_position=close_position
     )
+    env = SimpleNamespace(unwrapped=SimpleNamespace(arena_world=world))
     goal = StepActionAdapter(_embodiment(), CommandType.EE_POSE).decode_command(
         Command.model_validate(_target(closed=True)), world, 0
     )
-    assert generator.goal_reached(goal, world, 0)
-    assert not generator.goal_reached(goal, world, 1)
+    assert generator.goal_reached(goal, env, 0)
+    assert not generator.goal_reached(goal, env, 1)
 
 
 def test_droid_goal_completion_reads_live_world_without_prompt_state():

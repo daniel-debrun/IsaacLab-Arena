@@ -29,8 +29,6 @@ if TYPE_CHECKING:
     import torch
     import trimesh
 
-    from isaaclab_arena.environments.arena_world import ArenaWorld
-
 
 @dataclass(frozen=True)
 class ArticulationGeometrySpec:
@@ -239,14 +237,14 @@ class EmbodimentBase(PlaceableAsset):
             Return None when unsupported; override to interpret the embodiment's controllers.
         """
 
-    def get_measured_pose_and_gripper_closure(self, arena_world: ArenaWorld) -> torch.Tensor:
+    def get_measured_pose_and_gripper_closure(self, env) -> torch.Tensor:
         """Return measured poses and gripper closure in controller order, shaped (num_envs, dimension).
 
         Binary controls use continuous measurements mapped to their native input values,
         without clamping physical overshoot.
 
         Args:
-            arena_world: Live Arena scene queries for robot state.
+            env: Arena environment, optionally gym-wrapped.
         """
         raise NotImplementedError(f"{type(self).__name__} does not expose measured poses and gripper closure")
 

@@ -59,7 +59,6 @@ from isaaclab_arena.utils.pose import Pose
 if TYPE_CHECKING:
     import trimesh
 
-    from isaaclab_arena.environments.arena_world import ArenaWorld
 
 _DROID_ROBOT_PRIM = RobotPrimSpec(
     robot_usd_path=f"{ARENA_NUCLEUS_DIR}/Arena/assets/robot_library/droid/franka_robotiq_2f_85_flattened.usd",
@@ -318,15 +317,16 @@ class DroidDifferentialIKEmbodiment(DroidEmbodimentBase):
         )
         self.action_config = DroidDifferentialIKActionsCfg()
 
-    def get_measured_pose_and_gripper_closure(self, arena_world: ArenaWorld) -> torch.Tensor:
+    def get_measured_pose_and_gripper_closure(self, env) -> torch.Tensor:
         """Return root-relative command-body XYZ, XYZW, and gripper closure, shaped (num_envs, 8).
 
         Closure is 0 at the configured open joint position and 1 at the closed position;
         measured overshoot is preserved.
 
         Args:
-            arena_world: Live Arena scene queries for body pose and finger-joint position.
+            env: Arena environment, optionally gym-wrapped.
         """
+        arena_world = env.unwrapped.arena_world
         scene_key = self.get_scene_key()
         pose = arena_world.get_body_pose_in_root(scene_key, self.get_command_body_name())
         finger_position = arena_world.get_joint_position(scene_key, "finger_joint")

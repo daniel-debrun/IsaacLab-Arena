@@ -16,7 +16,6 @@ from isaaclab_arena_vlm_agent.motion_generator import MotionGenerator
 
 if TYPE_CHECKING:
     from isaaclab_arena.embodiments.embodiment_base import EmbodimentBase
-    from isaaclab_arena.environments.arena_world import ArenaWorld
 
 
 class PoseTargetMotionGenerator(MotionGenerator):
@@ -61,19 +60,19 @@ class PoseTargetMotionGenerator(MotionGenerator):
         _, self._quaternion_offsets, self._binary_values = layout
         self._command_dim = manager.total_action_dim
 
-    def goal_reached(self, goal: np.ndarray, arena_world: ArenaWorld, env_id: int) -> bool:
+    def goal_reached(self, goal: np.ndarray, env, env_id: int) -> bool:
         """Compare the target to measured translation, rotation, and gripper closure.
 
         Args:
             goal: Validated target in native controller order.
-            arena_world: Live Arena scene queries for measured robot state.
+            env: Arena environment, optionally gym-wrapped.
             env_id: Environment index within the batched world state.
 
         Returns:
             Whether every pose and binary control is within its configured tolerance.
         """
         assert self._command_dim is not None, "Call configure(env) before checking goals"
-        measured = self.embodiment.get_measured_pose_and_gripper_closure(arena_world)[env_id].detach().cpu().numpy()
+        measured = self.embodiment.get_measured_pose_and_gripper_closure(env)[env_id].detach().cpu().numpy()
         assert measured.shape == goal.shape == (self._command_dim,)
         if not np.isfinite(measured).all():
             return False
@@ -100,12 +99,12 @@ class PoseTargetMotionGenerator(MotionGenerator):
                 return False
         return True
 
-    def compute_command(self, goal: np.ndarray, arena_world: ArenaWorld, env_id: int) -> np.ndarray:
+    def compute_command(self, goal: np.ndarray, env, env_id: int) -> np.ndarray:
         """Hold the absolute target while the environment's IK controller tracks measured state.
 
         Args:
             goal: Validated target in native controller order.
-            arena_world: Live Arena scene queries for measured robot state.
+            env: Arena environment, optionally gym-wrapped.
             env_id: Environment index within the batched world state.
 
         Returns:
