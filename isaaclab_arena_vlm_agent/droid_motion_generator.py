@@ -19,14 +19,7 @@ if TYPE_CHECKING:
 
 
 class DroidPoseMotionGenerator(MotionGenerator):
-    """Hold an absolute IK target until measured pose and gripper tolerances are met.
-
-    Set gripper_closed_position_rad to the embodiment's finger_joint close target:
-    pi/4 for PhysX DROID, or 0.461 for Newton DROID.
-
-    A blocked gripper can exhaust the policy step limit; issuing a close command alone does not
-    establish that the fingers reached the requested closure or that a grasp succeeded.
-    """
+    """Hold an absolute IK target until measured pose and gripper tolerances are met."""
 
     command_type = CommandType.EE_POSE
 
