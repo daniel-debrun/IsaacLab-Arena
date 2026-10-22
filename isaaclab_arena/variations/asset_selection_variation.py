@@ -7,16 +7,20 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import field
 from typing import TYPE_CHECKING
 
 from isaaclab.utils.configclass import configclass
 
+from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.assets.registries import AssetRegistry
 from isaaclab_arena.variations.choice_sampler import ChoiceSamplerCfg
 from isaaclab_arena.variations.variation_base import BuildTimeVariationBase, VariationBaseCfg
 
 if TYPE_CHECKING:
+    from isaaclab.sim.spawners.spawner_cfg import SpawnerCfg
+
     from isaaclab_arena.assets.object import Object
 
 
@@ -90,8 +94,7 @@ class AssetSelectionVariation(BuildTimeVariationBase):
             " selected asset. Set bounding_box to None so placement reads the bounds of the selected asset."
         )
         # Resolve every name, not only the selected one, so that a wrong name fails in the first build.
-        asset_registry = AssetRegistry()
-        spawn_cfgs_by_name = {name: asset_registry.get_rigid_object_spawn_cfg(name) for name in asset_names}
+        spawn_cfgs_by_name = {name: _get_rigid_object_spawn_cfg(name) for name in asset_names}
         # Both modes call self.sampler.sample(), which reports the name to the variation recorder and returns the
         # recorded name during replay.
         if self.cfg.random_choice:
@@ -100,3 +103,21 @@ class AssetSelectionVariation(BuildTimeVariationBase):
             in_order_index = self._build_seed % len(asset_names)
             selected_name = self.sampler.sample(1, asset_names, index=in_order_index)[0]
         self._rigid_object.set_asset(selected_name, spawn_cfgs_by_name[selected_name])
+
+
+def _get_rigid_object_spawn_cfg(asset_name: str) -> SpawnerCfg:
+    """Return a copy of the spawn configuration of the registered rigid object ``asset_name``."""
+    asset_registry = AssetRegistry()
+    assert asset_registry.is_registered(
+        asset_name
+    ), f"'{asset_name}' is not a registered asset. Use the name of a registered rigid object."
+    registered_asset = asset_registry.get_asset_by_name(asset_name)()
+    assert hasattr(registered_asset, "object_type"), (
+        f"Asset '{asset_name}' is a {type(registered_asset).__name__}, not an Object. Use the name of a registered"
+        " rigid object."
+    )
+    assert registered_asset.object_type == ObjectType.RIGID, (
+        f"Asset '{asset_name}' is a {registered_asset.object_type.value} Object, not a rigid one. Use the name of a"
+        " registered rigid object."
+    )
+    return deepcopy(registered_asset.object_cfg.spawn)

@@ -4,15 +4,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import random
-from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
-from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.utils.singleton import SingletonMeta
 
 if TYPE_CHECKING:
     from isaaclab.devices.device_base import DeviceCfg
-    from isaaclab.sim.spawners.spawner_cfg import SpawnerCfg
     from isaaclab_teleop import IsaacTeleopCfg
 
     from isaaclab_arena.assets.asset import Asset
@@ -104,29 +101,6 @@ class AssetRegistry(Registry):
         """
         ensure_assets_registered()
         return self.get_component_by_name(name)
-
-    def get_rigid_object_spawn_cfg(self, name: str) -> "SpawnerCfg":
-        """Return a copy of the spawn configuration of a registered rigid object.
-
-        Args:
-            name: Registered name of a rigid Object.
-        """
-        # Imported here to avoid a cycle: object.py imports relations.py, which imports this module.
-        from isaaclab_arena.assets.object import Object
-
-        assert self.is_registered(
-            name
-        ), f"'{name}' is not a registered asset. Use the name of a registered rigid object."
-        registered_asset = self.get_asset_by_name(name)()
-        assert isinstance(registered_asset, Object), (
-            f"Asset '{name}' is a {type(registered_asset).__name__}, not an Object. Use the name of a registered rigid"
-            " object."
-        )
-        assert registered_asset.object_type == ObjectType.RIGID, (
-            f"Asset '{name}' is a {registered_asset.object_type.value} Object, not a rigid one. Use the name of a"
-            " registered rigid object."
-        )
-        return deepcopy(registered_asset.object_cfg.spawn)
 
     def get_assets_by_tag(self, tag: str) -> list[type["Asset"]]:
         """Gets a list of assets by tag.
