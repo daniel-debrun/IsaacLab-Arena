@@ -19,13 +19,6 @@ class MotionGenerator(ABC):
     command_type: CommandType
     """Coordinate space of the accepted goals and generated commands."""
 
-    def configure(self, env) -> None:
-        """Resolve controller-dependent settings before generating commands or checking goals.
-
-        Args:
-            env: Arena environment, optionally gym-wrapped.
-        """
-
     @abstractmethod
     def goal_reached(self, goal: np.ndarray, env, env_id: int) -> bool:
         """Check goal completion against the current measured state.

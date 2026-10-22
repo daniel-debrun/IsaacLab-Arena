@@ -42,23 +42,9 @@ class PoseTargetMotionGenerator(MotionGenerator):
         assert math.isfinite(rotation_tolerance_rad) and 0 < rotation_tolerance_rad <= math.pi
         assert math.isfinite(gripper_tolerance) and 0 < gripper_tolerance < 0.5
         self.embodiment = embodiment
-        self._command_dim = None
-        self._quaternion_offsets: tuple[int, ...] = ()
-        self._binary_values: dict[int, tuple[float, float]] = {}
         self.position_tolerance_m = position_tolerance_m
         self.rotation_tolerance_rad = rotation_tolerance_rad
         self.gripper_tolerance = gripper_tolerance
-
-    def configure(self, env) -> None:
-        """Resolve pose and binary-control layout from the environment's active controllers."""
-        self._command_dim = None
-        self._quaternion_offsets = ()
-        self._binary_values = {}
-        manager = env.unwrapped.action_manager
-        assert self.embodiment.get_command_type(env) == self.command_type, "Expected absolute pose controllers"
-        self._quaternion_offsets = self.embodiment.get_quaternion_indices(env)
-        self._binary_values = self.embodiment.get_binary_action_values(env)
-        self._command_dim = manager.total_action_dim
 
     def goal_reached(self, goal: np.ndarray, env, env_id: int) -> bool:
         """Compare the target to measured translation, rotation, and gripper closure.
@@ -71,12 +57,15 @@ class PoseTargetMotionGenerator(MotionGenerator):
         Returns:
             Whether every pose and binary control is within its configured tolerance.
         """
-        assert self._command_dim is not None, "Call configure(env) before checking goals"
+        assert self.embodiment.get_command_type(env) == self.command_type, "Expected absolute pose controllers"
+        command_dim = env.unwrapped.action_manager.total_action_dim
+        quaternion_offsets = self.embodiment.get_quaternion_indices(env)
+        binary_values = self.embodiment.get_binary_action_values(env)
         measured = self.embodiment.get_measured_pose_and_gripper_closure(env)[env_id].detach().cpu().numpy()
-        assert measured.shape == goal.shape == (self._command_dim,)
+        assert measured.shape == goal.shape == (command_dim,)
         if not np.isfinite(measured).all():
             return False
-        for offset in self._quaternion_offsets:
+        for offset in quaternion_offsets:
             pose_start = offset - 3
             # Euclidean distance in meters; both positions are expressed in the robot-root frame R.
             position_error = np.linalg.norm(goal[pose_start:offset] - measured[pose_start:offset])
@@ -92,7 +81,7 @@ class PoseTargetMotionGenerator(MotionGenerator):
             rotation_error = 2.0 * np.arccos(np.clip(cosine_half_angle, 0.0, 1.0))
             if position_error > self.position_tolerance_m or rotation_error > self.rotation_tolerance_rad:
                 return False
-        for index, (open_value, closed_value) in self._binary_values.items():
+        for index, (open_value, closed_value) in binary_values.items():
             # Normalize by the native input range; retain measured physical overshoot.
             gripper_error = abs(float(goal[index]) - measured[index]) / abs(closed_value - open_value)
             if gripper_error > self.gripper_tolerance:

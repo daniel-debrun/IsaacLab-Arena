@@ -212,10 +212,3 @@ class GoalActionAdapter(StepActionAdapter):
         assert motion_generator.command_type == command_type, "Motion generator and adapter command types must match"
         self.motion_generator = motion_generator
         """Generate commands for this adapter's decoded goals."""
-
-    def is_robot_action_space_supported(self, env) -> bool:
-        """Check the controllers and configure motion generation for this environment."""
-        if not super().is_robot_action_space_supported(env):
-            return False
-        self.motion_generator.configure(env)
-        return True

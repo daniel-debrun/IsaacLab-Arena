@@ -247,30 +247,35 @@ class DroidEmbodimentBase(EmbodimentBase, ABC):
         gripper = manager.get_term("gripper_action")
         if not isinstance(arm, (DifferentialInverseKinematicsAction, JointPositionAction)):
             return None
-        if not isinstance(gripper, BinaryJointPositionZeroToOneAction):
+        if not isinstance(gripper, BinaryJointPositionZeroToOneAction) or gripper.action_dim != 1:
             return None
-        if not (
-            arm.cfg.asset_name == gripper.cfg.asset_name == self.get_scene_key()
-            and arm.cfg.clip is None
-            and gripper.cfg.clip is None
-            and _all_equal(arm.cfg.scale, 1.0)
-            and gripper.action_dim == 1
-        ):
+
+        # Both action terms must control this robot and preserve the supplied target values.
+        if arm.cfg.asset_name != self.get_scene_key() or gripper.cfg.asset_name != self.get_scene_key():
             return None
+        if arm.cfg.clip is not None or gripper.cfg.clip is not None:
+            return None
+        if not _all_equal(arm.cfg.scale, 1.0):
+            return None
+
         if isinstance(arm, DifferentialInverseKinematicsAction):
-            if not (
-                arm.action_dim == 7
-                and arm.cfg.body_name == getattr(self.action_config.arm_action, "body_name", None)
-                and arm.cfg.controller.command_type == "pose"
-                and not arm.cfg.controller.use_relative_mode
-                and arm.cfg.body_offset is None
-            ):
-                return None
-            return CommandType.EE_POSE
-        else:
-            if arm.action_dim <= 0 or arm.cfg.use_default_offset or not _all_equal(arm.cfg.offset, 0.0):
-                return None
-            return CommandType.JOINT_POSITION
+            return CommandType.EE_POSE if self._supports_absolute_pose_commands(arm) else None
+        return CommandType.JOINT_POSITION if self._supports_absolute_joint_commands(arm) else None
+
+    def _supports_absolute_pose_commands(self, arm) -> bool:
+        """Check that IK accepts XYZ and XYZW for the expected body without a body offset."""
+        cfg = arm.cfg
+        return (
+            arm.action_dim == 7
+            and cfg.body_name == getattr(self.action_config.arm_action, "body_name", None)
+            and cfg.controller.command_type == "pose"
+            and not cfg.controller.use_relative_mode
+            and cfg.body_offset is None
+        )
+
+    def _supports_absolute_joint_commands(self, arm) -> bool:
+        """Check that joint targets are used directly, without default or explicit position offsets."""
+        return arm.action_dim > 0 and not arm.cfg.use_default_offset and _all_equal(arm.cfg.offset, 0.0)
 
     def get_quaternion_indices(self, env) -> tuple[int, ...]:
         """Return the XYZW start index for absolute pose commands, or no indices for joint commands."""

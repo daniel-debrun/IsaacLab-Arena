@@ -120,7 +120,6 @@ def _test_droid_absolute_pose_adapters(simulation_app):
             gripper_cfg.close_command_expr["finger_joint"] = original_closed
 
         generator = PoseTargetMotionGenerator(embodiment)
-        generator.configure(env)
         for env_id, state in enumerate(measured_states):
             response = Command(
                 values=state["command_body_poses"]["arm_action"]["position_root_m"]

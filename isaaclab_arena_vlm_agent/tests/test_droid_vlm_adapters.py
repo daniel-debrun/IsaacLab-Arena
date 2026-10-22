@@ -175,7 +175,9 @@ def test_goal_completion_requires_measured_pose_and_gripper(field, value):
     adapter = GoalActionAdapter(_embodiment(), CommandType.EE_POSE, generator)
     _configure_pose_action_space(adapter)
     world = _world(_state(), _state(**{field: value}), _state(quaternion_root_xyzw=[0.0, 0.0, 0.0, -1.0]))
-    env = SimpleNamespace(unwrapped=SimpleNamespace(arena_world=world))
+    env = SimpleNamespace(
+        unwrapped=SimpleNamespace(arena_world=world, action_manager=SimpleNamespace(total_action_dim=8))
+    )
     goal = adapter.decode_command(Command.model_validate(_target()), world, 0)
     assert generator.goal_reached(goal, env, 0)
     assert not generator.goal_reached(goal, env, 1)
@@ -329,11 +331,12 @@ def test_droid_request_content_contains_state_and_resized_camera_views(env_id):
 @pytest.mark.parametrize("close_position", [math.pi / 4, 0.461])
 def test_pose_target_uses_embodiment_gripper_measurement(close_position):
     generator = PoseTargetMotionGenerator(_embodiment(close_position=close_position))
-    generator.configure(SimpleNamespace(unwrapped=SimpleNamespace(action_manager=SimpleNamespace(total_action_dim=8))))
     world = _world(
         _state(gripper_closed_fraction=1.03), _state(gripper_closed_fraction=0.5), close_position=close_position
     )
-    env = SimpleNamespace(unwrapped=SimpleNamespace(arena_world=world))
+    env = SimpleNamespace(
+        unwrapped=SimpleNamespace(arena_world=world, action_manager=SimpleNamespace(total_action_dim=8))
+    )
     goal = StepActionAdapter(_embodiment(), CommandType.EE_POSE).decode_command(
         Command.model_validate(_target(closed=True)), world, 0
     )
