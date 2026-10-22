@@ -74,7 +74,7 @@ class AssemblyTask(TaskBase):
         """Return the task description passed to the task, or one that names the spawned assets."""
         if self.task_description is not None:
             return self.task_description
-        return f"Assemble the {self.held_asset.asset_name} with the {self.fixed_asset.asset_name}"
+        return f"Assemble the {self.held_asset.spawned_asset_name} with the {self.fixed_asset.spawned_asset_name}"
 
     def disable_default_pose_resets(self):
         for asset in [self.fixed_asset, self.held_asset, *self.auxiliary_asset_list]:

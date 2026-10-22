@@ -72,7 +72,7 @@ class LibraryObject(Object):
             **kwargs,
         )
         # instance_name can name the object by its role, so the asset name comes from the registry name.
-        self.asset_name = type(self).name
+        self.spawned_asset_name = type(self).name
         if self.object_type == ObjectType.RIGID:
             self.add_variation(AssetSelectionVariation(self))
 

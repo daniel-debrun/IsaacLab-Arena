@@ -109,8 +109,8 @@ class PickAndPlaceTask(TaskBase):
         """Return the task description passed to the task, or one that names the spawned assets."""
         if self.task_description is not None:
             return self.task_description
-        pick_up_asset_name = self.pick_up_object.asset_name
-        destination_asset_name = self.destination_location.asset_name
+        pick_up_asset_name = self.pick_up_object.spawned_asset_name
+        destination_asset_name = self.destination_location.spawned_asset_name
         return f"Pick up the {pick_up_asset_name}, and place it into the {destination_asset_name}"
 
     def apply_reachability_constraints(self) -> None:
