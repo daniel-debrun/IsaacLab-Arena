@@ -84,7 +84,7 @@ def set_unnormalized_joint_position(
     target_joint_position_unnormlized: float,
     env_ids: torch.Tensor | None = None,
 ) -> None:
-    """Set a joint's position (radians or meters) and clear its velocity in the selected environments."""
+    """Set the position of a joint using an unnormalized value (in radians)."""
     articulation = get_articulation_from_asset_cfg(env, asset_cfg)
     joint_index = get_joint_index_from_asset_cfg(env, asset_cfg)
     # Duplicate data for each environment
@@ -99,7 +99,7 @@ def set_unnormalized_joint_position(
         joint_ids=joint_ids,
         env_ids=env_ids,
     )
-    # These teleports are also used by task reset events; motion must not carry into the next episode.
+    # Zero velocity such that prior motion doesn't continue at new position.
     articulation.write_joint_velocity_to_sim_index(
         velocity=torch.zeros_like(position),
         joint_ids=joint_ids,
@@ -110,7 +110,7 @@ def set_unnormalized_joint_position(
 def set_normalized_joint_position(
     env: ManagerBasedEnv, asset_cfg: SceneEntityCfg, target_joint_position: float, env_ids: torch.Tensor | None = None
 ) -> None:
-    """Set a joint's normalized position (in range [0, 1]) and clear its velocity."""
+    """Set the position of a joint using a normalized value (in range [0, 1])."""
     articulation = get_articulation_from_asset_cfg(env, asset_cfg)
     joint_index = get_joint_index_from_asset_cfg(env, asset_cfg)
     joint_min, joint_max = get_joint_position_limits_from_articulation(articulation, joint_index)
