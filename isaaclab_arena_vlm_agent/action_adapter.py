@@ -201,16 +201,22 @@ class ChunkActionAdapter(StepActionAdapter):
 class GoalActionAdapter(StepActionAdapter):
     """Decode native goals for the configured embodiment and motion generator."""
 
-    def __init__(self, embodiment: EmbodimentBase, command_type: CommandType, motion_generator: MotionGenerator):
+    def __init__(
+        self, embodiment: EmbodimentBase, command_type: CommandType, motion_generator: MotionGenerator | None = None
+    ):
         """Pair an embodiment's command layout with a compatible motion generator.
 
         Args:
             embodiment: Robot receiving the commands.
             command_type: Coordinate space of the policy output.
-            motion_generator: Generator converting decoded goals into commands.
+            motion_generator: Generator converting decoded goals into commands. When omitted,
+                VLMGoalPolicy supplies a pose-target generator for absolute pose goals.
         """
         super().__init__(embodiment, command_type)
-        assert isinstance(motion_generator, MotionGenerator)
-        assert motion_generator.command_type == command_type, "Motion generator and adapter command types must match"
+        if motion_generator is not None:
+            assert isinstance(motion_generator, MotionGenerator)
+            assert (
+                motion_generator.command_type == command_type
+            ), "Motion generator and adapter command types must match"
         self.motion_generator = motion_generator
         """Generate commands for this adapter's decoded goals."""

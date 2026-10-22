@@ -20,7 +20,7 @@ class MotionGenerator(ABC):
     """Coordinate space of the accepted goals and generated commands."""
 
     @abstractmethod
-    def goal_reached(self, goal: np.ndarray, env, env_id: int) -> bool:
+    def is_goal_reached(self, goal: np.ndarray, env, env_id: int) -> bool:
         """Check goal completion against the current measured state.
 
         Args:

@@ -47,7 +47,7 @@ class PoseTargetMotionGenerator(MotionGenerator):
         self.rotation_tolerance_rad = rotation_tolerance_rad
         self.gripper_tolerance = gripper_tolerance
 
-    def goal_reached(self, goal: np.ndarray, env, env_id: int) -> bool:
+    def is_goal_reached(self, goal: np.ndarray, env, env_id: int) -> bool:
         """Compare the target to measured translation, rotation, and gripper closure.
 
         Args:

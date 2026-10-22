@@ -52,17 +52,17 @@ def test_completion_checks_every_pose_and_unclamped_binary_state(binary_values, 
         )
     )
     goal = np.asarray(row, dtype=np.float32)
-    assert generator.goal_reached(goal, env, 0)
+    assert generator.is_goal_reached(goal, env, 0)
     embodiment.get_measured_command_body_pose_in_root.assert_called_with(env)
     measured[1, 8] = 0.2  # Only the second pose in environment 1 misses its target.
-    assert not generator.goal_reached(goal, env, 1)
+    assert not generator.is_goal_reached(goal, env, 1)
     measured[1, 8] = 0
     measured[1, 11:15] *= -1  # Equivalent quaternion sign must not prevent completion.
-    assert generator.goal_reached(goal, env, 1)
+    assert generator.is_goal_reached(goal, env, 1)
     # Overshoot stays visible regardless of the native binary input convention.
     measured[1, 15] += 0.2 * (binary_values[1] - binary_values[0])
-    assert not generator.goal_reached(goal, env, 1)
-    assert generator.goal_reached(goal, env, 0)
+    assert not generator.is_goal_reached(goal, env, 1)
+    assert generator.is_goal_reached(goal, env, 0)
     command = generator.compute_command(goal, env, 0)
     np.testing.assert_array_equal(command, goal)
     assert not np.shares_memory(command, goal)
@@ -84,6 +84,6 @@ def test_pose_only_layout_rejects_invalid_measured_rotation(invalid_state):
         )
     )
     goal = measured[0].numpy().copy()
-    assert generator.goal_reached(goal, env, 0)
+    assert generator.is_goal_reached(goal, env, 0)
     measured[0] = torch.tensor(invalid_state)
-    assert not generator.goal_reached(goal, env, 0)
+    assert not generator.is_goal_reached(goal, env, 0)

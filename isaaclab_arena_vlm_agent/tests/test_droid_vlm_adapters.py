@@ -202,9 +202,9 @@ def test_goal_completion_requires_measured_pose_and_gripper(field, value):
         )
     )
     goal = adapter.decode_command(Command.model_validate(_target()), world, 0)
-    assert generator.goal_reached(goal, env, 0)
-    assert not generator.goal_reached(goal, env, 1)
-    assert generator.goal_reached(goal, env, 2)
+    assert generator.is_goal_reached(goal, env, 0)
+    assert not generator.is_goal_reached(goal, env, 1)
+    assert generator.is_goal_reached(goal, env, 2)
     world.get_joint_position.assert_called_with("robot", "finger_joint")
     command = generator.compute_command(goal, env, 1)
     np.testing.assert_array_equal(command, goal)
@@ -368,14 +368,17 @@ def test_pose_target_uses_embodiment_gripper_measurement(close_position):
     goal = StepActionAdapter(_embodiment(), CommandType.ABS_EE_POSE).decode_command(
         Command.model_validate(_target(closed=True)), world, 0
     )
-    assert generator.goal_reached(goal, env, 0)
-    assert not generator.goal_reached(goal, env, 1)
+    assert generator.is_goal_reached(goal, env, 0)
+    assert not generator.is_goal_reached(goal, env, 1)
 
 
-def test_droid_goal_completion_reads_live_world_without_prompt_state():
+@pytest.mark.parametrize("use_default_generator", [True, False])
+def test_droid_goal_completion_reads_live_world_without_prompt_state(use_default_generator):
     env, _ = _inputs()
     world = env.unwrapped.arena_world
-    adapter = GoalActionAdapter(_embodiment(), CommandType.ABS_EE_POSE, PoseTargetMotionGenerator(_embodiment()))
+    embodiment = _embodiment()
+    generator = None if use_default_generator else PoseTargetMotionGenerator(embodiment)
+    adapter = GoalActionAdapter(embodiment, CommandType.ABS_EE_POSE, generator)
     _configure_pose_action_space(adapter)
     observation_adapter = ImageStateObservationAdapter(_embodiment())
     observation_adapter.build_request_content = Mock(return_value=[])
@@ -388,6 +391,10 @@ def test_droid_goal_completion_reads_live_world_without_prompt_state():
         max_steps_per_goal=10,
     )
     policy.set_task_description("Move and close")
+    assert isinstance(adapter.motion_generator, PoseTargetMotionGenerator)
+    assert adapter.motion_generator.embodiment is embodiment
+    if generator is not None:
+        assert adapter.motion_generator is generator
     policy.get_action(env, {})
     world.get_body_pose_in_root.return_value[0, 0] = 0.6
     policy.get_action(env, {})

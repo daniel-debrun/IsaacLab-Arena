@@ -18,11 +18,13 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
 
+from isaaclab_arena.embodiments.common.command_type import CommandType
 from isaaclab_arena.inference.backend import InferenceBackend, InferenceRequest, build_strict_schema
 from isaaclab_arena.policy.policy_base import PolicyBase, PolicyCfg
 from isaaclab_arena_vlm_agent.action_adapter import AgentActionAdapter, ChunkActionAdapter, GoalActionAdapter
 from isaaclab_arena_vlm_agent.image_utils import image_to_jpeg_data_url
 from isaaclab_arena_vlm_agent.observation_adapter import VLMObservationAdapter
+from isaaclab_arena_vlm_agent.pose_target_motion_generator import PoseTargetMotionGenerator
 from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
 
 if TYPE_CHECKING:
@@ -244,7 +246,7 @@ class VLMChunkPolicy(VLMPolicy):
 
 
 class VLMGoalPolicy(VLMPolicy, PolicyBase[VLMGoalPolicyCfg]):
-    """Use a motion generator to execute decoded goals until completion or a step limit."""
+    """Execute goals until completion or a step limit, defaulting to pose-target tracking for absolute poses."""
 
     def __init__(
         self,
@@ -255,6 +257,11 @@ class VLMGoalPolicy(VLMPolicy, PolicyBase[VLMGoalPolicyCfg]):
         action_adapter: GoalActionAdapter,
     ):
         assert isinstance(action_adapter, GoalActionAdapter)
+        if action_adapter.motion_generator is None:
+            assert (
+                action_adapter.command_type == CommandType.ABS_EE_POSE
+            ), "Provide a motion_generator for non-pose goals"
+            action_adapter.motion_generator = PoseTargetMotionGenerator(action_adapter.embodiment)
         super().__init__(
             config,
             inference_backend=inference_backend,
@@ -268,7 +275,7 @@ class VLMGoalPolicy(VLMPolicy, PolicyBase[VLMGoalPolicyCfg]):
         if (
             pending is None
             or pending[1] >= self.config.max_steps_per_goal
-            or self.action_adapter.motion_generator.goal_reached(pending[0], env, env_id)
+            or self.action_adapter.motion_generator.is_goal_reached(pending[0], env, env_id)
         ):
             goal = self._infer(self._request_content(env, observation, env_id), env.unwrapped.arena_world, env_id)
             executed = 0
