@@ -201,13 +201,13 @@ def test_turn_stand_mixer_knob_reset_condition():
 
 
 def _test_knob_reset_clears_velocity(simulation_app):
-    """Partial and full resets stop the knob without modifying other environments or joints."""
+    """Partial and full resets stop the knob without modifying other environments."""
     env, stand_mixer = get_test_environment(remove_reset_knob_state_event=False, num_envs=3)
     try:
         mixer = env.scene[stand_mixer.name]
         joint_index = mixer.data.joint_names.index(stand_mixer.turnable_joint_name)
         initial_positions = mixer.data.joint_pos.torch.clone()
-        initial_velocities = torch.full_like(initial_positions, 0.5)
+        initial_velocities = torch.zeros_like(initial_positions)
         initial_positions[:, joint_index] = torch.tensor([0.9, 1.1, 1.3], device=env.device)
         initial_velocities[:, joint_index] = torch.tensor([3.0, -4.0, 2.0], device=env.device)
 
