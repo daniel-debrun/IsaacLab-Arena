@@ -55,11 +55,10 @@ def object_bounds_center_over_destination(
 ) -> torch.Tensor:
     """Check whether an object's bounds center is over a destination.
 
-    The center must lie inside the destination's oriented bounds or vertically
-    above them in world frame. A downward ray must intersect those bounds, so
-    pitched and rolled destinations use world up rather than their local Z axis.
-    The top remains open for containers and supporting surfaces. This is a
-    center-point test, not full-object containment or a contact check.
+    The check requires the object's bounds center to be inside the destination's
+    X/Y footprint and above its lower Z bound. The upper Z bound is intentionally
+    ignored so the same check works for open containers and supporting surfaces.
+    This is a center-point test, not full-object containment.
 
     Args:
         object_centroid_W: Object geometry centroid expressed in world frame
