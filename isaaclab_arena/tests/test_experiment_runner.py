@@ -547,13 +547,3 @@ def test_eval_config_variation_lands_in_events_cfg():
         headless=HEADLESS,
         enable_cameras=True,
     )
-
-
-@pytest.mark.parametrize("enabled", [False, True])
-def test_experiment_runner_policy_wait_for_objects_to_settle_is_opt_in(enabled):
-    arguments = ["--experiment_config", "experiment.yaml"]
-    if enabled:
-        arguments.append("--policy_wait_for_objects_to_settle")
-    args_cli, overrides = parse_experiment_runner_args(arguments)
-    assert args_cli.policy_wait_for_objects_to_settle is enabled
-    assert overrides == []

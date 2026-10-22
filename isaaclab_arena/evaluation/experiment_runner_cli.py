@@ -42,14 +42,6 @@ def add_experiment_runner_arguments(parser: argparse.ArgumentParser) -> None:
         default=False,
         help="Record one mp4 per (env, RGB camera, episode) from obs['camera_obs'] for each Run.",
     )
-    parser.add_argument(
-        "--policy_wait_for_objects_to_settle",
-        action="store_true",
-        help=(
-            "Wait for configured leading objects_settled predicates in all active environments before policy"
-            " inference, including after resets. Settling steps count toward rollout limits. Default: disabled."
-        ),
-    )
     # Keep existing Experiment Runner commands backward compatible:
     # --output_base_dir <base> writes to <base>/<timestamp>.
     # OSMO workflow tasks use --experiment_output_directory <path> because each task
