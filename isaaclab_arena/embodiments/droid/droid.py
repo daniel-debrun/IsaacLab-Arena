@@ -58,6 +58,8 @@ from isaaclab_arena.utils.pose import Pose
 if TYPE_CHECKING:
     import trimesh
 
+    from isaaclab_arena.environments.arena_world import ArenaWorld
+
 _DROID_ROBOT_PRIM = RobotPrimSpec(
     robot_usd_path=f"{ARENA_NUCLEUS_DIR}/Arena/assets/robot_library/droid/franka_robotiq_2f_85_flattened.usd",
     root_prim_path="/panda",
@@ -274,6 +276,20 @@ class DroidDifferentialIKEmbodiment(DroidEmbodimentBase):
             collision_mode=collision_mode,
         )
         self.action_config = DroidDifferentialIKActionsCfg()
+
+    def get_command_state(self, arena_world: ArenaWorld) -> torch.Tensor:
+        """Return measured command-body pose and unclamped gripper closure for every environment."""
+        assert self.command_space is not None and self.command_space.command_type == CommandType.EE_POSE
+        scene_key = self.get_scene_key()
+        pose = arena_world.get_body_pose_in_root(scene_key, self.get_command_body_name())
+        finger_position = arena_world.get_joint_position(scene_key, "finger_joint")
+        gripper_cfg = self.action_config.gripper_action
+        open_position = gripper_cfg.open_command_expr["finger_joint"]
+        closed_position = gripper_cfg.close_command_expr["finger_joint"]
+        closure = (finger_position - open_position) / (closed_position - open_position)
+        open_value, closed_value = self.command_space.binary_values[7]
+        gripper_state = open_value + closure * (closed_value - open_value)
+        return torch.cat((pose, gripper_state.unsqueeze(-1)), dim=-1)
 
     def _configure_physics_backend(self, backend: PhysicsBackend) -> None:
         """Apply shared Newton spawn setup, then diff-IK-specific Newton tuning."""

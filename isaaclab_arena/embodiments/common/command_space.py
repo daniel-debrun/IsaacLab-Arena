@@ -34,7 +34,7 @@ class CommandSpace:
     """Number of targets per environment, including auxiliary controls."""
 
     quaternion_offsets: tuple[int, ...] = ()
-    """Start indices of unit XYZW quaternions in the command vector."""
+    """Start indices of unit XYZW quaternions, each immediately preceded by XYZ translation."""
 
     binary_values: dict[int, tuple[float, float]] = field(default_factory=dict)
     """Allowed values for binary controls, keyed by command-vector index."""

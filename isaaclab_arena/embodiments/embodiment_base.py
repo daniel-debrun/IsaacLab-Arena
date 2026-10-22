@@ -26,7 +26,10 @@ from isaaclab_arena.utils.physics_backend import PhysicsBackend
 from isaaclab_arena.utils.pose import Pose, PosePerEnv, PoseRange
 
 if TYPE_CHECKING:
+    import torch
     import trimesh
+
+    from isaaclab_arena.environments.arena_world import ArenaWorld
 
 
 @dataclass(frozen=True)
@@ -224,6 +227,17 @@ class EmbodimentBase(PlaceableAsset):
 
     def get_action_cfg(self) -> Any:
         return self.action_config
+
+    def get_command_state(self, arena_world: ArenaWorld) -> torch.Tensor:
+        """Return measured state in the declared command layout, shaped (num_envs, dimension).
+
+        Binary controls use continuous measurements mapped to their declared input values,
+        without clamping physical overshoot.
+
+        Args:
+            arena_world: Live Arena scene queries for robot state.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not expose measured command state")
 
     def get_observation_cfg(self) -> Any:
         if self.enable_cameras:

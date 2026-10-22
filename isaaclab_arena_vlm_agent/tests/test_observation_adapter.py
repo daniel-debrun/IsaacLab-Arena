@@ -12,7 +12,12 @@ from unittest.mock import Mock
 
 import pytest
 
-from isaaclab_arena_vlm_agent.observation_adapter import ObservationModality, VLMObservationAdapter
+from isaaclab_arena_vlm_agent.observation_adapter import (
+    ImageObservationAdapter,
+    ImageStateObservationAdapter,
+    StateObservationAdapter,
+    VLMObservationAdapter,
+)
 
 
 def _inputs():
@@ -58,25 +63,25 @@ def _inputs():
 
 
 @pytest.mark.parametrize(
-    "modalities",
+    "adapter_type,include_state,include_images",
     [
-        (ObservationModality.STATE,),
-        (ObservationModality.RGB,),
-        (ObservationModality.STATE, ObservationModality.RGB),
+        (StateObservationAdapter, True, False),
+        (ImageObservationAdapter, False, True),
+        (ImageStateObservationAdapter, True, True),
     ],
 )
-def test_selects_only_requested_modalities_and_configured_terms(modalities):
+def test_selects_only_requested_modalities_and_configured_terms(adapter_type, include_state, include_images):
     embodiment, env, observation = _inputs()
-    if ObservationModality.STATE not in modalities:
+    if not include_state:
         del observation["policy"]
         embodiment.get_observation_cfg.return_value.policy = None
-    if ObservationModality.RGB not in modalities:
+    if not include_images:
         del observation["camera_obs"]
         embodiment.get_observation_cfg.return_value.camera_obs = None
-    adapter = VLMObservationAdapter(embodiment, modalities=modalities)
+    adapter = adapter_type(embodiment)
     assert adapter.embodiment is embodiment
     content = adapter.build_request_content(env, observation, 1, image_max_width_or_height=4)
-    if ObservationModality.STATE in modalities:
+    if include_state:
         state = json.loads(content.pop(0)["text"])
         assert state["policy"] == {"left_joints": [3.0, 4.0], "right_joints": [7.0, 8.0]}
         assert set(state["command_body_poses"]) == {"left_target", "right_target"}
@@ -87,8 +92,7 @@ def test_selects_only_requested_modalities_and_configured_terms(modalities):
     else:
         embodiment.get_action_cfg.assert_not_called()
         env.unwrapped.arena_world.get_body_pose_in_root.assert_not_called()
-    if ObservationModality.RGB in modalities:
-        assert adapter.camera_keys == ("head_color", "hand_color")
+    if include_images:
         assert [item["text"] for item in content if item["type"] == "text"] == [
             "camera=head_color",
             "camera=hand_color",
@@ -101,7 +105,7 @@ def test_selects_only_requested_modalities_and_configured_terms(modalities):
 def test_joint_only_state_does_not_require_command_body_queries():
     embodiment, env, observation = _inputs()
     embodiment.get_action_cfg.return_value = SimpleNamespace(joints=SimpleNamespace(asset_name="humanoid"))
-    adapter = VLMObservationAdapter(embodiment, modalities=(ObservationModality.STATE,))
+    adapter = StateObservationAdapter(embodiment)
     state = adapter.extract_robot_state(env, observation, 0)
     assert state["command_body_poses"] == {}
     assert state["policy"]["right_joints"] == [5.0, 6.0]
@@ -112,7 +116,7 @@ def test_state_modality_requires_named_observation_terms():
     embodiment, _, _ = _inputs()
     embodiment.get_observation_cfg.return_value.policy.concatenate_terms = True
     with pytest.raises(AssertionError, match="unconcatenated"):
-        VLMObservationAdapter(embodiment, modalities=(ObservationModality.STATE,))
+        StateObservationAdapter(embodiment)
 
 
 def test_rgb_modality_requires_configured_rgb_views():
@@ -121,4 +125,10 @@ def test_rgb_modality_requires_configured_rgb_views():
     del camera_cfg.head_color
     del camera_cfg.hand_color
     with pytest.raises(AssertionError, match="configured RGB"):
-        VLMObservationAdapter(embodiment, modalities=(ObservationModality.RGB,))
+        ImageObservationAdapter(embodiment)
+
+
+def test_observation_base_requires_a_modality_implementation():
+    embodiment, _, _ = _inputs()
+    with pytest.raises(TypeError, match="build_request_content"):
+        VLMObservationAdapter(embodiment)

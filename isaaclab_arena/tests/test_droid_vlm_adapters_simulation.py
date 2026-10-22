@@ -23,8 +23,8 @@ def _test_droid_absolute_pose_adapters(simulation_app):
     from isaaclab_arena.utils.pose import Pose
     from isaaclab_arena_vlm_agent.action_adapter import StepActionAdapter
     from isaaclab_arena_vlm_agent.commands import Command
-    from isaaclab_arena_vlm_agent.droid_motion_generator import DroidPoseMotionGenerator
-    from isaaclab_arena_vlm_agent.observation_adapter import ObservationModality, VLMObservationAdapter
+    from isaaclab_arena_vlm_agent.observation_adapter import StateObservationAdapter
+    from isaaclab_arena_vlm_agent.pose_target_motion_generator import PoseTargetMotionGenerator
 
     # Use a translated, rotated root and separate environment origins to expose world/root confusion.
     embodiment = DroidDifferentialIKEmbodiment(
@@ -52,7 +52,7 @@ def _test_droid_absolute_pose_adapters(simulation_app):
     try:
         obs, _ = env.reset()
         base = env.unwrapped
-        observation_adapter = VLMObservationAdapter(embodiment, modalities=(ObservationModality.STATE,))
+        observation_adapter = StateObservationAdapter(embodiment)
         action_adapter = StepActionAdapter(embodiment, CommandType.EE_POSE)
         assert action_adapter.embodiment is embodiment
         assert action_adapter.is_robot_action_space_supported(env)
@@ -95,7 +95,28 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         for env_id, state in enumerate(measured_states):
             assert abs(state["policy"]["gripper_pos"][0] - obs["policy"]["gripper_pos"][env_id, 0].item()) < 1e-6
 
-        generator = DroidPoseMotionGenerator()
+        # Embodiment feedback uses the configured joint endpoints and preserves overshoot.
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+
+        gripper_cfg = embodiment.action_config.gripper_action
+        original_open = gripper_cfg.open_command_expr["finger_joint"]
+        original_closed = gripper_cfg.close_command_expr["finger_joint"]
+        try:
+            for open_position, closed_position in ((0.0, math.pi / 4), (0.0, 0.461), (0.1, 0.461)):
+                gripper_cfg.open_command_expr["finger_joint"] = open_position
+                gripper_cfg.close_command_expr["finger_joint"] = closed_position
+                closure = torch.tensor([0.0, 1.03])
+                world = SimpleNamespace(
+                    get_body_pose_in_root=Mock(return_value=torch.zeros(2, 7)),
+                    get_joint_position=Mock(return_value=open_position + closure * (closed_position - open_position)),
+                )
+                torch.testing.assert_close(embodiment.get_command_state(world)[:, 7], closure)
+        finally:
+            gripper_cfg.open_command_expr["finger_joint"] = original_open
+            gripper_cfg.close_command_expr["finger_joint"] = original_closed
+
+        generator = PoseTargetMotionGenerator(embodiment)
         for env_id, state in enumerate(measured_states):
             response = Command(
                 values=state["command_body_poses"]["arm_action"]["position_root_m"]
@@ -130,7 +151,7 @@ def _test_droid_joint_position_adapters(simulation_app):
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
     from isaaclab_arena.scene.scene import Scene
     from isaaclab_arena_vlm_agent.action_adapter import ChunkActionAdapter, StepActionAdapter
-    from isaaclab_arena_vlm_agent.observation_adapter import ObservationModality, VLMObservationAdapter
+    from isaaclab_arena_vlm_agent.observation_adapter import StateObservationAdapter
     from isaaclab_arena_vlm_agent.vlm_agent_policy import VLMChunkPolicy, VLMPolicyCfg, VLMStepPolicy
 
     embodiment = DroidAbsoluteJointPositionEmbodiment()
@@ -146,7 +167,7 @@ def _test_droid_joint_position_adapters(simulation_app):
         target = {"values": targets[0].tolist() + [0.0]}
         invalid = {"values": [0.1, 0.2, 0.0]}
         nonfinite = {"values": [float("nan")] * 7 + [0.0]}
-        observation_adapter = VLMObservationAdapter(embodiment, modalities=(ObservationModality.STATE,))
+        observation_adapter = StateObservationAdapter(embodiment)
         observation_adapter.build_request_content = Mock(return_value=[])
         for policy_type, adapter in (
             (VLMStepPolicy, StepActionAdapter(embodiment, CommandType.JOINT_POSITION)),
