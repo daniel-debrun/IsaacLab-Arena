@@ -43,7 +43,9 @@ def _embodiment(scene_key="robot", body_name="base_link", camera_keys=CAMERA_KEY
         return torch.cat((pose, closure.unsqueeze(-1)), dim=-1)
 
     return SimpleNamespace(
-        get_controller_command_layout=Mock(return_value=(CommandType.EE_POSE, (3,), {7: (0.0, 1.0)})),
+        get_command_type=Mock(return_value=CommandType.EE_POSE),
+        get_quaternion_indices=Mock(return_value=(3,)),
+        get_binary_action_values=Mock(return_value={7: (0.0, 1.0)}),
         get_measured_pose_and_gripper_closure=get_measured_pose_and_gripper_closure,
         get_scene_key=Mock(return_value=scene_key),
         get_command_body_name=Mock(return_value=body_name),

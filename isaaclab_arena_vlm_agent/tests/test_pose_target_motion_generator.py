@@ -22,9 +22,9 @@ def test_completion_checks_every_pose_and_unclamped_binary_state(binary_values):
     measured = torch.tensor([row, row], dtype=torch.float32)
     embodiment = SimpleNamespace(
         get_measured_pose_and_gripper_closure=Mock(return_value=measured),
-        get_controller_command_layout=Mock(
-            return_value=(CommandType.EE_POSE, (3, 11), {7: binary_values, 15: binary_values})
-        ),
+        get_command_type=Mock(return_value=CommandType.EE_POSE),
+        get_quaternion_indices=Mock(return_value=(3, 11)),
+        get_binary_action_values=Mock(return_value={7: binary_values, 15: binary_values}),
     )
     generator = PoseTargetMotionGenerator(embodiment)
     env = SimpleNamespace(unwrapped=SimpleNamespace(action_manager=SimpleNamespace(total_action_dim=16)))
@@ -51,7 +51,9 @@ def test_pose_only_layout_rejects_invalid_measured_rotation(invalid_state):
     measured = torch.tensor([[0, 0, 0, 0, 0, 0, 1]], dtype=torch.float32)
     embodiment = SimpleNamespace(
         get_measured_pose_and_gripper_closure=Mock(return_value=measured),
-        get_controller_command_layout=Mock(return_value=(CommandType.EE_POSE, (3,), {})),
+        get_command_type=Mock(return_value=CommandType.EE_POSE),
+        get_quaternion_indices=Mock(return_value=(3,)),
+        get_binary_action_values=Mock(return_value={}),
     )
     generator = PoseTargetMotionGenerator(embodiment)
     env = SimpleNamespace(unwrapped=SimpleNamespace(action_manager=SimpleNamespace(total_action_dim=7)))

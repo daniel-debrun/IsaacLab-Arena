@@ -68,6 +68,7 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         actions = torch.stack(actions)
         assert actions.shape == (2, 8)
         T_R_E = actions[:, :7]
+        torch.testing.assert_close(embodiment.get_measured_command_body_pose(env), T_R_E)
         T_W_R = base.arena_world.get_pose_w("robot")
         t_W_E, q_W_E = combine_frame_transforms(T_W_R[:, :3], T_W_R[:, 3:], T_R_E[:, :3], T_R_E[:, 3:])
         torch.testing.assert_close(
@@ -110,6 +111,7 @@ def _test_droid_absolute_pose_adapters(simulation_app):
                     get_joint_position=Mock(return_value=open_position + closure * (closed_position - open_position)),
                 )
                 measured_env = SimpleNamespace(unwrapped=SimpleNamespace(arena_world=world))
+                torch.testing.assert_close(embodiment.get_measured_gripper_closure(measured_env), closure)
                 torch.testing.assert_close(
                     embodiment.get_measured_pose_and_gripper_closure(measured_env)[:, 7], closure
                 )
@@ -219,7 +221,9 @@ def _check_pose_controller_layout(env, embodiment):
 
     manager = env.unwrapped.action_manager
     arm = manager.get_term("arm_action")
-    assert embodiment.get_controller_command_layout(env) == (CommandType.EE_POSE, (3,), {7: (0.0, 1.0)})
+    assert embodiment.get_command_type(env) == CommandType.EE_POSE
+    assert embodiment.get_quaternion_indices(env) == (3,)
+    assert embodiment.get_binary_action_values(env) == {7: (0.0, 1.0)}
     for cfg, field, value in (
         (arm.cfg, "scale", 0.5),
         (arm.cfg, "body_offset", object()),
@@ -230,14 +234,14 @@ def _check_pose_controller_layout(env, embodiment):
         original = getattr(cfg, field)
         try:
             setattr(cfg, field, value)
-            assert embodiment.get_controller_command_layout(env) is None, field
+            assert embodiment.get_command_type(env) is None, field
         finally:
             setattr(cfg, field, original)
     unknown = SimpleNamespace(cfg=SimpleNamespace(clip=None), action_dim=3)
     other_env = SimpleNamespace(
         unwrapped=SimpleNamespace(action_manager=SimpleNamespace(active_terms=["unknown"], get_term=lambda _: unknown))
     )
-    assert embodiment.get_controller_command_layout(other_env) is None
+    assert embodiment.get_command_type(other_env) is None
 
 
 def _check_joint_controller_layout(env, embodiment):
@@ -251,11 +255,9 @@ def _check_joint_controller_layout(env, embodiment):
 
     manager = env.unwrapped.action_manager
     arm = manager.get_term("arm_action")
-    assert embodiment.get_controller_command_layout(env) == (
-        CommandType.JOINT_POSITION,
-        (),
-        {arm.action_dim: (0.0, 1.0)},
-    )
+    assert embodiment.get_command_type(env) == CommandType.JOINT_POSITION
+    assert embodiment.get_quaternion_indices(env) == ()
+    assert embodiment.get_binary_action_values(env) == {arm.action_dim: (0.0, 1.0)}
     adapter = StepActionAdapter(embodiment, CommandType.JOINT_POSITION)
     assert adapter.is_robot_action_space_supported(env)
     for field, value in (("scale", 0.5), ("offset", 0.1), ("use_default_offset", True), ("clip", {})):
@@ -273,4 +275,4 @@ def _check_joint_controller_layout(env, embodiment):
     terms = {"arm_action": relative, "gripper_action": manager.get_term("gripper_action")}
     relative_manager = SimpleNamespace(active_terms=list(terms), get_term=terms.__getitem__)
     relative_env = SimpleNamespace(unwrapped=SimpleNamespace(action_manager=relative_manager))
-    assert embodiment.get_controller_command_layout(relative_env) is None
+    assert embodiment.get_command_type(relative_env) is None

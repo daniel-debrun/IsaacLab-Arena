@@ -55,9 +55,9 @@ class PoseTargetMotionGenerator(MotionGenerator):
         self._quaternion_offsets = ()
         self._binary_values = {}
         manager = env.unwrapped.action_manager
-        layout = self.embodiment.get_controller_command_layout(env)
-        assert layout is not None and layout[0] == self.command_type, "Expected absolute pose controllers"
-        _, self._quaternion_offsets, self._binary_values = layout
+        assert self.embodiment.get_command_type(env) == self.command_type, "Expected absolute pose controllers"
+        self._quaternion_offsets = self.embodiment.get_quaternion_indices(env)
+        self._binary_values = self.embodiment.get_binary_action_values(env)
         self._command_dim = manager.total_action_dim
 
     def goal_reached(self, goal: np.ndarray, env, env_id: int) -> bool:

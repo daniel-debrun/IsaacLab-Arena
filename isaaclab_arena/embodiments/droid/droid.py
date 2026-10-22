@@ -235,8 +235,8 @@ class DroidEmbodimentBase(EmbodimentBase, ABC):
         assert robot is not None, "scene_config.robot must be populated before setting the joint pose"
         robot.init_state = robot.init_state.replace(joint_pos=dict(zip(_DROID_JOINT_NAMES, initial_joint_pose)))
 
-    def get_controller_command_layout(self, env):
-        """Derive DROID's absolute arm target and binary gripper layout from its controllers."""
+    def get_command_type(self, env) -> CommandType | None:
+        """Return DROID's supported absolute command type, or None for incompatible controllers."""
         from isaaclab.envs.mdp.actions.joint_actions import JointPositionAction
         from isaaclab.envs.mdp.actions.task_space_actions import DifferentialInverseKinematicsAction
 
@@ -257,7 +257,6 @@ class DroidEmbodimentBase(EmbodimentBase, ABC):
             and gripper.action_dim == 1
         ):
             return None
-        quaternion_offsets = ()
         if isinstance(arm, DifferentialInverseKinematicsAction):
             if not (
                 arm.action_dim == 7
@@ -267,13 +266,22 @@ class DroidEmbodimentBase(EmbodimentBase, ABC):
                 and arm.cfg.body_offset is None
             ):
                 return None
-            command_type = CommandType.EE_POSE
-            quaternion_offsets = (3,)
+            return CommandType.EE_POSE
         else:
             if arm.action_dim <= 0 or arm.cfg.use_default_offset or not _all_equal(arm.cfg.offset, 0.0):
                 return None
-            command_type = CommandType.JOINT_POSITION
-        return command_type, quaternion_offsets, {arm.action_dim: gripper.binary_action_values}
+            return CommandType.JOINT_POSITION
+
+    def get_quaternion_indices(self, env) -> tuple[int, ...]:
+        """Return the XYZW start index for absolute pose commands, or no indices for joint commands."""
+        return (3,) if self.get_command_type(env) == CommandType.EE_POSE else ()
+
+    def get_binary_action_values(self, env) -> dict[int, tuple[float, float]]:
+        """Return the gripper index and its native (open, close) inputs after controller validation."""
+        manager = env.unwrapped.action_manager
+        arm = manager.get_term("arm_action")
+        gripper = manager.get_term("gripper_action")
+        return {arm.action_dim: gripper.binary_action_values}
 
     def get_ee_frame_name(self, arm_mode: ArmMode) -> str:
         return "ee_frame"
@@ -326,15 +334,32 @@ class DroidDifferentialIKEmbodiment(DroidEmbodimentBase):
         Args:
             env: Arena environment, optionally gym-wrapped.
         """
-        arena_world = env.unwrapped.arena_world
-        scene_key = self.get_scene_key()
-        pose = arena_world.get_body_pose_in_root(scene_key, self.get_command_body_name())
-        finger_position = arena_world.get_joint_position(scene_key, "finger_joint")
+        pose = self.get_measured_command_body_pose(env)
+        closure = self.get_measured_gripper_closure(env)
+        return torch.cat((pose, closure.unsqueeze(-1)), dim=-1)
+
+    def get_measured_command_body_pose(self, env) -> torch.Tensor:
+        """Return root-relative command-body XYZ and XYZW, shaped (num_envs, 7).
+
+        Args:
+            env: Arena environment, optionally gym-wrapped.
+        """
+        return env.unwrapped.arena_world.get_body_pose_in_root(self.get_scene_key(), self.get_command_body_name())
+
+    def get_measured_gripper_closure(self, env) -> torch.Tensor:
+        """Return unclamped gripper closure, shaped (num_envs,).
+
+        Closure is 0 at the configured open joint position and 1 at the closed position;
+        measured overshoot is preserved.
+
+        Args:
+            env: Arena environment, optionally gym-wrapped.
+        """
+        finger_position = env.unwrapped.arena_world.get_joint_position(self.get_scene_key(), "finger_joint")
         gripper_cfg = self.action_config.gripper_action
         open_position = gripper_cfg.open_command_expr["finger_joint"]
         closed_position = gripper_cfg.close_command_expr["finger_joint"]
-        closure = (finger_position - open_position) / (closed_position - open_position)
-        return torch.cat((pose, closure.unsqueeze(-1)), dim=-1)
+        return (finger_position - open_position) / (closed_position - open_position)
 
     def _configure_physics_backend(self, backend: PhysicsBackend) -> None:
         """Apply shared Newton spawn setup, then diff-IK-specific Newton tuning."""

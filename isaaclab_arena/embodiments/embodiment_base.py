@@ -224,18 +224,32 @@ class EmbodimentBase(PlaceableAsset):
     def get_action_cfg(self) -> Any:
         return self.action_config
 
-    def get_controller_command_layout(
-        self, env
-    ) -> tuple[CommandType, tuple[int, ...], dict[int, tuple[float, float]]] | None:
-        """Derive supported absolute command semantics from this embodiment's active controllers.
+    def get_command_type(self, env) -> CommandType | None:
+        """Return the supported absolute command type, or None for unsupported controllers.
 
         Args:
             env: Arena environment, optionally gym-wrapped.
-
-        Returns:
-            Command type, quaternion start indices, and binary input values keyed by action index.
-            Return None when unsupported; override to interpret the embodiment's controllers.
         """
+
+    def get_quaternion_indices(self, env) -> tuple[int, ...]:
+        """Return the start indices of unit XYZW quaternions, each preceded by XYZ translation.
+
+        Call get_command_type first to verify controller support.
+
+        Args:
+            env: Arena environment, optionally gym-wrapped.
+        """
+        return ()
+
+    def get_binary_action_values(self, env) -> dict[int, tuple[float, float]]:
+        """Return binary action indices mapped to their native (open, close) input values.
+
+        Call get_command_type first to verify controller support.
+
+        Args:
+            env: Arena environment, optionally gym-wrapped.
+        """
+        return {}
 
     def get_measured_pose_and_gripper_closure(self, env) -> torch.Tensor:
         """Return measured poses and gripper closure in controller order, shaped (num_envs, dimension).

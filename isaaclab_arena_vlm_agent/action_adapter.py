@@ -109,13 +109,12 @@ class StepActionAdapter(AgentActionAdapter):
         self._quaternion_slices = []
         self._binary_values = {}
         manager = env.unwrapped.action_manager
-        layout = self.embodiment.get_controller_command_layout(env)
-        if layout is None or layout[0] != self.command_type:
+        if self.embodiment.get_command_type(env) != self.command_type:
             return False
-        _, quaternion_offsets, binary_values = layout
+        quaternion_offsets = self.embodiment.get_quaternion_indices(env)
         self._command_dim = manager.total_action_dim
         self._quaternion_slices = [slice(offset, offset + 4) for offset in quaternion_offsets]
-        self._binary_values = binary_values
+        self._binary_values = self.embodiment.get_binary_action_values(env)
         return True
 
     def decode_command(self, response: Command, arena_world: ArenaWorld, env_id: int) -> np.ndarray:
