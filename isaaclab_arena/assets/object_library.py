@@ -52,7 +52,7 @@ class LibraryObject(Object):
 
     def __init__(
         self,
-        object_name: str | None = None,
+        name: str | None = None,
         prim_path: str | None = None,
         initial_pose: Pose | None = None,
         scale: tuple[float, float, float] | None = None,
@@ -61,13 +61,13 @@ class LibraryObject(Object):
         """Create an object from this asset.
 
         Args:
-            object_name: Name of the object in the scene, stored in ``name``. Defaults to the registry name.
+            name: Name of the object in the scene. Defaults to the registry name.
             prim_path: Prim path of the object. Defaults to ``{ENV_REGEX_NS}/<name>``.
             initial_pose: Initial pose of the object.
             scale: Scale of the object. Defaults to the asset's scale.
             **kwargs: Extra arguments passed to ``Object``.
         """
-        name = object_name if object_name is not None else self.registry_name
+        name = name if name is not None else self.registry_name
         scale = scale if scale is not None else self.scale
         super().__init__(
             name=name,
@@ -152,9 +152,9 @@ class Microwave(LibraryObject, Openable):
     openable_joint_name = "microjoint"
     openable_threshold = 0.5  # Bistate threshold (open > threshold, closed <= threshold)
 
-    def __init__(self, object_name: str | None = None, prim_path: str | None = None, initial_pose: Pose | None = None):
+    def __init__(self, name: str | None = None, prim_path: str | None = None, initial_pose: Pose | None = None):
         super().__init__(
-            object_name=object_name,
+            name=name,
             prim_path=prim_path,
             initial_pose=initial_pose,
             openable_joint_name=self.openable_joint_name,
@@ -177,9 +177,9 @@ class CoffeeMachine(LibraryObject, Pressable):
     pressable_joint_name = "CoffeeMachine108_Button002_joint"
     pressedness_threshold = 0.5
 
-    def __init__(self, object_name: str | None = None, prim_path: str | None = None, initial_pose: Pose | None = None):
+    def __init__(self, name: str | None = None, prim_path: str | None = None, initial_pose: Pose | None = None):
         super().__init__(
-            object_name=object_name,
+            name=name,
             prim_path=prim_path,
             initial_pose=initial_pose,
             pressable_joint_name=self.pressable_joint_name,
@@ -206,9 +206,9 @@ class StandMixer(LibraryObject, Turnable):
     max_level_angle_deg = 280.0
     num_levels = 7
 
-    def __init__(self, object_name: str | None = None, prim_path: str | None = None, initial_pose: Pose | None = None):
+    def __init__(self, name: str | None = None, prim_path: str | None = None, initial_pose: Pose | None = None):
         super().__init__(
-            object_name=object_name,
+            name=name,
             prim_path=prim_path,
             initial_pose=initial_pose,
             turnable_joint_name=self.turnable_joint_name,
@@ -283,13 +283,13 @@ class Mug(LibraryObject, Placeable):
 
     def __init__(
         self,
-        object_name: str | None = None,
+        name: str | None = None,
         prim_path: str | None = None,
         initial_pose: Pose | None = None,
         scale: tuple[float, float, float] | None = None,
     ):
         super().__init__(
-            object_name=object_name,
+            name=name,
             prim_path=prim_path,
             initial_pose=initial_pose,
             scale=scale,
@@ -323,14 +323,12 @@ class GroundPlane(LibraryObject):
 
     def __init__(
         self,
-        object_name: str | None = None,
+        name: str | None = None,
         prim_path: str | None = default_prim_path,
         initial_pose: Pose | None = None,
         spawner_cfg: sim_utils.GroundPlaneCfg = default_spawner_cfg,
     ):
-        super().__init__(
-            object_name=object_name, prim_path=prim_path, initial_pose=initial_pose, spawner_cfg=spawner_cfg
-        )
+        super().__init__(name=name, prim_path=prim_path, initial_pose=initial_pose, spawner_cfg=spawner_cfg)
 
 
 @register_asset
@@ -359,14 +357,14 @@ class Sphere(LibraryObject):
 
     def __init__(
         self,
-        object_name: str | None = None,
+        name: str | None = None,
         prim_path: str | None = None,
         initial_pose: Pose | None = None,
         scale: tuple[float, float, float] | None = None,
         spawner_cfg: sim_utils.SphereCfg = default_spawner_cfg,
     ):
         super().__init__(
-            object_name=object_name,
+            name=name,
             prim_path=prim_path,
             initial_pose=initial_pose,
             scale=scale,
@@ -452,7 +450,7 @@ class DomeLight(LightBase):
 
     def __init__(
         self,
-        object_name: str | None = None,
+        name: str | None = None,
         prim_path: str | None = default_prim_path,
         initial_pose: Pose | None = None,
         spawner_cfg: sim_utils.DomeLightCfg = default_spawner_cfg,
@@ -463,9 +461,7 @@ class DomeLight(LightBase):
         from isaaclab_arena.variations.light_color_variation import LightColorVariation
         from isaaclab_arena.variations.light_intensity_variation import LightIntensityVariation
 
-        super().__init__(
-            object_name=object_name, prim_path=prim_path, initial_pose=initial_pose, spawner_cfg=spawner_cfg
-        )
+        super().__init__(name=name, prim_path=prim_path, initial_pose=initial_pose, spawner_cfg=spawner_cfg)
         if hdr is not None:
             self.add_hdr(hdr)
         self.add_variation(HDRImageVariation(self))
@@ -506,7 +502,7 @@ class DirectionalLight(LightBase):
 
     def __init__(
         self,
-        object_name: str | None = None,
+        name: str | None = None,
         prim_path: str | None = default_prim_path,
         initial_pose: Pose | None = None,
         spawner_cfg: sim_utils.DistantLightCfg = default_spawner_cfg,
@@ -517,7 +513,7 @@ class DirectionalLight(LightBase):
         from isaaclab_arena.variations.light_intensity_variation import LightIntensityVariation
 
         super().__init__(
-            object_name=object_name,
+            name=name,
             prim_path=prim_path,
             initial_pose=initial_pose if initial_pose is not None else self.default_initial_pose,
             spawner_cfg=spawner_cfg,
@@ -1932,18 +1928,18 @@ class ProceduralTable(Object):
 
     def __init__(
         self,
-        object_name: str | None = None,
+        name: str | None = None,
         prim_path: str | None = None,
         initial_pose: Pose | None = None,
     ):
         """Create the table.
 
         Args:
-            object_name: Name of the object in the scene, stored in ``name``. Defaults to ``"table"``.
+            name: Name of the object in the scene. Defaults to ``"table"``.
             prim_path: Prim path of the object. Defaults to ``{ENV_REGEX_NS}/table``.
             initial_pose: Initial pose of the object.
         """
-        resolved_name = object_name if object_name is not None else "table"
+        resolved_name = name if name is not None else "table"
         resolved_prim = prim_path if prim_path is not None else "{ENV_REGEX_NS}/table"
         super().__init__(
             name=resolved_name,
@@ -1984,18 +1980,18 @@ class ProceduralCube(Object):
 
     def __init__(
         self,
-        object_name: str | None = None,
+        name: str | None = None,
         prim_path: str | None = None,
         initial_pose: Pose | None = None,
     ):
         """Create the cube.
 
         Args:
-            object_name: Name of the object in the scene, stored in ``name``. Defaults to ``"object"``.
+            name: Name of the object in the scene. Defaults to ``"object"``.
             prim_path: Prim path of the object. Defaults to ``{ENV_REGEX_NS}/Object``.
             initial_pose: Initial pose of the object.
         """
-        resolved_name = object_name if object_name is not None else "object"
+        resolved_name = name if name is not None else "object"
         resolved_prim = prim_path if prim_path is not None else "{ENV_REGEX_NS}/Object"
         super().__init__(
             name=resolved_name,

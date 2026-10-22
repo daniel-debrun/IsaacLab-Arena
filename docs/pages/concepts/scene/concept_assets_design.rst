@@ -1,8 +1,8 @@
 Assets
 ======
 
-An asset is something Arena can spawn, registered under a name such as
-``rubiks_cube_hot3d_robolab``: its USD file, scale, and physics settings.
+An asset is something Arena can spawn: a USD file with its scale and physics settings,
+registered under a name such as ``rubiks_cube_hot3d_robolab``.
 An object is one instance of an asset in a scene. It has its own name, which
 identifies it in the environment: variation keys such as ``<object name>.mass``,
 its prim path, its contact sensor, and recorded data use the object's name.
@@ -15,16 +15,17 @@ and new assets can be added by registering them in the asset library.
    background = asset_registry.get_asset_by_name("kitchen")()
    cracker_box = asset_registry.get_asset_by_name("cracker_box")()
 
-Building an object from the registry names it after its asset.
 ``asset_registry.get_asset_by_name("cracker_box")`` returns the registered asset, the class
-``CrackerBox``. Calling it creates an object. Pass ``object_name`` to give the object its own
+``CrackerBox``, whose ``registry_name`` is ``"cracker_box"``. Calling it creates an object.
+The object's ``name`` defaults to the registry name. Pass ``name`` to give the object its own
 name, for example after its role in the task, so the name does not depend on the asset:
 
 .. code-block:: python
 
    cracker_box_asset = asset_registry.get_asset_by_name("cracker_box")  # the asset: the class CrackerBox
    cracker_box = cracker_box_asset()  # an object named "cracker_box"
-   pick_up_object = cracker_box_asset(object_name="pick_up_object")  # an object named "pick_up_object"
+   pick_up_object = cracker_box_asset(name="pick_up_object")  # an object named "pick_up_object"
+   pick_up_object.registry_name  # "cracker_box"
 
 Registering a new asset
 -----------------------

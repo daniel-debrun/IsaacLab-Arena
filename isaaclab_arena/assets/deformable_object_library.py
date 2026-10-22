@@ -32,7 +32,7 @@ class LibraryDeformableObject(DeformableObject):
 
     def __init__(
         self,
-        object_name: str | None = None,
+        name: str | None = None,
         prim_path: str | None = None,
         initial_pose: Pose | PosePerEnv | None = None,
         **kwargs: Any,
@@ -40,13 +40,13 @@ class LibraryDeformableObject(DeformableObject):
         """Create a deformable object from this asset.
 
         Args:
-            object_name: Name of the object in the scene, stored in ``name``. Defaults to the registry name.
+            name: Name of the object in the scene. Defaults to the registry name.
             prim_path: Prim path of the object. Defaults to ``{ENV_REGEX_NS}/<name>``.
             initial_pose: Initial pose of the object.
             **kwargs: Extra arguments passed to ``DeformableObject``.
         """
         super().__init__(
-            name=object_name or self.registry_name,
+            name=name or self.registry_name,
             prim_path=prim_path,
             tags=self.tags,
             spawner_cfg=copy.deepcopy(self.spawner_cfg),

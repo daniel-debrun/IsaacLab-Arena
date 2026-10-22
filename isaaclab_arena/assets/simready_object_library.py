@@ -39,7 +39,7 @@ class SimReadyUsdObject(Object):
     def __init__(
         self,
         usd_path: str,
-        object_name: str | None = None,
+        name: str | None = None,
         prim_path: str | None = None,
         initial_pose: Pose | None = None,
         scale: tuple[float, float, float] | None = None,
@@ -49,7 +49,7 @@ class SimReadyUsdObject(Object):
 
         Args:
             usd_path: USD path or URL of the SimReady asset.
-            object_name: Name of the object in the scene, stored in ``name``. Defaults to the registry name.
+            name: Name of the object in the scene. Defaults to the registry name.
             prim_path: Prim path of the object. Defaults to ``{ENV_REGEX_NS}/<name>``.
             initial_pose: Initial pose of the object.
             scale: Scale of the object. Defaults to ``(1.0, 1.0, 1.0)``.
@@ -59,7 +59,7 @@ class SimReadyUsdObject(Object):
         spawn_cfg_addon = dict(kwargs.pop("spawn_cfg_addon", None) or {})
         spawn_cfg_addon.setdefault("variants", dict(SIMREADY_PHYSICS_VARIANTS))
         super().__init__(
-            name=object_name or self.registry_name,
+            name=name or self.registry_name,
             prim_path=prim_path,
             tags=self.tags,
             usd_path=usd_path,
