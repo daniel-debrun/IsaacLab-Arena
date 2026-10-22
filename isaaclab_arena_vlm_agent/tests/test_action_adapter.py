@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from isaaclab_arena_vlm_agent.absolute_action_adapter import AbsoluteChunkActionAdapter, AbsoluteStepActionAdapter
+from isaaclab_arena_vlm_agent.absolute_action_adapter import AbsoluteChunkActionAdapter
 from isaaclab_arena_vlm_agent.command_indices import AbsoluteCommandIndices, GripperCommandIndex, PoseCommandIndices
 from isaaclab_arena_vlm_agent.commands import Command
 from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
@@ -37,10 +37,10 @@ def pose_indices(monkeypatch):
     ],
 )
 def test_decode_reports_the_invalid_constraint(pose_indices, values, message):
-    adapter = AbsoluteStepActionAdapter()
+    adapter = AbsoluteChunkActionAdapter(1)
     assert adapter.is_robot_action_space_supported(None)
     with pytest.raises(InvalidAgentResponseError, match=message):
-        adapter.decode_command(Command(values=values), None, 0)
+        adapter.decode_command(adapter.response_model(commands=[Command(values=values)]), None, 0)
 
 
 @pytest.mark.parametrize("dimension", [7, 29])
@@ -83,14 +83,14 @@ def test_bimanual_pose_and_binary_indices(monkeypatch, binary_values):
 
 
 def test_unsupported_controller_clears_previous_indices(monkeypatch, pose_indices):
-    adapter = AbsoluteStepActionAdapter()
+    adapter = AbsoluteChunkActionAdapter(1)
     assert adapter.is_robot_action_space_supported(None)
     monkeypatch.setattr(
         "isaaclab_arena_vlm_agent.absolute_action_adapter.read_absolute_command_indices", lambda env: None
     )
     assert not adapter.is_robot_action_space_supported(None)
     with pytest.raises(AssertionError, match="Check controller compatibility"):
-        adapter.decode_command(Command(values=[0] * 8), None, 0)
+        adapter.decode_command(adapter.response_model(commands=[Command(values=[0] * 8)]), None, 0)
 
 
 def test_chunk_size_is_explicit_and_checked(pose_indices):

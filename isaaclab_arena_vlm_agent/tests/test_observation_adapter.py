@@ -78,7 +78,6 @@ def test_selects_only_requested_modalities_and_configured_terms(adapter_type, in
         del observation["camera_obs"]
         embodiment.get_observation_cfg.return_value.camera_obs = None
     adapter = adapter_type(embodiment)
-    assert adapter.embodiment is embodiment
     images, state = adapter.extract_vlm_input_from_observation(env, observation, 1)
     if include_state:
         assert state["policy"] == {"left_joints": [3.0, 4.0], "right_joints": [7.0, 8.0]}
@@ -127,6 +126,5 @@ def test_rgb_modality_requires_configured_rgb_views():
 
 
 def test_observation_base_requires_a_modality_implementation():
-    embodiment, _, _ = _inputs()
     with pytest.raises(TypeError, match="extract_vlm_input_from_observation"):
-        VLMObservationAdapter(embodiment)
+        VLMObservationAdapter()

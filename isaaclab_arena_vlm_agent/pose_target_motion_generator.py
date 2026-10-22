@@ -11,7 +11,7 @@ import math
 import numpy as np
 from typing import TYPE_CHECKING
 
-from isaaclab_arena_vlm_agent.command_indices import read_absolute_command_indices
+from isaaclab_arena_vlm_agent.command_indices import AbsoluteCommandIndices, read_absolute_command_indices
 from isaaclab_arena_vlm_agent.motion_generator import MotionGenerator
 
 if TYPE_CHECKING:
@@ -31,16 +31,16 @@ class PoseTargetMotionGenerator(MotionGenerator):
         stall_motion_tolerance_m: float = 0.0001,
         stall_steps: int = 3,
     ):
-        """Configure pose accuracy and closed-gripper stall detection.
+        """Configure pose accuracy and detection of stationary closing grippers.
 
         Args:
             grippers: Gripper measurements keyed by binary action term name; omit for pose-only robots.
             position_tolerance_m: Maximum translation error per pose.
             rotation_tolerance_rad: Maximum shortest rotation error per pose.
             gripper_tolerance_m: Maximum absolute measured-minus-commanded finger displacement.
-            stall_margin_m: Minimum closing error for a gripper blocked before its closed target.
-            stall_motion_tolerance_m: Maximum change in opening width per step during a stall.
-            stall_steps: Consecutive stationary steps required to accept a blocked closing goal.
+            stall_margin_m: Minimum closing error required to accept a stationary gripper short of the target.
+            stall_motion_tolerance_m: Maximum opening-width change per step considered stationary.
+            stall_steps: Consecutive stationary steps required to accept an unmet closing target.
         """
         assert math.isfinite(position_tolerance_m) and position_tolerance_m > 0
         assert math.isfinite(rotation_tolerance_rad) and 0 < rotation_tolerance_rad <= math.pi
@@ -52,13 +52,13 @@ class PoseTargetMotionGenerator(MotionGenerator):
         self.position_tolerance_m = position_tolerance_m
         self.rotation_tolerance_rad = rotation_tolerance_rad
         self.gripper_tolerance_m = gripper_tolerance_m
-        self.stall_margin_m = stall_margin_m
-        self.stall_motion_tolerance_m = stall_motion_tolerance_m
-        self.stall_steps = stall_steps
+        self.stall_margin_m = stall_margin_m  # Require a meaningful target shortfall beyond normal tracking error.
+        self.stall_motion_tolerance_m = stall_motion_tolerance_m  # Allow jitter when detecting stationary grippers.
+        self.stall_steps = stall_steps  # Require consecutive stationary measurements rather than a brief pause.
         self._gripper_history: dict[tuple[int, int, str], tuple[bytes, int, float, int]] = {}
 
     def goal_reached(self, goal: np.ndarray, env, env_id: int) -> bool:
-        """Check measured poses and accept grippers at target or stably blocked while closing.
+        """Check measured poses and accept grippers at target or stationary during closing.
 
         Args:
             goal: Validated absolute target in native controller order.
@@ -69,25 +69,25 @@ class PoseTargetMotionGenerator(MotionGenerator):
             Whether all poses and grippers have completed the requested command.
         """
         indices = self._command_indices(goal, env)
-        poses_reached = self._poses_reached(goal, env, env_id, indices)
-        grippers_reached = self._grippers_reached(goal, env, env_id, indices)
+        poses_reached = self._are_poses_reached(goal, env, env_id, indices)
+        grippers_reached = self._are_grippers_at_target_or_stationary_while_closing(goal, env, env_id, indices)
         return poses_reached and grippers_reached
 
     def _command_indices(self, goal, env):
         """Check that the target uses supported pose controllers and known gripper measurements."""
-        indices = read_absolute_command_indices(env)
+        indices: AbsoluteCommandIndices | None = read_absolute_command_indices(env)
         assert indices is not None and indices.poses and not indices.joints, "Expected absolute pose controllers"
         assert goal.shape == (indices.action_dim,)
         for command in indices.grippers:
             assert command.term_name in self.grippers, f"Provide gripper measurements for {command.term_name}"
         return indices
 
-    def _poses_reached(self, goal, env, env_id, indices) -> bool:
+    def _are_poses_reached(self, goal, env, env_id, indices) -> bool:
         """Compare controlled bodies to their root-relative XYZ/XYZW targets."""
         for command in indices.poses:
             pose = env.unwrapped.arena_world.get_body_pose_in_root(command.asset_name, command.body_name)
             pose = pose[env_id].detach().cpu().numpy()
-            target = goal[command.columns]
+            target = goal[command.indices]
             if not np.isfinite(pose).all():
                 return False
             if _position_error_m(pose[:3], target[:3]) > self.position_tolerance_m:
@@ -96,8 +96,8 @@ class PoseTargetMotionGenerator(MotionGenerator):
                 return False
         return True
 
-    def _grippers_reached(self, goal, env, env_id, indices) -> bool:
-        """Use existing gripper measurements, requiring sustained stillness for blocked closing."""
+    def _are_grippers_at_target_or_stationary_while_closing(self, goal, env, env_id, indices) -> bool:
+        """Return whether every gripper reached its target or stopped moving while closing."""
         base = env.unwrapped
         reached = True
         for command in indices.grippers:
@@ -105,30 +105,39 @@ class PoseTargetMotionGenerator(MotionGenerator):
             error = float(gripper.get_closing_error_m(base)[env_id])
             gap = float(gripper.get_opening_width_m(base.arena_world)[env_id])
             step = int(base.episode_length_buf[env_id])
+
+            # Load this gripper's previous goal, simulation step, opening width, and stationary-step count.
             key = (id(base), env_id, command.term_name)
             previous = self._gripper_history.get(key)
             target = goal.tobytes()
+            # A changed goal or skipped simulation step resets the stationary-step count.
             stationary_steps = 0
             if previous is not None:
                 previous_target, previous_step, previous_gap, previous_count = previous
-                if target == previous_target and step == previous_step:
-                    stationary_steps = previous_count
-                elif target == previous_target and step == previous_step + 1:
-                    if abs(gap - previous_gap) <= self.stall_motion_tolerance_m:
+                if target == previous_target:
+                    # Repeated queries in the same simulation step preserve the count.
+                    if step == previous_step:
+                        stationary_steps = previous_count
+                    # Consecutive measurements with negligible motion increment the count.
+                    elif step == previous_step + 1 and abs(gap - previous_gap) <= self.stall_motion_tolerance_m:
                         stationary_steps = previous_count + 1
+            # Save the current measurements for the next query.
             self._gripper_history[key] = (target, step, gap, stationary_steps)
-            # Closing error refers to the last applied command, which must match this goal.
-            applied = float(base.action_manager.action[env_id, command.column])
-            if not (math.isfinite(error) and math.isfinite(gap) and applied == goal[command.column]):
+
+            # Error measured against a previous command cannot establish completion of the current goal.
+            applied = float(base.action_manager.action[env_id, command.index])
+            if not (math.isfinite(error) and math.isfinite(gap) and applied == goal[command.index]):
                 reached = False
                 continue
+
+            # Complete at the target or after remaining short of a commanded close target without motion.
             at_target = abs(error) <= self.gripper_tolerance_m
-            blocked_closing = (
-                goal[command.column] == command.close_value
+            stationary_while_closing = (
+                goal[command.index] == command.close_value
                 and error > self.stall_margin_m
                 and stationary_steps >= self.stall_steps
             )
-            reached = reached and (at_target or blocked_closing)
+            reached = reached and (at_target or stationary_while_closing)
         return reached
 
     def compute_command(self, goal: np.ndarray, env, env_id: int) -> np.ndarray:

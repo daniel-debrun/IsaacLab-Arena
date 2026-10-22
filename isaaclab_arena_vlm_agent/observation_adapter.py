@@ -24,15 +24,7 @@ CAMERA_OBSERVATION_GROUP = "camera_obs"
 
 
 class VLMObservationAdapter(ABC):
-    """Convert an embodiment's observations into model input content."""
-
-    def __init__(self, embodiment: EmbodimentBase):
-        """Configure the robot supplying observations.
-
-        Args:
-            embodiment: Robot defining state and camera observations.
-        """
-        self.embodiment = embodiment
+    """Extract camera images and prompt values from environment observations."""
 
     @abstractmethod
     def extract_vlm_input_from_observation(
@@ -54,7 +46,6 @@ class StateObservationAdapter(VLMObservationAdapter):
     """Include named robot state and command-body poses for one environment."""
 
     def __init__(self, embodiment: EmbodimentBase):
-        super().__init__(embodiment)
         self._command_bodies: dict[str, tuple[str, str]] = {}
         observation_cfg = embodiment.get_observation_cfg()
         state_cfg = getattr(observation_cfg, POLICY_OBSERVATION_GROUP, None)
@@ -70,6 +61,7 @@ class StateObservationAdapter(VLMObservationAdapter):
         )
         self.state_keys = tuple(name for name, term in vars(state_cfg).items() if hasattr(term, "func"))
         action_cfg = embodiment.get_action_cfg()
+        # Identifies the bodies controlled by pose action commands
         if action_cfg is not None:
             for name, term in vars(action_cfg).items():
                 if getattr(term, "body_name", None):
@@ -115,7 +107,6 @@ class ImageObservationAdapter(VLMObservationAdapter):
     """Include the configured current RGB camera views for one environment."""
 
     def __init__(self, embodiment: EmbodimentBase):
-        super().__init__(embodiment)
         observation_cfg = embodiment.get_observation_cfg()
         camera_cfg = getattr(observation_cfg, CAMERA_OBSERVATION_GROUP, None)
         assert camera_cfg is not None, "RGB modality requires camera observations; enable the embodiment's cameras"
@@ -138,7 +129,6 @@ class ImageStateObservationAdapter(VLMObservationAdapter):
     """Include robot state followed by current RGB camera views."""
 
     def __init__(self, embodiment: EmbodimentBase):
-        super().__init__(embodiment)
         self.state_adapter = StateObservationAdapter(embodiment)
         self.image_adapter = ImageObservationAdapter(embodiment)
 

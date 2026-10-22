@@ -13,21 +13,11 @@ from unittest.mock import Mock
 
 import pytest
 
-from isaaclab_arena_vlm_agent.absolute_action_adapter import (
-    AbsoluteChunkActionAdapter,
-    AbsoluteGoalActionAdapter,
-    AbsoluteStepActionAdapter,
-)
+from isaaclab_arena_vlm_agent.absolute_action_adapter import AbsoluteChunkActionAdapter, AbsoluteGoalActionAdapter
 from isaaclab_arena_vlm_agent.command_indices import AbsoluteCommandIndices, GripperCommandIndex, PoseCommandIndices
 from isaaclab_arena_vlm_agent.observation_adapter import ImageStateObservationAdapter
 from isaaclab_arena_vlm_agent.pose_target_motion_generator import PoseTargetMotionGenerator
-from isaaclab_arena_vlm_agent.vlm_agent_policy import (
-    VLMChunkPolicy,
-    VLMGoalPolicy,
-    VLMGoalPolicyCfg,
-    VLMPolicyCfg,
-    VLMStepPolicy,
-)
+from isaaclab_arena_vlm_agent.vlm_agent_policy import VLMChunkPolicy, VLMGoalPolicy, VLMGoalPolicyCfg, VLMPolicyCfg
 
 
 @pytest.fixture
@@ -73,7 +63,7 @@ def _policy(mode, inputs, infer):
     embodiment, _, _, gripper = inputs
     config = VLMPolicyCfg(system_prompt="Return absolute robot-root targets.")
     if mode == "step":
-        policy_type, adapter = VLMStepPolicy, AbsoluteStepActionAdapter()
+        policy_type, adapter = VLMChunkPolicy, AbsoluteChunkActionAdapter(1)
     elif mode == "chunk":
         policy_type, adapter = VLMChunkPolicy, AbsoluteChunkActionAdapter(2)
     else:
@@ -97,7 +87,9 @@ def test_policy_execution_and_partial_resets(inputs, mode):
 
     def infer(request):
         requests.append(copy.deepcopy(request))
-        return {"commands": [_target(), _target(0.7)]} if mode == "chunk" else _target()
+        if mode == "goal":
+            return _target()
+        return {"commands": [_target(), _target(0.7)] if mode == "chunk" else [_target()]}
 
     policy = _policy(mode, inputs, infer)
     first = policy.get_action(env, observation)
@@ -125,8 +117,8 @@ def test_policy_execution_and_partial_resets(inputs, mode):
 def test_invalid_commands_request_specific_corrections(inputs, mode, values, message):
     _, env, observation, _ = inputs
     replies = [{"values": values}, _target(), _target(0.8)]
-    if mode == "chunk":
-        replies = [{"commands": [reply, _target()]} for reply in replies]
+    if mode != "goal":
+        replies = [{"commands": [reply, _target()] if mode == "chunk" else [reply]} for reply in replies]
     infer = Mock(side_effect=replies)
     actions = _policy(mode, inputs, infer).get_action(env, observation)
     assert torch.isfinite(actions).all()

@@ -20,8 +20,8 @@ def _test_droid_absolute_pose_adapters(simulation_app):
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
     from isaaclab_arena.scene.scene import Scene
     from isaaclab_arena.utils.pose import Pose
-    from isaaclab_arena_vlm_agent.absolute_action_adapter import AbsoluteStepActionAdapter
-    from isaaclab_arena_vlm_agent.commands import Command
+    from isaaclab_arena_vlm_agent.absolute_action_adapter import AbsoluteChunkActionAdapter
+    from isaaclab_arena_vlm_agent.commands import Command, CommandChunk
     from isaaclab_arena_vlm_agent.observation_adapter import StateObservationAdapter
     from isaaclab_arena_vlm_agent.pose_target_motion_generator import PoseTargetMotionGenerator
 
@@ -49,14 +49,14 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         obs, _ = env.reset()
         base = env.unwrapped
         observation_adapter = StateObservationAdapter(embodiment)
-        action_adapter = AbsoluteStepActionAdapter()
+        action_adapter = AbsoluteChunkActionAdapter(1)
         assert action_adapter.is_robot_action_space_supported(env)
         states = [observation_adapter.extract_robot_state(env, obs, env_id) for env_id in range(base.num_envs)]
         actions = []
         for env_id, state in enumerate(states):
             pose = state["command_body_poses"]["arm_action"]
             response = Command(values=pose["position_root_m"] + pose["quaternion_root_xyzw"] + [0.0])
-            command = action_adapter.decode_command(response, base.arena_world, env_id)
+            command = action_adapter.decode_command(CommandChunk(commands=[response]), base.arena_world, env_id)[0]
             actions.append(action_adapter.command_to_action(env, command))
         actions = torch.stack(actions)
         assert actions.shape == (2, 8)
@@ -90,7 +90,7 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         for env_id, state in enumerate(measured_states):
             pose = state["command_body_poses"]["arm_action"]
             response = Command(values=pose["position_root_m"] + pose["quaternion_root_xyzw"] + [0.0])
-            goal = action_adapter.decode_command(response, base.arena_world, env_id)
+            goal = action_adapter.decode_command(CommandChunk(commands=[response]), base.arena_world, env_id)[0]
             assert generator.goal_reached(goal, env, env_id) == (
                 abs(float(embodiment.get_gripper().get_closing_error_m(base)[env_id])) <= generator.gripper_tolerance_m
             )
@@ -114,8 +114,8 @@ def _test_droid_joint_position_adapters(simulation_app):
     from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
     from isaaclab_arena.scene.scene import Scene
-    from isaaclab_arena_vlm_agent.absolute_action_adapter import AbsoluteStepActionAdapter
-    from isaaclab_arena_vlm_agent.commands import Command
+    from isaaclab_arena_vlm_agent.absolute_action_adapter import AbsoluteChunkActionAdapter
+    from isaaclab_arena_vlm_agent.commands import Command, CommandChunk
 
     embodiment = DroidAbsoluteJointPositionEmbodiment()
     arena_env = IsaacLabArenaEnvironment(name="droid_vlm_joint_test", scene=Scene(), embodiment=embodiment)
@@ -123,13 +123,15 @@ def _test_droid_joint_position_adapters(simulation_app):
     try:
         env.reset()
         base = env.unwrapped
-        adapter = AbsoluteStepActionAdapter()
+        adapter = AbsoluteChunkActionAdapter(1)
         assert adapter.is_robot_action_space_supported(env)
         joint_names = tuple(f"panda_joint{i}" for i in range(1, 8))
         targets = base.arena_world.get_joint_positions("robot", joint_names)
         actions = []
         for env_id, target in enumerate(targets):
-            command = adapter.decode_command(Command(values=target.tolist() + [0.0]), base.arena_world, env_id)
+            command = adapter.decode_command(
+                CommandChunk(commands=[Command(values=target.tolist() + [0.0])]), base.arena_world, env_id
+            )[0]
             actions.append(adapter.command_to_action(env, command))
         actions = torch.stack(actions)
         torch.testing.assert_close(actions[:, :7], targets)
@@ -176,8 +178,8 @@ def _test_absolute_controller_compatibility(simulation_app):
     )
     env = SimpleNamespace(unwrapped=SimpleNamespace(action_manager=manager))
     indices = read_absolute_command_indices(env)
-    assert indices.poses[0].columns == slice(0, 7)
-    assert indices.grippers[0].column == 7
+    assert indices.poses[0].indices == slice(0, 7)
+    assert indices.grippers[0].index == 7
     assert (indices.grippers[0].open_value, indices.grippers[0].close_value) == (0, 1)
     for name, value in [("scale", 0.5), ("scale", (1, 1, 1, 1, 1, 1, 0.5)), ("body_offset", object()), ("clip", {})]:
         original = getattr(arm.cfg, name)
