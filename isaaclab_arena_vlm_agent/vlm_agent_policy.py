@@ -82,7 +82,7 @@ class VLMPolicy(PolicyBase[VLMPolicyCfg]):
         observation_adapter: VLMObservationAdapter,
         action_adapter: AgentActionAdapter,
     ):
-        """Create a policy with a shared inference backend and stateless adapters.
+        """Create a policy with a shared inference backend and configurable adapters.
 
         Args:
             config: Prompt, image encoding, and action-validation settings.

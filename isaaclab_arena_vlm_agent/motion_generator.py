@@ -11,12 +11,17 @@ import numpy as np
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
+from isaaclab_arena_vlm_agent.commands import CommandType
+
 if TYPE_CHECKING:
     from isaaclab_arena.environments.arena_world import ArenaWorld
 
 
 class MotionGenerator(ABC):
     """Generate commands toward goals using live Arena scene state."""
+
+    command_type: CommandType
+    """Coordinate space of the accepted goals and generated commands."""
 
     @abstractmethod
     def goal_reached(self, goal: np.ndarray, arena_world: ArenaWorld, env_id: int) -> bool:

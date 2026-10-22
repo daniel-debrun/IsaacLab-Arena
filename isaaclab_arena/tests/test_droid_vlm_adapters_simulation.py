@@ -22,9 +22,9 @@ def _test_droid_absolute_pose_adapters(simulation_app):
     from isaaclab_arena.scene.scene import Scene
     from isaaclab_arena.utils.pose import Pose
     from isaaclab_arena_vlm_agent.action_adapter import AgentActionAdapter
+    from isaaclab_arena_vlm_agent.commands import CommandType, PoseCommand
     from isaaclab_arena_vlm_agent.droid_motion_generator import DroidPoseMotionGenerator
     from isaaclab_arena_vlm_agent.droid_observation_adapter import DroidObservationAdapter
-    from isaaclab_arena_vlm_agent.pose import PoseCommand
 
     # Use a translated, rotated root and separate environment origins to expose world/root confusion.
     embodiment = DroidDifferentialIKEmbodiment(
@@ -50,15 +50,16 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         obs, _ = env.reset()
         base = env.unwrapped
         observation_adapter = DroidObservationAdapter()
-        action_adapter = AgentActionAdapter(embodiment)
+        action_adapter = AgentActionAdapter(embodiment, CommandType.EE_POSE)
         assert action_adapter.embodiment is embodiment
         assert action_adapter.is_robot_action_space_supported(env)
+        assert not AgentActionAdapter(embodiment, CommandType.JOINT_POSITION).is_robot_action_space_supported(env)
         for scene_key, body_name in (("other_robot", "base_link"), ("robot", "panda_link7")):
             other_embodiment = SimpleNamespace(
                 get_scene_key=lambda: scene_key,
                 get_command_body_name=lambda: body_name,
             )
-            assert not AgentActionAdapter(other_embodiment).is_robot_action_space_supported(env)
+            assert not AgentActionAdapter(other_embodiment, CommandType.EE_POSE).is_robot_action_space_supported(env)
         states = [observation_adapter.extract_robot_state(env, obs, env_id) for env_id in range(base.num_envs)]
         actions = []
         for env_id, state in enumerate(states):
@@ -128,3 +129,77 @@ def _test_droid_absolute_pose_adapters(simulation_app):
 
 def test_droid_absolute_pose_adapters():
     assert run_function_with_persistent_simulation_app(_test_droid_absolute_pose_adapters)
+
+
+def _test_droid_joint_position_adapters(simulation_app):
+    import torch
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from isaaclab_arena.embodiments.droid.droid import DroidAbsoluteJointPositionEmbodiment
+    from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
+    from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
+    from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
+    from isaaclab_arena.scene.scene import Scene
+    from isaaclab_arena_vlm_agent.action_adapter import AgentActionAdapter, ChunkActionAdapter
+    from isaaclab_arena_vlm_agent.commands import CommandType
+    from isaaclab_arena_vlm_agent.droid_observation_adapter import DroidObservationAdapter
+    from isaaclab_arena_vlm_agent.vlm_agent_policy import VLMChunkPolicy, VLMPolicyCfg, VLMStepPolicy
+
+    embodiment = DroidAbsoluteJointPositionEmbodiment()
+    arena_env = IsaacLabArenaEnvironment(name="droid_vlm_joint_test", scene=Scene(), embodiment=embodiment)
+    env = ArenaEnvBuilder(arena_env, ArenaEnvBuilderCfg(num_envs=2, solve_relations=False)).make_registered()
+    try:
+        env.reset()
+        base = env.unwrapped
+        assert not AgentActionAdapter(embodiment, CommandType.EE_POSE).is_robot_action_space_supported(env)
+        arm = base.action_manager.get_term("arm_action")
+        joint_names = tuple(f"panda_joint{i}" for i in range(1, 8))
+        targets = base.arena_world.get_joint_positions("robot", joint_names)[:1].expand(2, -1)
+        target = {"joint_positions": targets[0].tolist(), "gripper_closed": False}
+        invalid = {"joint_positions": [0.1, 0.2], "gripper_closed": False}
+        nonfinite = {"joint_positions": [float("nan")] * 7, "gripper_closed": False}
+        observation_adapter = DroidObservationAdapter()
+        observation_adapter.build_request_content = Mock(return_value=[])
+        for policy_type, adapter in (
+            (VLMStepPolicy, AgentActionAdapter(embodiment, CommandType.JOINT_POSITION)),
+            (VLMChunkPolicy, ChunkActionAdapter(embodiment, CommandType.JOINT_POSITION, chunk_size=2)),
+        ):
+            assert adapter.is_robot_action_space_supported(env)
+            responses = [invalid, nonfinite, target, target]
+            if policy_type is VLMChunkPolicy:
+                # A ragged chunk and a nonfinite chunk must be corrected before any command is executed.
+                responses = [{"commands": [row, target]} for row in responses]
+            backend = SimpleNamespace(infer=Mock(side_effect=responses))
+            policy = policy_type(
+                VLMPolicyCfg(system_prompt="Return absolute joint positions in arm controller order."),
+                inference_backend=backend,
+                observation_adapter=observation_adapter,
+                action_adapter=adapter,
+            )
+            policy.set_task_description("Hold the current joints")
+            actions = policy.get_action(env, {})
+            assert backend.infer.call_count == 4
+            torch.testing.assert_close(actions[:, :7], targets)
+            base.action_manager.process_action(actions)
+            torch.testing.assert_close(arm.processed_actions, targets)
+            assert torch.all(base.action_manager.get_term("gripper_action").processed_actions == 0)
+            if policy_type is VLMChunkPolicy:
+                torch.testing.assert_close(policy.get_action(env, {}), actions)
+                assert backend.infer.call_count == 4
+            env.step(actions)
+
+        # Absolute positions must not be sent through scaled, offset, or clipped controllers.
+        for field, value in (("scale", 0.5), ("offset", 0.1), ("use_default_offset", True), ("clip", {})):
+            original = getattr(arm.cfg, field)
+            setattr(arm.cfg, field, value)
+            assert not adapter.is_robot_action_space_supported(env), field
+            setattr(arm.cfg, field, original)
+        assert adapter.is_robot_action_space_supported(env)
+    finally:
+        env.close()
+    return True
+
+
+def test_droid_joint_position_adapters():
+    assert run_function_with_persistent_simulation_app(_test_droid_joint_position_adapters)

@@ -23,7 +23,12 @@ from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from isaaclab_arena.inference.backend import InferenceBackend, build_strict_schema
 from isaaclab_arena_vlm_agent.action_adapter import AgentActionAdapter, ChunkActionAdapter, GoalActionAdapter
+<<<<<<< HEAD
 from isaaclab_arena_vlm_agent.image_utils import extract_rgb_images_from_camera_observations
+=======
+from isaaclab_arena_vlm_agent.commands import CommandType
+from isaaclab_arena_vlm_agent.image_utils import extract_rgb_images_from_camera_observations, image_to_jpeg_data_url
+>>>>>>> 9b5043b3f2 (Select VLM command formats with an enum)
 from isaaclab_arena_vlm_agent.motion_generator import MotionGenerator
 from isaaclab_arena_vlm_agent.observation_adapter import CAMERA_OBSERVATION_GROUP, VLMObservationAdapter
 from isaaclab_arena_vlm_agent.response_errors import InvalidAgentResponseError
@@ -64,7 +69,8 @@ class ActionAdapter(AgentActionAdapter):
     response_model = JointTargetResponse
 
     def __init__(self, scale=1.0, action_dim=2):
-        super().__init__(SimpleNamespace())
+        super().__init__(SimpleNamespace(), CommandType.JOINT_POSITION)
+        self.response_model = JointTargetResponse
         self.scale = scale
         self.joint_names = tuple(f"joint_{i}" for i in range(action_dim))
 
@@ -272,7 +278,7 @@ class JointChunkAdapter(ChunkActionAdapter):
         return env.unwrapped.action_dim > 0
 
     def __init__(self, chunk_size: int, action_dim=2):
-        super().__init__(SimpleNamespace(), chunk_size=chunk_size)
+        super().__init__(SimpleNamespace(), CommandType.JOINT_POSITION, chunk_size=chunk_size)
         self.joint_names = tuple(f"joint_{i}" for i in range(action_dim))
         self.response_model = create_model(
             "JointChunkResponse",
@@ -304,7 +310,8 @@ class JointGoalAdapter(GoalActionAdapter):
     def __init__(self, action_dim=2, *, motion_generator=None):
         if motion_generator is None:
             motion_generator = JointMotionGenerator(action_dim=action_dim)
-        super().__init__(SimpleNamespace(), motion_generator=motion_generator)
+        super().__init__(SimpleNamespace(), CommandType.JOINT_POSITION, motion_generator=motion_generator)
+        self.response_model = JointTargetResponse
         self.joint_names = tuple(f"joint_{i}" for i in range(action_dim))
 
     def is_robot_action_space_supported(self, env):
@@ -319,6 +326,8 @@ class JointGoalAdapter(GoalActionAdapter):
 
 
 class JointMotionGenerator(MotionGenerator):
+    command_type = CommandType.JOINT_POSITION
+
     def __init__(self, action_dim=2, max_step=0.25):
         self.joint_names = tuple(f"joint_{i}" for i in range(action_dim))
         self.max_step = max_step

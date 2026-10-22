@@ -11,6 +11,7 @@ import math
 import numpy as np
 from typing import TYPE_CHECKING
 
+from isaaclab_arena_vlm_agent.commands import CommandType
 from isaaclab_arena_vlm_agent.motion_generator import MotionGenerator
 
 if TYPE_CHECKING:
@@ -26,6 +27,8 @@ class DroidPoseMotionGenerator(MotionGenerator):
     A blocked gripper can exhaust the policy step limit; issuing a close command alone does not
     establish that the fingers reached the requested closure or that a grasp succeeded.
     """
+
+    command_type = CommandType.EE_POSE
 
     def __init__(
         self,
