@@ -100,10 +100,6 @@ def _ray_intersects_axis_aligned_box(
     an intersection; a box entirely behind the ray does not. Direction components
     with magnitude below 1e-6 are treated as parallel to the corresponding planes.
 
-    A slab is the space between two opposite box faces, extending infinitely in
-    the other directions. The box is the overlap of three slabs. The ray hits the
-    box if its intervals inside all three overlap at a forward distance.
-
     Args:
         ray_origin_B: Ray origins in frame B, with shape (num_rays, 3).
         ray_direction_B: Unit ray directions in frame B, with shape (num_rays, 3).
@@ -113,9 +109,11 @@ def _ray_intersects_axis_aligned_box(
     Returns:
         Boolean tensor of shape (num_rays,) indicating forward intersections.
     """
-    # Each pair of box planes encloses a slab. For each axis, find the distances
-    # along the ray where it enters and exits that slab. Sorting the two distances
-    # handles either sign of the direction component.
+    # A slab is the space between two opposite box faces, extending infinitely in
+    # the other directions. The box is the overlap of three slabs. The ray hits the
+    # box if its intervals inside all three overlap at a forward distance.
+    # For each axis, find the distances along the ray where it enters and exits
+    # that slab. Sorting the two distances handles either sign of the direction component.
     parallel = ray_direction_B.abs() < 1e-6
     # Avoid division by zero for parallel axes; their distances are replaced below.
     safe_direction_B = torch.where(parallel, torch.ones_like(ray_direction_B), ray_direction_B)
