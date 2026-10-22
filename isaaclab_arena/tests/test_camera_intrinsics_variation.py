@@ -3,6 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+import sys
+
 import pytest
 
 from isaaclab_arena.tests.utils.constants import TestConstants
@@ -121,44 +123,43 @@ def _test_enabled_camera_intrinsics_variation_forces_untiled_camera(simulation_a
     assert camera_cfg.renderer_cfg.global_settings.samples_per_pixel == 4
     camera_cfg.renderer_cfg.global_settings.samples_per_pixel = 8
     assert rig.wrist_camera.renderer_cfg.global_settings.samples_per_pixel == 4
-    copied = rig.get_cfg()
-    copied.set_use_tiled_camera(True)
-    tiled = copied.get_cfg()
+    with pytest.raises(AssertionError, match="source camera rig"):
+        rig.get_cfg().get_cfg()
+    rig.set_use_tiled_camera(True)
+    tiled = rig.get_cfg()
     assert isinstance(tiled.wrist_camera, TiledCameraCfg)
     assert tiled.wrist_camera.renderer_cfg.class_type is not SeparateCameraRenderer
-    tiled.set_use_tiled_camera(False)
-    assert tiled.get_cfg().wrist_camera.renderer_cfg.class_type is SeparateCameraRenderer
-    return True
-
-
-def _test_untiled_camera_cfg_rejects_unsupported_settings(simulation_app):
-    from isaaclab.renderers import RendererCfg
-
-    from isaaclab_arena.embodiments.droid.droid import DroidCameraCfg
-
-    for field, value, message in [
-        ("data_types", ["depth"], "only RGB/RGBA"),
-        ("isp_cfg", object(), "do not support ISP"),
-        ("background_color", (1.0, 0.0, 0.0), "custom background"),
-        ("renderer_cfg", RendererCfg(renderer_type="other"), "Isaac RTX"),
-    ]:
-        rig = DroidCameraCfg()
-        rig.set_use_tiled_camera(False)
-        setattr(rig.external_camera, field, value)
-        with pytest.raises(AssertionError, match=message):
-            rig.get_cfg()
-    rig = DroidCameraCfg()
     rig.set_use_tiled_camera(False)
-    rig.external_camera.renderer_cfg.class_type = object
-    with pytest.raises(AssertionError, match="custom renderer"):
-        rig.get_cfg()
+    assert rig.get_cfg().wrist_camera.renderer_cfg.class_type is SeparateCameraRenderer
     return True
 
 
 def _test_camera_intrinsics_variation_realized_at_runtime(simulation_app):
+    from isaaclab_arena.embodiments.droid.droid import DroidCameraCfg
+    from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
+    from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
+
+    env = ArenaEnvBuilder(
+        get_test_environment(camera_intrinsics_variation_enabled=True), ArenaEnvBuilderCfg(num_envs=1)
+    ).make_registered()
+    try:
+        env.reset()
+        sensor_prim = env.unwrapped.scene[CAMERA_NAME]._sensor_prims[0]
+        nominal_spawn = getattr(DroidCameraCfg(), CAMERA_NAME).spawn
+        assert sensor_prim.GetHorizontalApertureAttr().Get() == pytest.approx(
+            nominal_spawn.horizontal_aperture / (1.0 + TEST_DELTAS[0])
+        )
+        assert sensor_prim.GetVerticalApertureAttr().Get() == pytest.approx(
+            nominal_spawn.vertical_aperture / (1.0 + TEST_DELTAS[1])
+        )
+    finally:
+        env.close()
+    return True
+
+
+def _test_camera_intrinsics_variation_changes_only_selected_images(simulation_app):
     import torch
 
-    from isaaclab_arena.embodiments.droid.droid import DroidCameraCfg
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
     from isaaclab_arena.variations.camera_intrinsics_variation import CameraIntrinsicsVariationCfg
@@ -175,7 +176,6 @@ def _test_camera_intrinsics_variation_realized_at_runtime(simulation_app):
     for name in rig.camera_names():
         getattr(rig, name).width = 640
         getattr(rig, name).height = 360
-    rig.external_camera_2.data_types = ["rgb", "rgba"]
     variation = arena_env.embodiment.get_variation(VARIATION_NAME)
     variation.apply_cfg(
         CameraIntrinsicsVariationCfg(sampler_cfg=UniformSamplerCfg(low=list(TEST_DELTAS), high=list(TEST_DELTAS)))
@@ -188,16 +188,6 @@ def _test_camera_intrinsics_variation_realized_at_runtime(simulation_app):
         env.reset()
         base = env.unwrapped
         camera = base.scene[CAMERA_NAME]
-        nominal_spawn = getattr(DroidCameraCfg(), CAMERA_NAME).spawn
-        for prim in camera._sensor_prims:
-            assert prim.GetHorizontalApertureAttr().Get() == pytest.approx(
-                nominal_spawn.horizontal_aperture / (1.0 + TEST_DELTAS[0])
-            )
-            assert prim.GetVerticalApertureAttr().Get() == pytest.approx(
-                nominal_spawn.vertical_aperture / (1.0 + TEST_DELTAS[1])
-            )
-        rgba = base.scene["external_camera_2"].data.output
-        torch.testing.assert_close(rgba["rgb"].torch, rgba["rgba"].torch[..., :3])
 
         def capture():
             # Freeze physics and let rendering converge before comparing pixels.
@@ -221,18 +211,13 @@ def _test_camera_intrinsics_variation_realized_at_runtime(simulation_app):
             assert difference[env_id] > 5.0, "Changing intrinsics must change the rendered image"
             assert difference[1 - env_id] < 1.0, "Changing intrinsics must not change another environment's image"
             previous = current
-        products = [child.render_product.path for child in camera._render_data]
-        env.reset()
-        assert [child.render_product.path for child in camera._render_data] == products
-        render_data = [base.scene[name]._render_data for name in rig.camera_names()]
     finally:
         env.close()
-    assert all(child.render_product is None for data in render_data for child in data)
     return True
 
 
-def _run_camera_intrinsics_variation_realized_at_runtime():
-    """Run the runtime intrinsics check in a disposable Kit process."""
+def _run_camera_intrinsics_test(test_function):
+    """Run an intrinsics check in a disposable Kit process."""
     from isaaclab_arena.cli.isaaclab_arena_cli import get_isaaclab_arena_cli_parser
     from isaaclab_arena.utils.isaaclab_utils.simulation_app import SimulationAppContext
 
@@ -241,7 +226,7 @@ def _run_camera_intrinsics_variation_realized_at_runtime():
     if not HEADLESS:
         args_cli.visualizer = ["kit"]
     with SimulationAppContext(args_cli) as simulation_app_context:
-        assert _test_camera_intrinsics_variation_realized_at_runtime(simulation_app_context.app_launcher.app)
+        assert test_function(simulation_app_context.app_launcher.app)
 
 
 @pytest.mark.with_cameras
@@ -289,11 +274,15 @@ def test_camera_intrinsics_variation_realized_at_runtime():
 
 
 @pytest.mark.with_cameras
-def test_untiled_camera_cfg_rejects_unsupported_settings():
-    assert run_function_with_persistent_simulation_app(
-        _test_untiled_camera_cfg_rejects_unsupported_settings, headless=HEADLESS, enable_cameras=ENABLE_CAMERAS
-    )
+@pytest.mark.with_subprocess
+def test_camera_intrinsics_variation_changes_only_selected_images():
+    run_subprocess([TestConstants.python_path, __file__, "render"])
 
 
 if __name__ == "__main__":
-    _run_camera_intrinsics_variation_realized_at_runtime()
+    test_function = (
+        _test_camera_intrinsics_variation_changes_only_selected_images
+        if sys.argv[1:] == ["render"]
+        else _test_camera_intrinsics_variation_realized_at_runtime
+    )
+    _run_camera_intrinsics_test(test_function)

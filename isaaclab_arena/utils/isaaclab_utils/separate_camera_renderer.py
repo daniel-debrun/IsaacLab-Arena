@@ -22,24 +22,6 @@ if TYPE_CHECKING:
     from isaaclab.sensors.camera.camera_data import CameraData
 
 
-def validate_independent_camera_cfg(camera_cfg: CameraCfg) -> None:
-    """Require an RTX RGB camera without ISP or a custom background."""
-    assert isinstance(
-        camera_cfg.renderer_cfg, IsaacRtxRendererCfg
-    ), "Untiled Arena cameras require the Isaac RTX renderer"
-    assert camera_cfg.renderer_cfg.class_type in (
-        IsaacRtxRendererCfg().class_type,
-        IsaacRtxRenderer,
-        SeparateCameraRenderer,
-    ), "Untiled Arena cameras cannot replace a custom renderer"
-    assert camera_cfg.data_types and set(camera_cfg.data_types) <= {
-        "rgb",
-        "rgba",
-    }, "Untiled Arena cameras currently support only RGB/RGBA outputs"
-    assert camera_cfg.isp_cfg is None, "Untiled Arena cameras do not support ISP"
-    assert camera_cfg.background_color is None, "Untiled Arena cameras do not support custom background colors"
-
-
 class SeparateCameraRenderer(IsaacRtxRenderer):
     """Render RGB cameras independently and write into the usual batched buffers."""
 
@@ -50,7 +32,7 @@ class SeparateCameraRenderer(IsaacRtxRenderer):
 
     def prepare_cameras(self, stage, spec: CameraRenderSpec) -> None:
         """Validate the camera before any renderer-specific stage changes."""
-        validate_independent_camera_cfg(spec.cfg)
+        assert_camera_cfg_compatible_with_independent_rendering(spec.cfg)
 
     def create_render_data(self, spec: CameraRenderSpec) -> list[IsaacRtxRenderData]:
         """Create one RGB annotator and render product per environment."""
@@ -97,3 +79,21 @@ class SeparateCameraRenderer(IsaacRtxRenderer):
             for child in render_data:
                 if child.render_product is not None:
                     super().cleanup(child)
+
+
+def assert_camera_cfg_compatible_with_independent_rendering(camera_cfg: CameraCfg) -> None:
+    """Require an RTX RGB camera without ISP or a custom background."""
+    assert isinstance(
+        camera_cfg.renderer_cfg, IsaacRtxRendererCfg
+    ), "Untiled Arena cameras require the Isaac RTX renderer"
+    assert camera_cfg.renderer_cfg.class_type in (
+        IsaacRtxRendererCfg().class_type,
+        IsaacRtxRenderer,
+        SeparateCameraRenderer,
+    ), "Untiled Arena cameras cannot replace a custom renderer"
+    assert camera_cfg.data_types and set(camera_cfg.data_types) <= {
+        "rgb",
+        "rgba",
+    }, "Untiled Arena cameras currently support only RGB/RGBA outputs"
+    assert camera_cfg.isp_cfg is None, "Untiled Arena cameras do not support ISP"
+    assert camera_cfg.background_color is None, "Untiled Arena cameras do not support custom background colors"

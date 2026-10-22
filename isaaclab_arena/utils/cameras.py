@@ -54,29 +54,33 @@ class ArenaCameraCfg:
         """Return a copy of this rig, tiled or untiled depending on use_tiled_camera.
 
         A copy is returned so callers may freely combine or mutate it without affecting this instance.
+        Select tiling on the source rig before calling this method.
         """
-        from isaaclab_physx.renderers.isaac_rtx_renderer import IsaacRtxRenderer
-
         from isaaclab_arena.utils.isaaclab_utils.separate_camera_renderer import (
             SeparateCameraRenderer,
-            validate_independent_camera_cfg,
+            assert_camera_cfg_compatible_with_independent_rendering,
         )
 
+        # Select the renderer for every camera in a copy, leaving the source rig reusable.
+        # CameraCfg alone still uses tiled RTX products, so untiled mode also changes the renderer.
         rig = self.copy()
         for name in rig.camera_names():
             camera_cfg = getattr(rig, name)
+            assert camera_cfg.renderer_cfg.class_type is not SeparateCameraRenderer, (
+                "get_cfg() expects a source camera rig; change use_tiled_camera on the source rig, "
+                "not on the returned configuration"
+            )
             if self._use_tiled_camera:
-                if camera_cfg.renderer_cfg.class_type is SeparateCameraRenderer:
-                    camera_cfg.renderer_cfg.class_type = IsaacRtxRenderer
                 if isinstance(camera_cfg, TiledCameraCfg):
                     continue
                 cfg_type = TiledCameraCfg
             else:
-                validate_independent_camera_cfg(camera_cfg)
+                assert_camera_cfg_compatible_with_independent_rendering(camera_cfg)
                 camera_cfg.renderer_cfg.class_type = SeparateCameraRenderer
                 if not isinstance(camera_cfg, TiledCameraCfg):
                     continue
                 cfg_type = CameraCfg
+            # Rebuild the camera config with its settings intact; the target type supplies class_type.
             init_fields = {
                 f.name: getattr(camera_cfg, f.name) for f in fields(camera_cfg) if f.init and f.name != "class_type"
             }
