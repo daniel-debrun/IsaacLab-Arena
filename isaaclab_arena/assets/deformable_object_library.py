@@ -45,6 +45,7 @@ class LibraryDeformableObject(DeformableObject):
             initial_pose: Initial pose of the object.
             **kwargs: Extra arguments passed to ``DeformableObject``.
         """
+        assert "instance_name" not in kwargs, "instance_name was renamed to name; pass name= instead."
         super().__init__(
             name=name or self.registry_name,
             prim_path=prim_path,
