@@ -8,8 +8,6 @@ runs:
   asset_selection_demo:
     environment:
       type: pick_and_place_maple_table
-      # The default asset of the object "pick_up_object". It is spawned while the asset selection is off.
-      pick_up_object: rubiks_cube_hot3d_robolab
       # Short demo timeout in simulated time, not wall-clock time.
       episode_length_s: 1.5
     environment_builder:
