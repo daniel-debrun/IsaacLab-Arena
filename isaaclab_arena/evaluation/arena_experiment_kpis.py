@@ -42,6 +42,27 @@ def _is_number(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
+def _line_protocol_text_problem(text: str) -> str:
+    """Return why a string cannot be a line-protocol key or tag value (empty or with a line break), or ''."""
+    if not text:
+        return "must not be empty"
+    if "\n" in text or "\r" in text:
+        return "must not contain a line break"
+    return ""
+
+
+def _key_problem(key: str) -> str:
+    """Return why a record key cannot be an InfluxDB tag or field key, or ''."""
+    problem = _line_protocol_text_problem(key)
+    if problem:
+        return problem
+    if key.startswith("_"):
+        return "must not start with '_' (reserved by InfluxDB)"
+    if key == "time":
+        return "must not be 'time' (reserved by InfluxDB)"
+    return ""
+
+
 def _is_finite_number(value: int | float) -> bool:
     """Return whether a number converts to a finite float."""
     try:
@@ -168,6 +189,10 @@ def build_experiment_kpis(experiment_output_directory: Path) -> dict:
     runs: dict[str, dict[str, Any]] = result["runs"]
     assert runs, f"Experiment result in '{experiment_output_directory}' has no Runs"
     assert "provenance" in result, f"Experiment result in '{experiment_output_directory}' has no provenance"
+    missing_provenance_keys = [key for key in PROVENANCE_KEYS if key not in result["provenance"]]
+    assert (
+        not missing_provenance_keys
+    ), f"Experiment result in '{experiment_output_directory}' has no provenance {missing_provenance_keys}"
 
     for run_name, run_result in runs.items():
         start_timestamp_ns = run_result.get("start_timestamp_ns")
@@ -215,11 +240,15 @@ def _validate_record(index: int, record: object) -> frozenset:
     has_number = False
     for key, value in record.items():
         assert key not in RESERVED_RECORD_KEYS, f"record {index}: key {key!r} is reserved"
+        assert not _key_problem(key), f"record {index}: key {key!r} {_key_problem(key)}"
         if _is_number(value):
             assert _is_finite_number(value), f"record {index}: value for {key!r} must be finite"
             has_number = True
         else:
             assert isinstance(value, str), f"record {index}: value for {key!r} must be a string or a number"
+            assert not _line_protocol_text_problem(
+                value
+            ), f"record {index}: value for {key!r} {_line_protocol_text_problem(value)}"
     assert has_number, f"record {index} must have at least one numeric value"
     return frozenset((key, value) for key, value in record.items() if isinstance(value, str))
 
@@ -233,7 +262,9 @@ def validate_experiment_kpis(kpis: dict) -> None:
     assert isinstance(kpis, dict), "KPI file contents must be a JSON object"
     schema_version = kpis.get("schema_version")
     assert (
-        _is_number(schema_version) and schema_version == KPI_SCHEMA_VERSION
+        isinstance(schema_version, int)
+        and not isinstance(schema_version, bool)
+        and schema_version == KPI_SCHEMA_VERSION
     ), f"schema_version must be {KPI_SCHEMA_VERSION}, got {schema_version!r}"
 
     assert "timestamp_ns" in kpis, "timestamp_ns is required"
@@ -245,7 +276,10 @@ def validate_experiment_kpis(kpis: dict) -> None:
     provenance = kpis.get("provenance")
     assert isinstance(provenance, dict), "provenance must be a JSON object"
     for key in PROVENANCE_KEYS:
-        assert isinstance(provenance.get(key), str), f"provenance.{key} must be a string, got {provenance.get(key)!r}"
+        assert key in provenance, f"provenance.{key} is required"
+        value = provenance[key]
+        assert isinstance(value, str), f"provenance.{key} must be a string, got {value!r}"
+        assert not _line_protocol_text_problem(value), f"provenance.{key} {_line_protocol_text_problem(value)}"
 
     records = kpis.get("records")
     assert isinstance(records, list) and records, "records must be a non-empty list"
