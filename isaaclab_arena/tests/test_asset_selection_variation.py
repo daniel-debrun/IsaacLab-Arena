@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for AssetSelectionVariation, through ArenaEnvBuilder.build_env_cfg()."""
+"""Tests for AssetSelectionVariation, on its own and through ArenaEnvBuilder.build_env_cfg()."""
 
 import json
 
@@ -428,3 +428,48 @@ def test_registered_rigid_objects_have_disabled_asset_selection():
     assert run_function_with_persistent_simulation_app(
         _test_registered_rigid_objects_have_disabled_asset_selection, headless=HEADLESS
     )
+
+
+class _RecordingRigidObject:
+    """Stands in for the Object whose asset a selection sets, and records each selected registry name."""
+
+    def __init__(self):
+        self.name = "pickup"
+        self.bounding_box = None
+        self.selected_registry_names: list[str] = []
+
+    def set_asset(self, registry_name, spawn_cfg):
+        self.selected_registry_names.append(registry_name)
+
+
+@pytest.fixture
+def resolved_registry_names(monkeypatch):
+    """Resolve registry names without building the registered assets, and return the names resolved so far.
+
+    Building the registered assets needs a SimulationApp, so the tests that use this fixture run in plain Python.
+    """
+    from isaaclab_arena.variations import asset_selection_variation
+
+    resolved_registry_names = []
+
+    def resolve_spawn_cfg(registry_name):
+        resolved_registry_names.append(registry_name)
+        return f"spawn cfg of {registry_name}"
+
+    monkeypatch.setattr(asset_selection_variation, "_get_rigid_object_spawn_cfg", resolve_spawn_cfg)
+    return resolved_registry_names
+
+
+@pytest.mark.parametrize("random_choice", [False, True])
+def test_random_choice_set_without_apply_cfg_fails_the_build(resolved_registry_names, random_choice):
+    from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariation, AssetSelectionVariationCfg
+
+    selection_cfg = AssetSelectionVariationCfg(
+        enabled=True, random_choice=random_choice, registry_names=["mustard_bottle", "sugar_box"]
+    )
+    variation = AssetSelectionVariation(_RecordingRigidObject(), selection_cfg)
+    # The sampler bound by apply_cfg stays, so it no longer matches random_choice.
+    variation.cfg.random_choice = not random_choice
+
+    with pytest.raises(AssertionError, match="Change random_choice by passing a cfg to apply_cfg"):
+        variation.configure_at_build_time(seed=0, variation_key=SELECTION_KEY)

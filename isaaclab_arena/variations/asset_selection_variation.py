@@ -15,9 +15,9 @@ from isaaclab.utils.configclass import configclass
 
 from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.assets.registries import AssetRegistry
-from isaaclab_arena.variations.choice_sampler import ChoiceSamplerCfg
+from isaaclab_arena.variations.choice_sampler import ChoiceSampler, ChoiceSamplerCfg
 from isaaclab_arena.variations.sampler_base import SamplerBaseCfg
-from isaaclab_arena.variations.sequential_sampler import SequentialSamplerCfg
+from isaaclab_arena.variations.sequential_sampler import SequentialSampler, SequentialSamplerCfg
 from isaaclab_arena.variations.variation_base import BuildTimeVariationBase, VariationBaseCfg
 
 if TYPE_CHECKING:
@@ -83,6 +83,14 @@ class AssetSelectionVariation(BuildTimeVariationBase):
             f"'{self._variation_key}' is enabled but its registry_names is empty. List the registered rigid objects"
             f" to choose from, for example '{self._variation_key}.registry_names=[cracker_box,sugar_box]'."
         )
+        # apply_cfg picks the sampler from random_choice, so a random_choice set directly on the cfg leaves the other
+        # sampler bound.
+        expected_sampler_class = ChoiceSampler if self.cfg.random_choice else SequentialSampler
+        assert isinstance(self.sampler, expected_sampler_class), (
+            f"'{self._variation_key}' has random_choice={self.cfg.random_choice} but samples with a"
+            f" {type(self.sampler).__name__}. Change random_choice by passing a cfg to apply_cfg, which also swaps"
+            " the sampler."
+        )
         # Checked at build time because bounding_box can be set after the Object is created.
         assert self._rigid_object.bounding_box is None, (
             f"'{self._rigid_object.name}' sets a bounding_box override, which placement would use for every"
@@ -93,7 +101,7 @@ class AssetSelectionVariation(BuildTimeVariationBase):
         spawn_cfgs_by_registry_name = {
             registry_name: _get_rigid_object_spawn_cfg(registry_name) for registry_name in dict.fromkeys(registry_names)
         }
-        if not self.cfg.random_choice:
+        if isinstance(self.sampler, SequentialSampler):
             # Rebuild k starts at the k-th name, so the rebuilds of a Run take the names in list order.
             self.sampler.set_position(self._rebuild_index)
         # The sampler reports the name to the variation recorder and returns the recorded name during replay.
