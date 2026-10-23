@@ -21,7 +21,7 @@ from isaaclab_arena.evaluation.arena_experiment_result import (
     build_arena_run_result_metadata,
 )
 
-START_TIMESTAMP_NS = 1760313600000000000
+START_TIMESTAMP_NS = 1792800000000000000
 
 
 def _metadata(
@@ -137,12 +137,12 @@ def test_run_metadata_start_timestamp_is_written(tmp_path, status):
 
     result = ArenaExperimentResult(tmp_path, {"run": _metadata("task", status=status)})
 
-    assert result.to_dict()["runs"]["run"]["start_timestamp_ns"] == 1760313600000000000
+    assert result.to_dict()["runs"]["run"]["start_timestamp_ns"] == 1792800000000000000
 
 
 def test_run_metadata_requires_integer_start_timestamp(tmp_path):
     metadata = _metadata("task", status="failed")
-    metadata["start_timestamp_ns"] = "1760313600000000000"
+    metadata["start_timestamp_ns"] = "1792800000000000000"
 
     with pytest.raises(AssertionError, match="start_timestamp_ns for Run 'run' must be an int"):
         ArenaExperimentResult(tmp_path, {"run": metadata})

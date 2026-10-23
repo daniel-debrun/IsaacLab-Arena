@@ -192,12 +192,14 @@ def main():
         timings_path = aggregate_experiment_timings(experiment_output_directory, completed_run_names)
         print(f"Wrote Arena Experiment timings to: {timings_path}")
 
+        # Write HTML report.
+        report_path = build_report(experiment_output_directory)
+
+        # Written after the report so that a KPI assertion still leaves the report for debugging.
         from isaaclab_arena.evaluation.arena_experiment_kpis import write_experiment_kpis
 
         write_experiment_kpis(experiment_output_directory)
 
-        # Write HTML report.
-        report_path = build_report(experiment_output_directory)
         if args_cli.serve_evaluation_report:
             serve_until_ctrl_c(report_path.parent, args_cli.evaluation_report_port, report_path.name)
 

@@ -189,8 +189,10 @@ def build_experiment_output(
         [report.run_name for report in run_execution_reports if report.status is RunStatus.COMPLETED],
     )
     print(f"Wrote Arena Experiment timings to: {experiment_timings_path}")
+    report_path = build_report(experiment_output_directory, run_executions=run_execution_reports)
+    # Written after the report so that a KPI assertion still leaves the report for debugging.
     write_experiment_kpis(experiment_output_directory)
-    return build_report(experiment_output_directory, run_executions=run_execution_reports)
+    return report_path
 
 
 def _parse_arguments() -> argparse.Namespace:

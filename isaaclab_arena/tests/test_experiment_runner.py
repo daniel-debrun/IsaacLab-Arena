@@ -167,7 +167,7 @@ def test_written_experiment_result_has_integer_start_timestamp_for_every_run(mon
     )
     experiment_cfg = SimpleNamespace(runs={"passing": SimpleNamespace(), "failing": SimpleNamespace()})
     run_results = [
-        ArenaRunResult(run_name="passing", status=RunStatus.COMPLETED, start_timestamp_ns=1760313600000000000),
+        ArenaRunResult(run_name="passing", status=RunStatus.COMPLETED, start_timestamp_ns=1792800000000000000),
         ArenaRunResult(run_name="failing", status=RunStatus.FAILED, start_timestamp_ns=1760313700000000000),
     ]
     (tmp_path / "passing").mkdir()
@@ -175,7 +175,7 @@ def test_written_experiment_result_has_integer_start_timestamp_for_every_run(mon
     result_path = _write_arena_experiment_result(experiment_cfg, run_results, tmp_path)
 
     runs = json.loads(result_path.read_text(encoding="utf-8"))["runs"]
-    assert runs["passing"]["start_timestamp_ns"] == 1760313600000000000
+    assert runs["passing"]["start_timestamp_ns"] == 1792800000000000000
     assert runs["failing"]["start_timestamp_ns"] == 1760313700000000000
 
 

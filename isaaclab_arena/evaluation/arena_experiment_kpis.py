@@ -25,6 +25,9 @@ from isaaclab_arena.visualization.report_data import EpisodeSummary, JobSummary,
 ARENA_EXPERIMENT_KPIS_FILENAME = "arena_experiment_kpis.json"
 KPI_SCHEMA_VERSION = 1
 
+MIN_TIMESTAMP_NS = 1767225600 * 10**9
+"""2026-01-01T00:00:00Z in Unix epoch nanoseconds; the KPI collector rejects earlier timestamps."""
+
 ALL_RUNS_TIMING_RUN_NAME = "all"
 """``run_name`` tag of timing records summed over every Run."""
 
@@ -236,8 +239,8 @@ def validate_experiment_kpis(kpis: dict) -> None:
     assert "timestamp_ns" in kpis, "timestamp_ns is required"
     timestamp_ns = kpis["timestamp_ns"]
     assert (
-        isinstance(timestamp_ns, int) and not isinstance(timestamp_ns, bool) and timestamp_ns > 0
-    ), f"timestamp_ns must be a positive integer, got {timestamp_ns!r}"
+        isinstance(timestamp_ns, int) and not isinstance(timestamp_ns, bool) and timestamp_ns >= MIN_TIMESTAMP_NS
+    ), f"timestamp_ns must be an integer no earlier than 2026-01-01T00:00:00Z, got {timestamp_ns!r}"
 
     provenance = kpis.get("provenance")
     assert isinstance(provenance, dict), "provenance must be a JSON object"

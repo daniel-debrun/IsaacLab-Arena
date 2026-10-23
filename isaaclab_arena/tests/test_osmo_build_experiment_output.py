@@ -28,7 +28,7 @@ from osmo.scripts.build_experiment_output import (
     load_experiment_runner_result,
 )
 
-START_TIMESTAMP_NS = 1760313600000000000
+START_TIMESTAMP_NS = 1792800000000000000
 
 
 def _run_metadata(environment_name: str, policy_variant: str) -> dict[str, object]:
@@ -488,3 +488,23 @@ def test_builds_failure_report_when_every_runner_failed(tmp_path):
     assert experiment_kpis["timestamp_ns"] == START_TIMESTAMP_NS
     assert "success_rate" not in experiment_kpis["records"][0]
     assert experiment_kpis["records"][0]["num_runs_failed"] == 2
+
+
+def test_failing_kpi_build_fails_after_the_report_is_written(tmp_path):
+    # A Run named "all" clashes with the timing totals, so building the KPI file fails.
+    experiment_runner_output_directory = tmp_path / "experiment-runner-output"
+    _write_run_output(experiment_runner_output_directory / "all", "all", True)
+    _write_run_timings(experiment_runner_output_directory, "all", [_timing_record("step", 1, 10.0)])
+    _write_experiment_runner_result(
+        experiment_runner_output_directory,
+        RunStatus.COMPLETED,
+        0,
+        {"all": _run_metadata("all-environment", "pi05")},
+    )
+    experiment_output_directory = tmp_path / "experiment-output"
+
+    with pytest.raises(AssertionError, match="reserved for timing totals"):
+        build_experiment_output({"all": experiment_runner_output_directory}, experiment_output_directory)
+
+    assert (experiment_output_directory / "index.html").is_file()
+    assert not (experiment_output_directory / ARENA_EXPERIMENT_KPIS_FILENAME).exists()

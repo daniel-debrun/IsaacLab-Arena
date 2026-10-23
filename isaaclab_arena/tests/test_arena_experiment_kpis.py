@@ -365,6 +365,10 @@ def _duplicate_record(kpis: dict) -> None:
         pytest.param(lambda kpis: _set_top_level(kpis, "timestamp_ns", "1"), id="string_timestamp_ns"),
         pytest.param(lambda kpis: _set_top_level(kpis, "timestamp_ns", True), id="bool_timestamp_ns"),
         pytest.param(lambda kpis: _set_top_level(kpis, "timestamp_ns", 0), id="non_positive_timestamp_ns"),
+        pytest.param(lambda kpis: _set_top_level(kpis, "timestamp_ns", 1_000), id="tiny_timestamp_ns"),
+        pytest.param(
+            lambda kpis: _set_top_level(kpis, "timestamp_ns", 1767225599999999999), id="timestamp_ns_before_2026"
+        ),
         pytest.param(lambda kpis: _set_top_level(kpis, "schema_version", 2), id="wrong_schema_version"),
         pytest.param(lambda kpis: _set_top_level(kpis, "schema_version", True), id="bool_schema_version"),
         pytest.param(lambda kpis: _set_top_level(kpis, "records", []), id="no_records"),
