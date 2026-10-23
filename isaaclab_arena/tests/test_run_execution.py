@@ -18,6 +18,8 @@ from isaaclab_arena.evaluation.arena_experiment_result import ARENA_SINGLE_RUN_T
 from isaaclab_arena.evaluation.arena_run import ArenaRunCfg, ArenaRunResult, RolloutLimitCfg, RunStatus
 from isaaclab_arena.policy.policy_base import PolicyCfg
 from isaaclab_arena.utils.timer import Timer
+from isaaclab_arena.variations import variations_hydra
+from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariation
 from isaaclab_arena.variations.choice_sampler import ChoiceSamplerCfg
 from isaaclab_arena.variations.variation_base import BuildTimeVariationBase, VariationBaseCfg
 
@@ -51,8 +53,8 @@ class _EpisodeRecorder:
 
 
 class _BuildTimeVariation(BuildTimeVariationBase):
-    def __init__(self, enabled: bool):
-        super().__init__(cfg=VariationBaseCfg(enabled=enabled, sampler_cfg=ChoiceSamplerCfg()), name="hdr_image")
+    def __init__(self):
+        super().__init__(cfg=VariationBaseCfg(sampler_cfg=ChoiceSamplerCfg()), name="hdr_image")
 
     def _realize_at_build_time(self) -> None:
         pass
@@ -71,12 +73,16 @@ class _RecorderManagerCfg:
 class _ArenaEnvBuilder:
     """Stands in for the real builder so the dataset naming can be checked without a SimulationApp."""
 
-    def __init__(self, recorders, variations=None):
+    def __init__(self, recorders, variations=None, hydra_overrides=None):
         self.env_cfg = SimpleNamespace(recorders=recorders)
         self.made_with = None
         self.variations = variations or {}
+        self.hydra_overrides = hydra_overrides
 
     def make_registered(self, env_cfg=None, env_kwargs=None, render_mode=None):
+        # Like ArenaEnvBuilder, apply the variation overrides while building.
+        if self.hydra_overrides:
+            variations_hydra.apply_overrides(self.variations, self.hydra_overrides)
         self.made_with = SimpleNamespace(env_cfg=env_cfg, env_kwargs=env_kwargs, render_mode=render_mode)
         return _environment()
 
@@ -428,19 +434,42 @@ def test_build_environment_tolerates_an_environment_without_recorders(monkeypatc
 
 
 @pytest.mark.parametrize(
-    "num_rebuilds, enabled, expect_warning",
-    [(1, True, True), (2, True, False), (1, False, False)],
+    "num_rebuilds, random_choice, names_never_spawned",
+    [(2, False, ["tomato_soup_can"]), (1, False, ["sugar_box", "tomato_soup_can"]), (3, False, []), (1, True, [])],
 )
-def test_build_environment_warns_when_one_build_enables_build_time_variations(
-    monkeypatch, tmp_path, capsys, num_rebuilds, enabled, expect_warning
+def test_build_environment_warns_when_in_order_asset_selection_skips_names(
+    monkeypatch, tmp_path, capsys, num_rebuilds, random_choice, names_never_spawned
 ):
-    builder = _ArenaEnvBuilder(None, variations={"light": [_BuildTimeVariation(enabled)]})
-    monkeypatch.setattr(run_execution, "build_arena_builder_from_run_cfg", lambda cfg, rebuild_index: builder)
+    def build_arena_builder(cfg, rebuild_index):
+        # Both variations start disabled. The Run's variation overrides enable them while the environment is built.
+        variations = {
+            "light": [_BuildTimeVariation()],
+            "pick_up_object": [AssetSelectionVariation(SimpleNamespace(name="pick_up_object"))],
+        }
+        hydra_overrides = variations_hydra.overrides_from_dict(cfg.variations)
+        return _ArenaEnvBuilder(None, variations=variations, hydra_overrides=hydra_overrides)
 
-    run_execution._build_environment_from_cfg(_run(num_rebuilds=num_rebuilds), render_mode=None, output_dir=tmp_path)
+    monkeypatch.setattr(run_execution, "build_arena_builder_from_run_cfg", build_arena_builder)
+    run = _run(
+        num_rebuilds=num_rebuilds,
+        variations={
+            "light.hdr_image.enabled": True,
+            "pick_up_object.asset_selection.enabled": True,
+            "pick_up_object.asset_selection.random_choice": random_choice,
+            "pick_up_object.asset_selection.registry_names": ["mustard_bottle", "sugar_box", "tomato_soup_can"],
+        },
+    )
 
-    warning = "[WARNING] Run 'test_run' enables the build-time variations ['light.hdr_image']"
-    assert (warning in capsys.readouterr().out) is expect_warning
+    run_execution._build_environment_from_cfg(run, render_mode=None, output_dir=tmp_path)
+
+    output = capsys.readouterr().out
+    if names_never_spawned:
+        assert f"[WARNING] Run 'test_run' has num_rebuilds: {num_rebuilds}" in output
+        assert "'pick_up_object.asset_selection' spawns one of its 3 registry names" in output
+        assert f"so {names_never_spawned} never spawn" in output
+    else:
+        # The enabled light.hdr_image, a build-time variation as well, does not warn either.
+        assert "[WARNING]" not in output
 
 
 def test_execute_experiment_writes_one_timings_file_per_run(monkeypatch, tmp_path):
