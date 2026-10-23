@@ -38,7 +38,8 @@ class SequentialSampler(SamplerBase, Generic[T]):
         """Set the index in ``choices`` of the item the next draw returns first.
 
         Args:
-            position: Non-negative index. A position past the last item starts over at the first.
+            position: Non-negative index. A position past the last item wraps around, so the next draw starts at
+                ``choices[position % len(choices)]``.
         """
         assert position >= 0, f"position must be non-negative; got {position}."
         self._position = position

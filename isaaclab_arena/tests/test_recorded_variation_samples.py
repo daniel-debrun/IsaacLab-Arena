@@ -230,7 +230,7 @@ def test_sequential_sampler_takes_choices_in_order_from_its_position() -> None:
     assert sampler.sample(2, choices) == ["a", "b"]
     # The next draw continues after the last item and starts over after the last choice.
     assert sampler.sample(2, choices) == ["c", "a"]
-    # Position 4 of 3 choices starts over at index 1.
+    # Position 4 of 3 choices wraps around to index 1.
     sampler.set_position(4)
     assert sampler.sample(1, choices) == ["b"]
 
