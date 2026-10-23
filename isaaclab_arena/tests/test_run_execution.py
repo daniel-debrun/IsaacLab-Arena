@@ -313,7 +313,7 @@ def test_execute_experiment_runs_in_declaration_order(monkeypatch, tmp_path):
 
     def build_and_run(run_cfg, output_dir, video_cfg):
         received.append((run_cfg.name, output_dir, video_cfg.video_base_dir))
-        return ArenaRunResult(run_name=run_cfg.name, status=RunStatus.COMPLETED, start_timestamp_ns=1)
+        return ArenaRunResult(run_name=run_cfg.name, status=RunStatus.COMPLETED)
 
     monkeypatch.setattr(run_execution, "build_and_run", build_and_run)
 
@@ -336,7 +336,7 @@ def test_execute_experiment_records_failure_and_continues(monkeypatch, tmp_path)
         attempted.append(run_cfg.name)
         if run_cfg.name == "failing":
             raise RuntimeError("rollout failed")
-        return ArenaRunResult(run_name=run_cfg.name, status=RunStatus.COMPLETED, start_timestamp_ns=1)
+        return ArenaRunResult(run_name=run_cfg.name, status=RunStatus.COMPLETED)
 
     monkeypatch.setattr(run_execution, "build_and_run", build_and_run)
 
@@ -351,8 +351,9 @@ def test_execute_experiment_records_failure_and_continues(monkeypatch, tmp_path)
         ("failing", RunStatus.FAILED),
         ("passing", RunStatus.COMPLETED),
     ]
-    assert isinstance(results[0].start_timestamp_ns, int)
-    assert results[0].start_timestamp_ns > 0
+    for result in results:
+        assert isinstance(result.start_timestamp_ns, int)
+        assert result.start_timestamp_ns > 0
 
 
 def test_execute_experiment_stops_on_failure_by_default(monkeypatch, tmp_path):
@@ -416,7 +417,7 @@ def test_execute_experiment_writes_one_timings_file_per_run(monkeypatch, tmp_pat
     def build_and_run(run_cfg, output_dir, video_cfg):
         with Timer(run_cfg.name):
             pass
-        return ArenaRunResult(run_name=run_cfg.name, status=RunStatus.COMPLETED, start_timestamp_ns=1)
+        return ArenaRunResult(run_name=run_cfg.name, status=RunStatus.COMPLETED)
 
     monkeypatch.setattr(run_execution, "build_and_run", build_and_run)
 
@@ -439,7 +440,7 @@ def test_execute_experiment_writes_no_timings_for_a_failed_run(monkeypatch, tmp_
             raise RuntimeError("rollout failed")
         with Timer("step"):
             pass
-        return ArenaRunResult(run_name=run_cfg.name, status=RunStatus.COMPLETED, start_timestamp_ns=1)
+        return ArenaRunResult(run_name=run_cfg.name, status=RunStatus.COMPLETED)
 
     monkeypatch.setattr(run_execution, "build_and_run", build_and_run)
 

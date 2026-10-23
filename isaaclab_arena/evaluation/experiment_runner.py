@@ -12,6 +12,7 @@ from isaaclab_arena.evaluation.arena_experiment_config_loader import (
     load_arena_experiment_from_config_file,
     validate_experiment_config_path,
 )
+from isaaclab_arena.evaluation.arena_experiment_kpis import write_experiment_kpis
 from isaaclab_arena.evaluation.experiment_runner_cli import parse_experiment_runner_args
 from isaaclab_arena.evaluation.legacy_experiment_runner import (
     legacy_json_experiment_requires_cameras,
@@ -85,11 +86,18 @@ def _write_arena_experiment_result(
     assert set(run_results_by_name) == set(
         experiment_cfg.runs
     ), "Experiment results must contain exactly the configured Runs"
+
+    def _start_timestamp_ns(run_result: ArenaRunResult) -> int:
+        assert (
+            run_result.start_timestamp_ns is not None
+        ), f"Run '{run_result.run_name}' has no start_timestamp_ns; execute_experiment sets it"
+        return run_result.start_timestamp_ns
+
     run_metadata_by_name = {
         run_name: {
             **build_arena_run_result_metadata(run_cfg),
             "status": run_results_by_name[run_name].status.value,
-            "start_timestamp_ns": run_results_by_name[run_name].start_timestamp_ns,
+            "start_timestamp_ns": _start_timestamp_ns(run_results_by_name[run_name]),
         }
         for run_name, run_cfg in experiment_cfg.runs.items()
     }
@@ -196,8 +204,6 @@ def main():
         report_path = build_report(experiment_output_directory)
 
         # Written after the report so that a KPI assertion still leaves the report for debugging.
-        from isaaclab_arena.evaluation.arena_experiment_kpis import write_experiment_kpis
-
         write_experiment_kpis(experiment_output_directory)
 
         if args_cli.serve_evaluation_report:
