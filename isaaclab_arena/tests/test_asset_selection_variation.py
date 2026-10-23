@@ -16,7 +16,7 @@ HEADLESS = True
 TABLE_TOP_Z = 0.1
 ON_CLEARANCE_M = 0.01
 NUM_ENVS = 2
-DEFAULT_ASSET_NAME = "cracker_box"
+DEFAULT_REGISTRY_NAME = "cracker_box"
 SELECTION_KEY = "pickup.asset_selection"
 
 
@@ -49,7 +49,7 @@ def make_pickup():
     """Return the registered cracker box, named ``pickup``."""
     from isaaclab_arena.assets.registries import AssetRegistry
 
-    return AssetRegistry().get_asset_by_name(DEFAULT_ASSET_NAME)(name="pickup")
+    return AssetRegistry().get_asset_by_name(DEFAULT_REGISTRY_NAME)(name="pickup")
 
 
 def compose_pick_and_place_with_selection(
@@ -145,7 +145,7 @@ def _test_selected_asset_is_spawned_placed_recorded_and_described(simulation_app
     assert pickup.name == "pickup"
     assert pickup.registry_name == "sugar_box"
     # The selection sets registry_name on the object only, so its class keeps the declared registry name.
-    assert type(pickup).registry_name == DEFAULT_ASSET_NAME
+    assert type(pickup).registry_name == DEFAULT_REGISTRY_NAME
     assert env_cfg.task_description == "Pick up the sugar_box, and place it into the plate"
     return True
 
@@ -157,7 +157,7 @@ def _test_disabled_selection_keeps_default_asset(simulation_app):
         selection_cfg=AssetSelectionVariationCfg(enabled=False, registry_names=["sugar_box", "mustard_bottle"])
     )
 
-    assert env_cfg.scene.pickup.spawn.usd_path == get_registered_usd_path(DEFAULT_ASSET_NAME)
+    assert env_cfg.scene.pickup.spawn.usd_path == get_registered_usd_path(DEFAULT_REGISTRY_NAME)
     assert env_cfg.task_description == "Pick up the cracker_box, and place it into the plate"
     return True
 

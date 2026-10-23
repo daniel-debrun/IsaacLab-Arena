@@ -36,7 +36,7 @@ class AssetSelectionVariationCfg(VariationBaseCfg):
     """Registry names of the rigid objects to choose from, in this order. Required when enabled."""
 
     sampler_cfg: ChoiceSamplerCfg = field(default_factory=ChoiceSamplerCfg)
-    """Sampler that draws the asset name."""
+    """Sampler that draws the registry name."""
 
 
 class AssetSelectionVariation(BuildTimeVariationBase):
