@@ -503,3 +503,22 @@ def test_random_choice_override_swaps_the_sampler(resolved_registry_names):
     variation.configure_at_build_time(seed=0, variation_key=SELECTION_KEY, rebuild_index=1)
     assert rigid_object.selected_registry_names == ["sugar_box"]
     assert notified_registry_names == ["sugar_box"]
+
+
+def test_in_order_selection_takes_repeated_names_in_list_order(resolved_registry_names):
+    from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariation, AssetSelectionVariationCfg
+
+    registry_names = ["mustard_bottle", "sugar_box", "mustard_bottle", "tomato_soup_can"]
+    rigid_object = _RecordingRigidObject()
+    variation = AssetSelectionVariation(
+        rigid_object, AssetSelectionVariationCfg(enabled=True, registry_names=registry_names)
+    )
+
+    num_rebuilds = 6
+    for rebuild_index in range(num_rebuilds):
+        variation.configure_at_build_time(seed=0, variation_key=SELECTION_KEY, rebuild_index=rebuild_index)
+
+    # Rebuild k takes entry k % 4, so mustard_bottle spawns in rebuilds 0, 2 and 4.
+    assert rigid_object.selected_registry_names == registry_names + registry_names[:2]
+    # Each build resolves the repeated name once.
+    assert resolved_registry_names == ["mustard_bottle", "sugar_box", "tomato_soup_can"] * num_rebuilds

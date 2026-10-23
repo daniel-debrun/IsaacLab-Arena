@@ -433,21 +433,43 @@ def test_build_environment_tolerates_an_environment_without_recorders(monkeypatc
     assert builder.made_with.render_mode is None
 
 
+_THREE_REGISTRY_NAMES = ["mustard_bottle", "sugar_box", "tomato_soup_can"]
+
+
 @pytest.mark.parametrize(
-    "num_rebuilds, random_choice, rebuild_index, replay_path, names_never_spawned",
+    "registry_names, num_rebuilds, random_choice, rebuild_index, replay_path, names_never_spawned",
     [
-        (2, False, 0, None, ["tomato_soup_can"]),
-        (1, False, 0, None, ["sugar_box", "tomato_soup_can"]),
-        (3, False, 0, None, []),
-        (1, True, 0, None, []),
+        (_THREE_REGISTRY_NAMES, 2, False, 0, None, ["tomato_soup_can"]),
+        (_THREE_REGISTRY_NAMES, 1, False, 0, None, ["sugar_box", "tomato_soup_can"]),
+        (_THREE_REGISTRY_NAMES, 3, False, 0, None, []),
+        (_THREE_REGISTRY_NAMES, 1, True, 0, None, []),
         # The first rebuild already warned.
-        (2, False, 1, None, []),
+        (_THREE_REGISTRY_NAMES, 2, False, 1, None, []),
         # A replayed Run spawns the recorded names.
-        (2, False, 0, "recorded_variations.jsonl", []),
+        (_THREE_REGISTRY_NAMES, 2, False, 0, "recorded_variations.jsonl", []),
+        # The repeated name already spawned in the first rebuild.
+        (["mustard_bottle", "sugar_box", "mustard_bottle"], 2, False, 0, None, []),
+        # sugar_box, listed twice after the entry of the last rebuild, appears once, and the names keep list order.
+        (
+            ["mustard_bottle", "mustard_bottle", "sugar_box", "tomato_soup_can", "sugar_box"],
+            1,
+            False,
+            0,
+            None,
+            ["sugar_box", "tomato_soup_can"],
+        ),
     ],
 )
 def test_build_environment_warns_when_in_order_asset_selection_skips_names(
-    monkeypatch, tmp_path, capsys, num_rebuilds, random_choice, rebuild_index, replay_path, names_never_spawned
+    monkeypatch,
+    tmp_path,
+    capsys,
+    registry_names,
+    num_rebuilds,
+    random_choice,
+    rebuild_index,
+    replay_path,
+    names_never_spawned,
 ):
     def build_arena_builder(cfg, rebuild_index):
         # Both variations start disabled. The Run's variation overrides enable them while the environment is built.
@@ -466,7 +488,7 @@ def test_build_environment_warns_when_in_order_asset_selection_skips_names(
             "light.hdr_image.enabled": True,
             "pick_up_object.asset_selection.enabled": True,
             "pick_up_object.asset_selection.random_choice": random_choice,
-            "pick_up_object.asset_selection.registry_names": ["mustard_bottle", "sugar_box", "tomato_soup_can"],
+            "pick_up_object.asset_selection.registry_names": registry_names,
         },
     )
 
@@ -475,7 +497,9 @@ def test_build_environment_warns_when_in_order_asset_selection_skips_names(
     output = capsys.readouterr().out
     if names_never_spawned:
         assert f"[WARNING] Run 'test_run' has num_rebuilds: {num_rebuilds}" in output
-        assert "'pick_up_object.asset_selection' spawns one of its 3 registry_names entries" in output
+        assert (
+            f"'pick_up_object.asset_selection' spawns one of its {len(registry_names)} registry_names entries" in output
+        )
         assert f"so {names_never_spawned} never spawn" in output
     else:
         # The enabled light.hdr_image, a build-time variation as well, does not warn either.
