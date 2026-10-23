@@ -65,21 +65,24 @@ defaults:
    Variations (Hydra-configurable)
    ================================
 
-   Asset: droid_abs_joint_pos
-     camera_extrinsics_wrist_camera (CameraExtrinsicsVariation, run-time)
-       Enable: droid_abs_joint_pos.camera_extrinsics_wrist_camera.enabled=true  (default: False)
-       Fields:
-         droid_abs_joint_pos.camera_extrinsics_wrist_camera.sampler_cfg.high = [0.005,0.005,0.005]
-         droid_abs_joint_pos.camera_extrinsics_wrist_camera.sampler_cfg.low = [-0.005,-0.005,-0.005]
+   ...
 
-   Asset: light
-     hdr_image (HDRImageVariation, build-time)
-       Enable: light.hdr_image.enabled=true  (default: False)
+   Asset: pick_up_object
+     mass (ObjectMassVariation, run-time)
+       Enable: pick_up_object.mass.enabled=true  (default: False)
        Fields:
-         light.hdr_image.hdr_names = []
+         pick_up_object.mass.recompute_inertia = True
+         pick_up_object.mass.sampler_cfg.high = [2.0]
+         pick_up_object.mass.sampler_cfg.low = [0.05]
 
-   Asset: maple_table_robolab
-     (no variations)
+     ...
+
+     asset_selection (AssetSelectionVariation, build-time)
+       Enable: pick_up_object.asset_selection.enabled=true  (default: False)
+       Fields:
+         pick_up_object.asset_selection.random_choice = False
+         pick_up_object.asset_selection.registry_names = []
+         pick_up_object.asset_selection.sampler_cfg = {}
 
    ...
 
@@ -213,14 +216,10 @@ variations are sampled once and applied to asset configs before the environment 
 Asset selection
 ---------------
 
-Every rigid object of the object library (a ``LibraryObject``, such as ``rubiks_cube_hot3d_robolab``)
-has a disabled ``asset_selection`` variation. When it is enabled, each build chooses one name from its
-``registry_names``, a list of registered rigid objects, and every parallel environment of that build
-spawns that asset. While the selection is off, the object spawns its own registered asset. The
-object keeps its ``name``, so its variation keys stay the same. Its ``registry_name`` becomes the
-selected name, and a task's default description, such as that of ``PickAndPlaceTask``, names the
-selected asset. For different objects in the environments of one build, use a
-:doc:`RigidObjectSet <../scene/concept_rigid_object_set>`, which has no ``asset_selection``.
+To evaluate a Run on several objects, enable the object's ``asset_selection`` and list registered
+rigid objects in its ``registry_names``. The first rebuild of the Run spawns the first name in every
+parallel environment, the second rebuild the second name, and so on. Set ``num_rebuilds`` to the
+number of names to spawn each name once.
 
 The example config ``isaaclab_arena_environments/experiment_configs/asset_selection_experiment.yaml``
 spawns three pick-up objects in ``pick_and_place_maple_table``, one per rebuild, each in four parallel
@@ -229,11 +228,20 @@ environments:
 .. literalinclude:: ../../../../isaaclab_arena_environments/experiment_configs/asset_selection_experiment.yaml
    :language: yaml
 
-By default, the first rebuild of an Experiment Run takes the first name of ``registry_names``, the
-second rebuild the second name, and so on, starting over after the last name. The seed does not
-change this order, so ``n`` rebuilds take each of the ``n`` names once, in list order. With
-``random_choice: true``, each build draws a name at random, seeded from ``environment_builder.seed``
-and the variation key, and names can repeat.
+Every rigid object of the object library (a ``LibraryObject``, such as ``rubiks_cube_hot3d_robolab``)
+has a disabled ``asset_selection`` variation. While it is off, the object spawns its own registered
+asset. When it is on, each build chooses one name, and every parallel environment of that build
+spawns that asset. For different objects in the environments of one build, use a
+:doc:`RigidObjectSet <../scene/concept_rigid_object_set>`, which has no ``asset_selection``.
+
+With more rebuilds than names, the order starts over after the last name. The seed does not change
+this order. With ``random_choice: true``, each build instead draws a name at random, seeded from
+``environment_builder.seed`` and the variation key, and names can repeat.
+
+The object keeps its ``name``, so its variation keys stay the same. Its ``registry_name`` becomes the
+selected name. The default descriptions of ``PickAndPlaceTask`` and ``AssemblyTask`` name the
+selected asset. Other tasks, such as ``GearInsertionTask`` and ``PlaceUprightTask``, still use the
+object's ``name``.
 
 Every episode row records the chosen name, for example
 ``"pick_up_object.asset_selection": "mustard_bottle_hot3d_robolab"``, and
