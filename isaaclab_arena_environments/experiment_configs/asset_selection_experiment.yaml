@@ -8,7 +8,6 @@ runs:
   asset_selection_demo:
     environment:
       type: pick_and_place_maple_table
-      # Short demo timeout in simulated time, not wall-clock time.
       episode_length_s: 1.5
     environment_builder:
       # Parallel environments in each build. All of them spawn the same selected object.
