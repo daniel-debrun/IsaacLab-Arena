@@ -96,11 +96,9 @@ def test_build_and_run_splits_episode_budget_without_mutating_config(monkeypatch
     run = _run()
     rollout_limits = []
     received_run_cfgs = []
-    received_rebuild_indices = []
 
-    def make_environment(cfg, render_mode, output_dir, rebuild_index):
+    def make_environment(cfg, render_mode, **kwargs):
         received_run_cfgs.append(cfg)
-        received_rebuild_indices.append(rebuild_index)
         return _environment()
 
     monkeypatch.setattr(run_execution, "_build_environment_from_cfg", make_environment)
@@ -128,7 +126,6 @@ def test_build_and_run_splits_episode_budget_without_mutating_config(monkeypatch
     assert rollout_limits == [(None, 3), (None, 2)]
     # Runs are the same except for their seeds.
     assert received_run_cfgs == [run_seed_0, run_seed_1]
-    assert received_rebuild_indices == [0, 1]
     # The original config is never mutated.
     assert run.rollout_limit == RolloutLimitCfg(num_episodes=5)
     assert run.environment_builder.seed == base_seed

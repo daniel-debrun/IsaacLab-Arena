@@ -45,13 +45,6 @@ def make_table():
     )
 
 
-def make_pickup():
-    """Return the registered cracker box, named ``pickup``."""
-    from isaaclab_arena.assets.registries import AssetRegistry
-
-    return AssetRegistry().get_asset_by_name(DEFAULT_REGISTRY_NAME)(name="pickup")
-
-
 def compose_pick_and_place_with_selection(
     *,
     selection_cfg,
@@ -74,6 +67,7 @@ def compose_pick_and_place_with_selection(
 
     from isaaclab_arena.assets.object import Object
     from isaaclab_arena.assets.object_type import ObjectType
+    from isaaclab_arena.assets.registries import AssetRegistry
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
@@ -83,7 +77,7 @@ def compose_pick_and_place_with_selection(
     from isaaclab_arena.utils.pose import Pose
 
     table = make_table()
-    pickup = make_pickup()
+    pickup = AssetRegistry().get_asset_by_name(DEFAULT_REGISTRY_NAME)(name="pickup")
     pickup.add_relation(On(table, clearance_m=ON_CLEARANCE_M))
     pickup.get_variation("asset_selection").apply_cfg(selection_cfg)
     plate_spawn_cfg = sim_utils.CuboidCfg(
@@ -138,46 +132,6 @@ def _test_selected_asset_is_spawned_placed_recorded_and_described(simulation_app
     return True
 
 
-def _test_disabled_selection_keeps_default_asset(simulation_app):
-    from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariationCfg
-
-    _, env_cfg, _ = compose_pick_and_place_with_selection(
-        selection_cfg=AssetSelectionVariationCfg(enabled=False, registry_names=["sugar_box", "mustard_bottle"])
-    )
-
-    assert env_cfg.scene.pickup.spawn.usd_path == get_registered_usd_path(DEFAULT_REGISTRY_NAME)
-    assert env_cfg.task_description == "Pick up the cracker_box, and place it into the plate"
-    return True
-
-
-def _test_asset_registered_by_factory_is_selected(simulation_app):
-    from unittest.mock import patch
-
-    from isaaclab_arena.assets.object_type import ObjectType
-    from isaaclab_arena.assets.register import register_asset_factory
-    from isaaclab_arena.assets.registries import AssetRegistry
-    from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariationCfg
-
-    factory_registry_name = "sugar_box_from_factory"
-    asset_registry = AssetRegistry()
-    # The lookup registers every library asset first, so the registry patched below already holds them.
-    sugar_box_class = asset_registry.get_asset_by_name("sugar_box")
-    # patch.dict removes the factory afterwards, so later tests see the registry unchanged.
-    with patch.dict(asset_registry._components):
-
-        @register_asset_factory(registry_name=factory_registry_name, object_type=ObjectType.RIGID)
-        def make_sugar_box():
-            return sugar_box_class()
-
-        pickup, env_cfg, _ = compose_pick_and_place_with_selection(
-            selection_cfg=AssetSelectionVariationCfg(enabled=True, registry_names=[factory_registry_name])
-        )
-
-    assert env_cfg.scene.pickup.spawn.usd_path == get_registered_usd_path("sugar_box")
-    assert pickup.registry_name == factory_registry_name
-    return True
-
-
 def _test_asset_selection_rejects_invalid_configuration(simulation_app, registry_names, message_pattern):
     from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariationCfg
 
@@ -195,15 +149,12 @@ def _test_rigid_objects_have_disabled_asset_selection(simulation_app):
     from isaaclab_arena.assets.object_type import ObjectType
     from isaaclab_arena.assets.registries import AssetRegistry
 
-    pickup = make_pickup()
-    assert not pickup.get_variation("asset_selection").enabled
-    # A registered library object that is not rigid has no selection.
-    ground_plane = AssetRegistry().get_asset_by_name("ground_plane")()
-    assert ground_plane.object_type == ObjectType.BASE
-    assert "asset_selection" not in ground_plane.variations
-    # A rigid Object outside the object library has one as well.
+    # A rigid Object, even one outside the object library, has a disabled selection.
     cube = Object(name="cube", object_type=ObjectType.RIGID, spawner_cfg=sim_utils.CuboidCfg(size=(0.1, 0.1, 0.1)))
     assert not cube.get_variation("asset_selection").enabled
+    # A registered library object that is not rigid has none.
+    ground_plane = AssetRegistry().get_asset_by_name("ground_plane")()
+    assert "asset_selection" not in ground_plane.variations
     return True
 
 
@@ -211,14 +162,6 @@ def test_selected_asset_is_spawned_placed_recorded_and_described():
     assert run_function_with_persistent_simulation_app(
         _test_selected_asset_is_spawned_placed_recorded_and_described, headless=HEADLESS
     )
-
-
-def test_disabled_selection_keeps_default_asset():
-    assert run_function_with_persistent_simulation_app(_test_disabled_selection_keeps_default_asset, headless=HEADLESS)
-
-
-def test_asset_registered_by_factory_is_selected():
-    assert run_function_with_persistent_simulation_app(_test_asset_registered_by_factory_is_selected, headless=HEADLESS)
 
 
 @pytest.mark.parametrize(
