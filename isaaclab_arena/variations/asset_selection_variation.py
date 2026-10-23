@@ -106,7 +106,9 @@ class AssetSelectionVariation(BuildTimeVariationBase):
             self.sampler.set_position(self._rebuild_index)
         # The sampler reports the name to the variation recorder and returns the recorded name during replay.
         selected_registry_name = self.sampler.sample(1, registry_names)[0]
-        self._rigid_object.set_asset(selected_registry_name, spawn_cfgs_by_registry_name[selected_registry_name])
+        self._rigid_object.set_spawned_asset_class(
+            selected_registry_name, spawn_cfgs_by_registry_name[selected_registry_name]
+        )
 
 
 def _get_rigid_object_spawn_cfg(registry_name: str) -> SpawnerCfg:

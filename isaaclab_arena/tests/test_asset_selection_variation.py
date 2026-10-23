@@ -195,7 +195,7 @@ class _RecordingRigidObject:
         self.bounding_box = None
         self.selected_registry_names: list[str] = []
 
-    def set_asset(self, registry_name, spawn_cfg):
+    def set_spawned_asset_class(self, registry_name, spawn_cfg):
         self.selected_registry_names.append(registry_name)
 
 
