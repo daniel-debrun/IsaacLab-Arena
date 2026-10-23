@@ -178,9 +178,10 @@ def _build_environment_from_cfg(
 
 
 def _warn_if_in_order_asset_selection_skips_names(cfg: ArenaRunCfg, arena_builder: ArenaEnvBuilder) -> None:
-    """Warn when an in-order asset selection lists more registry names than the Run has rebuilds.
+    """Warn when an in-order asset selection lists registry names that no rebuild of the Run spawns.
 
-    In-order selection spawns one name per rebuild, so the names after the last rebuild never spawn.
+    In-order selection spawns one list entry per rebuild, so a name that first appears after the entry of the last
+    rebuild never spawns.
     """
     if cfg.environment_builder.recorded_variation_samples_path is not None:
         # A replayed Run spawns the recorded names, not the names in list order.
@@ -191,9 +192,11 @@ def _warn_if_in_order_asset_selection_skips_names(cfg: ArenaRunCfg, arena_builde
         if not isinstance(variation, AssetSelectionVariation) or variation.cfg.random_choice:
             continue
         registry_names = variation.cfg.registry_names
-        if cfg.num_rebuilds >= len(registry_names):
+        names_spawned = set(registry_names[: cfg.num_rebuilds])
+        # dict.fromkeys lists each repeated name once, in list order.
+        names_never_spawned = [name for name in dict.fromkeys(registry_names) if name not in names_spawned]
+        if not names_never_spawned:
             continue
-        names_never_spawned = registry_names[cfg.num_rebuilds :]
         print(
             f"[WARNING] Run '{cfg.name}' has num_rebuilds: {cfg.num_rebuilds}, but '{variation_key}' spawns one of its"
             f" {len(registry_names)} registry names per rebuild, in list order, so {names_never_spawned} never spawn."

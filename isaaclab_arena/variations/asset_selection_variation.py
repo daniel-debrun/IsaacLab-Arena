@@ -33,7 +33,8 @@ class AssetSelectionVariationCfg(VariationBaseCfg):
     random, seeded by the build seed and the variation key."""
 
     registry_names: list[str] = field(default_factory=list)
-    """Registry names of the rigid objects to choose from, in this order. Required when enabled."""
+    """Registry names of the rigid objects to choose from, in this order. Required when enabled. A name listed more
+    than once is selected more often."""
 
     sampler_cfg: ChoiceSamplerCfg = field(default_factory=ChoiceSamplerCfg)
     """Sampler that draws the registry name."""
@@ -73,17 +74,15 @@ class AssetSelectionVariation(BuildTimeVariationBase):
             f"'{self._variation_key}' is enabled but its registry_names is empty. List the registered rigid objects"
             f" to choose from, for example '{self._variation_key}.registry_names=[cracker_box,sugar_box]'."
         )
-        assert len(set(registry_names)) == len(
-            registry_names
-        ), f"'{self._variation_key}.registry_names' repeats a name in {registry_names}; list each name once."
         # Checked at build time because bounding_box can be set after the Object is created.
         assert self._rigid_object.bounding_box is None, (
             f"'{self._rigid_object.name}' sets a bounding_box override, which placement would use for every"
             " selected asset. Set bounding_box to None so placement reads the bounds of the selected asset."
         )
-        # Resolve every name, not only the selected one, so that a wrong name fails in the first build.
+        # Resolve every name, not only the selected one, so that a wrong name fails in the first build. A repeated
+        # name is resolved once.
         spawn_cfgs_by_registry_name = {
-            registry_name: _get_rigid_object_spawn_cfg(registry_name) for registry_name in registry_names
+            registry_name: _get_rigid_object_spawn_cfg(registry_name) for registry_name in dict.fromkeys(registry_names)
         }
         # Both modes call self.sampler.sample(), which reports the name to the variation recorder and returns the
         # recorded name during replay.

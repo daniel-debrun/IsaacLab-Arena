@@ -298,10 +298,6 @@ def _test_asset_selection_rejects_invalid_configuration(simulation_app, case_id)
             lambda: build_with_registry_names(["droid_differential_ik"]),
             "'droid_differential_ik' is a DroidDifferentialIKEmbodiment, not an Object",
         ),
-        "repeated_name": (
-            lambda: build_with_registry_names(["sugar_box", "sugar_box"]),
-            r"'pickup\.asset_selection\.registry_names' repeats a name",
-        ),
         "bounding_box_override": (build_with_bounding_box_override, "'pickup' sets a bounding_box override"),
     }
     build_invalid_configuration, message_pattern = invalid_configurations[case_id]
@@ -410,7 +406,6 @@ def test_asset_registered_by_factory_is_selected():
         "unknown_name",
         "non_rigid_name",
         "non_object_name",
-        "repeated_name",
         "bounding_box_override",
     ],
 )
