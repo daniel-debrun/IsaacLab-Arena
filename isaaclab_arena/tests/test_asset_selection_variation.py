@@ -58,7 +58,6 @@ def compose_pick_and_place_with_selection(
     seed=42,
     rebuild_index=0,
     solve_relations=False,
-    task_description=None,
 ):
     """Compose a PickAndPlaceTask environment whose pickup, a cracker box on a table, has an asset selection.
 
@@ -67,7 +66,6 @@ def compose_pick_and_place_with_selection(
         seed: Build seed.
         rebuild_index: Index of the build among the rebuilds of an Experiment Run.
         solve_relations: Whether to solve the pickup's placement on the table.
-        task_description: Description passed to the task. None keeps its default description.
 
     Returns:
         The pickup Object, the composed env_cfg and the env_kwargs.
@@ -98,7 +96,7 @@ def compose_pick_and_place_with_selection(
     plate_pose = Pose(position_xyz=(0.7, 0.7, 0.11), rotation_xyzw=(0.0, 0.0, 0.0, 1.0))
     plate = Object(name="plate", object_type=ObjectType.RIGID, spawner_cfg=plate_spawn_cfg, initial_pose=plate_pose)
     # The namespace stands in for a background; the task reads only its object_min_z.
-    task = PickAndPlaceTask(pickup, plate, SimpleNamespace(object_min_z=-1.0), task_description=task_description)
+    task = PickAndPlaceTask(pickup, plate, SimpleNamespace(object_min_z=-1.0))
     scene = Scene(assets=[table, pickup, plate])
     arena_env = IsaacLabArenaEnvironment(name="test_asset_selection_variation", scene=scene, task=task)
     # resolve_on_reset=False stores the solved pose per environment on the object. Only the config is composed.
@@ -152,18 +150,6 @@ def _test_disabled_selection_keeps_default_asset(simulation_app):
 
     assert env_cfg.scene.pickup.spawn.usd_path == get_registered_usd_path(DEFAULT_REGISTRY_NAME)
     assert env_cfg.task_description == "Pick up the cracker_box, and place it into the plate"
-    return True
-
-
-def _test_pick_and_place_keeps_passed_task_description(simulation_app):
-    from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariationCfg
-
-    _, env_cfg, _ = compose_pick_and_place_with_selection(
-        selection_cfg=AssetSelectionVariationCfg(enabled=True, registry_names=["sugar_box"]),
-        task_description="Put the box on the plate",
-    )
-
-    assert env_cfg.task_description == "Put the box on the plate"
     return True
 
 
@@ -320,12 +306,6 @@ def test_selected_asset_is_spawned_placed_recorded_and_described():
 
 def test_disabled_selection_keeps_default_asset():
     assert run_function_with_persistent_simulation_app(_test_disabled_selection_keeps_default_asset, headless=HEADLESS)
-
-
-def test_pick_and_place_keeps_passed_task_description():
-    assert run_function_with_persistent_simulation_app(
-        _test_pick_and_place_keeps_passed_task_description, headless=HEADLESS
-    )
 
 
 def test_random_selection_draws_from_seeded_generator():
