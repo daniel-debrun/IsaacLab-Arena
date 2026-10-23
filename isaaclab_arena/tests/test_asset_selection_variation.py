@@ -226,6 +226,34 @@ def _test_recorded_registry_name_is_replayed(simulation_app, tmp_path):
     return True
 
 
+def _test_asset_registered_by_factory_is_selected(simulation_app):
+    from unittest.mock import patch
+
+    from isaaclab_arena.assets.object_type import ObjectType
+    from isaaclab_arena.assets.register import register_asset_factory
+    from isaaclab_arena.assets.registries import AssetRegistry
+    from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariationCfg
+
+    factory_registry_name = "sugar_box_from_factory"
+    asset_registry = AssetRegistry()
+    # The lookup registers every library asset first, so the registry patched below already holds them.
+    sugar_box_class = asset_registry.get_asset_by_name("sugar_box")
+    # patch.dict removes the factory afterwards, so later tests see the registry unchanged.
+    with patch.dict(asset_registry._components):
+
+        @register_asset_factory(registry_name=factory_registry_name, object_type=ObjectType.RIGID)
+        def make_sugar_box():
+            return sugar_box_class()
+
+        pickup, env_cfg, _ = compose_pick_and_place_with_selection(
+            selection_cfg=AssetSelectionVariationCfg(enabled=True, registry_names=[factory_registry_name])
+        )
+
+    assert env_cfg.scene.pickup.spawn.usd_path == get_registered_usd_path("sugar_box")
+    assert pickup.registry_name == factory_registry_name
+    return True
+
+
 def _test_asset_selection_rejects_invalid_configuration(simulation_app, case_id):
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
@@ -349,6 +377,10 @@ def test_recorded_registry_name_is_replayed(tmp_path):
     assert run_function_with_persistent_simulation_app(
         _test_recorded_registry_name_is_replayed, headless=HEADLESS, tmp_path=tmp_path
     )
+
+
+def test_asset_registered_by_factory_is_selected():
+    assert run_function_with_persistent_simulation_app(_test_asset_registered_by_factory_is_selected, headless=HEADLESS)
 
 
 @pytest.mark.parametrize(

@@ -105,15 +105,18 @@ def _get_rigid_object_spawn_cfg(registry_name: str) -> SpawnerCfg:
     assert asset_registry.is_registered(
         registry_name
     ), f"'{registry_name}' is not a registered asset. Use the registry name of a rigid object."
-    asset_class = asset_registry.get_asset_by_name(registry_name)
-    assert issubclass(
-        asset_class, Object
-    ), f"Asset '{registry_name}' is a {asset_class.__name__}, not an Object. Use the registry name of a rigid object."
+    asset_class_or_factory = asset_registry.get_asset_by_name(registry_name)
+    # register_asset_factory registers a function rather than a class, and always sets the object_type checked below.
+    if isinstance(asset_class_or_factory, type):
+        assert issubclass(asset_class_or_factory, Object), (
+            f"Asset '{registry_name}' is a {asset_class_or_factory.__name__}, not an Object. Use the registry name of"
+            " a rigid object."
+        )
     # Check the declared type before building the asset, which for a wrong name can open or download its USD.
-    declared_object_type = getattr(asset_class, "object_type", None)
+    declared_object_type = getattr(asset_class_or_factory, "object_type", None)
     if declared_object_type is not None:
         _assert_rigid_object_type(registry_name, declared_object_type)
-    registered_asset = asset_class()
+    registered_asset = asset_class_or_factory()
     # Classes such as ProceduralCube set their object type only in __init__.
     _assert_rigid_object_type(registry_name, registered_asset.object_type)
     return deepcopy(registered_asset.object_cfg.spawn)
