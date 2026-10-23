@@ -12,11 +12,8 @@ from isaaclab_arena.relations.relations import get_anchor_objects
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox, BoundingBox
 
 if TYPE_CHECKING:
-    from isaaclab_arena.relations.collision_mode import CollisionMode
     from isaaclab_arena.relations.collision_object import CollisionObject
-    from isaaclab_arena.relations.no_overlap_bbox import NoOverlapPairCache
     from isaaclab_arena.relations.placement_asset import PlaceableAsset
-    from isaaclab_arena.relations.warp_mesh_manager import WarpMeshAndSphereCache
 
 
 class RelationSolverState:
@@ -121,70 +118,40 @@ class RelationSolverState:
             for obj in (*self._anchor_objects, *self._collision_objects)
         }
 
-        self._enclosing_collision_bboxes = dict(self._fixed_obstacle_world_bboxes)
+        self._build_collision_bboxes(collision_bboxes)
+
+    def _build_collision_bboxes(self, collision_bboxes: dict[PlaceableAsset, BoundingBox] | None) -> None:
+        """Store movable-object collision bounds, defaulting omitted entries to get_bbox, and precompute geometry."""
+        self._collision_bboxes: dict[PlaceableAsset, BoundingBox] = {}
+        """Collision bounds relative to each movable object's origin."""
         for obj in self._optimizable_objects:
-            self._enclosing_collision_bboxes[obj] = self.get_bbox(obj)
-        self._collision_bboxes: dict[PlaceableAsset | CollisionObject, BoundingBox] = dict(
-            self._fixed_obstacle_world_bboxes
-        )
-        for obj in self._optimizable_objects:
-            bounds = (
-                collision_bboxes[obj]
-                if collision_bboxes is not None and obj in collision_bboxes
-                else self._enclosing_collision_bboxes[obj]
-            )
-            self._collision_bboxes[obj] = bounds.to(self._device)
+            bounds = collision_bboxes.get(obj) if collision_bboxes is not None else None
+            self._collision_bboxes[obj] = (bounds if bounds is not None else self.get_bbox(obj)).to(self._device)
         self._collision_boxes_axis_aligned = all(
             isinstance(box, AxisAlignedBoundingBox) for box in self._collision_bboxes.values()
         )
         self._collision_geometry = {}
         """Fixed center offsets (B, 3), half-lengths (B, 3), and axes (B, 3, 3), with B = batch size."""
         if not self.collision_boxes_axis_aligned:
-            for obj in self._collision_bboxes:
+            for obj in (*self._collision_bboxes, *self._fixed_obstacle_world_bboxes):
                 self.get_collision_geometry(obj)
-        self._no_overlap_pair_cache: NoOverlapPairCache | None = None
-        """Pair routing and the prepared upper bound for the current collision configuration."""
-        self._no_overlap_pair_cache_key: tuple[WarpMeshAndSphereCache | None, CollisionMode, bool] | None = None
-        """Collision configuration that the pair cache was prepared for."""
 
     @property
     def collision_boxes_axis_aligned(self) -> bool:
         """Whether every collision box uses environment-aligned min/max bounds."""
         return self._collision_boxes_axis_aligned
 
-    def get_no_overlap_pair_cache(
-        self,
-        mesh_manager: WarpMeshAndSphereCache | None,
-        default_collision_mode: CollisionMode,
-        skip_mesh_pairs: bool,
-    ) -> NoOverlapPairCache:
-        """Return pair routing and the overlap-volume upper bound for this solve's fixed collision configuration.
-
-        Args:
-            mesh_manager: Collision mesh cache, or None.
-            default_collision_mode: Mode for objects without an explicit override.
-            skip_mesh_pairs: Exclude pairs represented by the mesh collision loss.
-
-        Returns:
-            Ordered pair groups and the prepared upper bound, independent of live positions.
-        """
-        from isaaclab_arena.relations.no_overlap_bbox import prepare_no_overlap_pair_cache
-
-        key = (mesh_manager, default_collision_mode, skip_mesh_pairs)
-        if key != self._no_overlap_pair_cache_key:
-            self._no_overlap_pair_cache = prepare_no_overlap_pair_cache(
-                self, mesh_manager, default_collision_mode, skip_mesh_pairs
-            )
-            self._no_overlap_pair_cache_key = key
-        return self._no_overlap_pair_cache
-
-    def get_collision_bbox(self, obj: PlaceableAsset | CollisionObject) -> BoundingBox:
-        """Return cached collision bounds, local for movable objects and world-frame for fixed objects."""
+    def get_collision_bbox(self, obj: PlaceableAsset) -> BoundingBox:
+        """Return collision bounds relative to a movable object's origin."""
         return self._collision_bboxes[obj]
 
-    def get_enclosing_collision_bbox(self, obj: PlaceableAsset | CollisionObject) -> AxisAlignedBoundingBox:
-        """Return cached enclosing bounds used by mesh fallbacks; fixed objects use world bounds."""
-        return self._enclosing_collision_bboxes[obj]
+    def get_collision_center_W(self, obj: PlaceableAsset | CollisionObject) -> torch.Tensor:
+        """Return the collision box centers in W at the current positions, shape (B, 3)."""
+        center, _, _ = self.get_collision_geometry(obj)
+        # Movable geometry stores centers relative to the object origin; fixed geometry stores world centers.
+        if obj in self._collision_bboxes:
+            return center + self.get_position(obj)
+        return center
 
     def get_collision_geometry(
         self, obj: PlaceableAsset | CollisionObject
@@ -193,7 +160,9 @@ class RelationSolverState:
         if obj not in self._collision_geometry:
             from isaaclab.utils.math import matrix_from_quat
 
-            box = self._collision_bboxes[obj]
+            box = (
+                self._collision_bboxes[obj] if obj in self._collision_bboxes else self._fixed_obstacle_world_bboxes[obj]
+            )
             if isinstance(box, AxisAlignedBoundingBox):
                 box = box.to_obb()
             R_W_B = matrix_from_quat(box.rotation_W_B_xyzw)

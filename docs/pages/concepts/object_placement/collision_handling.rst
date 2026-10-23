@@ -122,10 +122,11 @@ How Overlap Checking Works
 Overlap checking has two stages:
 
 1. During optimization, the solver adds a differentiable no-overlap loss.
-   ``BBOX`` penalizes an upper bound on the overlap volume, built from interval
-   overlaps along both boxes' face axes and including ``clearance_m``. For
-   axis-aligned boxes this is the intersection volume after expanding the
-   obstacle by the clearance. For mesh-covered pairs, ``MESH`` represents
+   ``BBOX`` multiplies the interval overlaps along each box's face axes,
+   including ``clearance_m``, and penalizes the harmonic mean of the two
+   volumes. It is zero exactly when a face axis separates the boxes by at least
+   ``clearance_m``, and for axis-aligned boxes it is the intersection volume
+   after expanding the obstacle by the clearance. For mesh-covered pairs, ``MESH`` represents
    movable geometry with up to ``num_spheres`` bounding spheres and queries
    their distance from the target collision mesh. Increasing ``num_spheres`` may
    improve sphere coverage, at the cost of slower solving and validation.
@@ -139,7 +140,7 @@ Box collision geometry uses each candidate's sampled or authored rotation and
 assigned object variant. ``FaceTo`` headings are applied after solving;
 validation checks the updated boxes. The validator uses the separating-axis
 test (SAT), batched across candidates; axis-aligned bounding box (AABB) pairs
-use interval comparisons. The loss uses face-axis projections, so tilted boxes
+use interval comparisons. The loss works along face axes, so tilted boxes
 separated only by an edge-cross-edge axis can still receive a positive penalty
 even when SAT accepts them. This penalty is not the exact intersection volume
 of rotated boxes. When any collision box in a solve is rotated, boxes thinner

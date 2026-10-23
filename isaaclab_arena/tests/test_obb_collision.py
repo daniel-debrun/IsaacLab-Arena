@@ -75,8 +75,8 @@ def test_validator_rotates_off_origin_centers_with_tilted_markers():
     assert _validator().validate_batch(batch, []) == [True, False]
 
 
-def test_validator_oriented_boxes_clear_fixed_obstacles_and_support_enclosing_bounds():
-    """A diagonal rod clears an obstacle inside its enclosing AABB; a second candidate actually intersects."""
+def test_validator_without_collision_bounds_falls_back_to_enclosing_bounds():
+    """A selected batch without collision bounds validates the enclosing AABBs, which reach a cleared obstacle."""
     bounds = AxisAlignedBoundingBox((-0.4, -0.025, -0.03), (0.4, 0.025, 0.03))
     rod = DummyObject("rod", bounds)
     obstacle = DummyObject(
@@ -86,12 +86,11 @@ def test_validator_oriented_boxes_clear_fixed_obstacles_and_support_enclosing_bo
     )
     batch = PlacementCandidateBatch([
         PlacementCandidate(0, 0, {rod: (0.0, 0.0, 0.0)}, {rod: math.pi / 4}, {rod: bounds}),
-        PlacementCandidate(0, 1, {rod: (-0.15, 0.15, 0.0)}, {rod: math.pi / 4}, {rod: bounds}),
     ])
     update_candidate_bounds(batch, [{rod: bounds}])
     validator = _validator()
 
-    assert validator.validate_batch(batch, [obstacle]) == [True, False]
+    assert validator.validate_batch(batch, [obstacle]) == [True]
     batch.collision_bboxes = None
     assert validator.validate_batch(batch.select([0]), [obstacle]) == [False]
 

@@ -134,12 +134,12 @@ def update_candidate_bounds(
         )
         for obj in objects
     }
-    rotated = rotate_candidate_bboxes(objects, base_bounds, [candidate.orientations for candidate in batch.candidates])
     batch.collision_bboxes = get_candidate_collision_bboxes(
         objects, base_bounds, [candidate.orientations for candidate in batch.candidates]
     )
+    enclosing = {obj: bounds.to_aabb() for obj, bounds in batch.collision_bboxes.items()}
     for index, candidate in enumerate(batch.candidates):
-        candidate.bboxes = {obj: bounds[index] for obj, bounds in rotated.items()}
+        candidate.bboxes = {obj: bounds[index] for obj, bounds in enclosing.items()}
 
 
 def get_candidate_collision_bboxes(
@@ -182,17 +182,8 @@ def rotate_candidate_bboxes(
     Supply base bounds: movable objects are unrotated; anchors include their fixed rotation.
     Returned bounds remain relative to object origins. Inputs are not modified.
     """
-    rotated: dict[PlaceableAsset, AxisAlignedBoundingBox] = {}
-    for obj in objects:
-        bbox = candidate_bboxes[obj]
-        rotations = _candidate_rotations(obj, orientations_per_candidate)
-        # Preserve the original bounds exactly when no rotation is applied.
-        if all(rotation == (0.0, 0.0, 0.0, 1.0) for rotation in rotations):
-            rotated[obj] = bbox
-        else:
-            quat_tensor = torch.tensor(rotations, dtype=torch.float32, device=bbox.min_point.device)
-            rotated[obj] = bbox.rotated_by_quat(quat_tensor)
-    return rotated
+    collision_bboxes = get_candidate_collision_bboxes(objects, candidate_bboxes, orientations_per_candidate)
+    return {obj: bounds.to_aabb() for obj, bounds in collision_bboxes.items()}
 
 
 def _candidate_rotations(

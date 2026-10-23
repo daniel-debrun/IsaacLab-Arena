@@ -122,7 +122,7 @@ class BoundingBox(ABC):
 
         # Here A and B are the local frames of this box and other.
         center_a_W, half_extents_a, q_W_A, center_b_W, half_extents_b, q_W_B = self._get_paired_geometry(other)
-        overlap_bound = OverlapVolumeUpperBound(
+        overlap_bound = CachedOverlapVolumeUpperBound(
             half_extents_a, matrix_from_quat(q_W_A), half_extents_b, matrix_from_quat(q_W_B)
         )
         return overlap_bound.compute(center_a_W, center_b_W, margin)
@@ -687,7 +687,7 @@ class AxisAlignedBoundingBox(BoundingBox):
         return AxisAlignedBoundingBox(min_point=rotated.amin(dim=1), max_point=rotated.amax(dim=1))
 
 
-class OverlapVolumeUpperBound:
+class CachedOverlapVolumeUpperBound:
     """Overlap-volume upper bound for box pairs whose half-extents and rotations stay fixed while centers move.
 
     For each box, the bound multiplies the interval overlaps along that box's 3 axes and keeps the smaller
@@ -727,6 +727,20 @@ class OverlapVolumeUpperBound:
             center_b_W: Box B centers in W, shape (..., 3).
             margin: Finite nonnegative length added to box B's projected radius on every face axis.
         """
+        return torch.minimum(*self.compute_face_axis_volumes(center_a_W, center_b_W, margin))
+
+    def compute_face_axis_volumes(
+        self, center_a_W: torch.Tensor, center_b_W: torch.Tensor, margin: float = 0.0
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return the interval-overlap volumes along box A's and along box B's face axes.
+
+        Each volume is an upper bound on the overlap volume, in cubed length units with the broadcast leading shape.
+
+        Args:
+            center_a_W: Box A centers in W, shape (..., 3).
+            center_b_W: Box B centers in W, shape (..., 3).
+            margin: Finite nonnegative length added to box B's projected radius on every face axis.
+        """
         _assert_valid_margin(margin)
         # Offset from A's center to B's center, expressed in A and then in B.
         offset_W = center_b_W - center_a_W
@@ -734,7 +748,7 @@ class OverlapVolumeUpperBound:
         offset_B = (self._R_B_A @ offset_A.unsqueeze(-1)).squeeze(-1)
         volume_A = _interval_overlap_volume(self._half_extents_a, self._radius_b_A, offset_A, margin)
         volume_B = _interval_overlap_volume(self._radius_a_B, self._half_extents_b, offset_B, margin)
-        return torch.minimum(volume_A, volume_B)
+        return volume_A, volume_B
 
 
 def quaternion_to_90_deg_z_quarters(rotation_xyzw: tuple[float, float, float, float], tol_deg: float = 1.0) -> int:

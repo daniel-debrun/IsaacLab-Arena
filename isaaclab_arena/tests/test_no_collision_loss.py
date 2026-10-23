@@ -22,7 +22,7 @@ from isaaclab_arena.relations.relation_solver_state import RelationSolverState
 from isaaclab_arena.relations.relations import IsAnchor, On, RotateAroundSolution
 from isaaclab_arena.relations.validation.pre_physics import NoOverlapValidator
 from isaaclab_arena.tests.dummy_object import DummyObject
-from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
+from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox, CachedOverlapVolumeUpperBound, OrientedBoundingBox
 from isaaclab_arena.utils.pose import Pose
 
 
@@ -401,6 +401,22 @@ def test_no_collision_loss_multi_env_shape_and_values():
     assert loss.shape == (2,)
     assert torch.isclose(loss[0], torch.tensor(0.0), atol=1e-5)
     assert loss[1] > 0.0
+
+
+def _harmonic_face_axis_volume(
+    subject: OrientedBoundingBox, obstacle: OrientedBoundingBox, margin: float
+) -> torch.Tensor:
+    """Harmonic mean of the interval-overlap volumes along the subject's and the obstacle's face axes."""
+    from isaaclab.utils.math import matrix_from_quat
+
+    bound = CachedOverlapVolumeUpperBound(
+        subject.half_extents,
+        matrix_from_quat(subject.rotation_W_B_xyzw),
+        obstacle.half_extents,
+        matrix_from_quat(obstacle.rotation_W_B_xyzw),
+    )
+    volume_A, volume_B = bound.compute_face_axis_volumes(subject.center_W, obstacle.center_W, margin)
+    return 2 * volume_A * volume_B / (volume_A + volume_B)
 
 
 def _reference_pairwise_no_overlap_loss(solver: RelationSolver, state: RelationSolverState) -> torch.Tensor:
@@ -950,6 +966,37 @@ def test_oriented_collision_loss_and_validator_apply_clearance(clearance_m, expe
     assert validator.validate_batch(alone, [obstacle]) == [expected_valid]
 
 
+def test_oriented_loss_pushes_out_a_bar_whose_smaller_face_axis_volume_is_flat():
+    """A yawed bar whose own-axis volume is constant still gets a gradient from the obstacle's frame."""
+    cube = DummyObject(
+        "cube",
+        AxisAlignedBoundingBox((-0.1, -0.1, -0.1), (0.1, 0.1, 0.1)),
+        initial_pose=Pose(position_xyz=(0.0, 0.0, 1.0)),
+        relations=[IsAnchor()],
+    )
+    bar = DummyObject("bar", AxisAlignedBoundingBox((-0.2, -0.005, -0.05), (0.2, 0.005, 0.05)))
+    quaternion = (0.0, 0.0, math.sin(math.pi / 8), math.cos(math.pi / 8))
+    bar_collision_box = bar.get_bounding_box().transformed((0.0, 0.0, 0.0), quaternion)
+    state = RelationSolverState(
+        [cube, bar],
+        [{cube: (0.0, 0.0, 1.0), bar: (0.05, 0.0, 1.0)}],
+        device=torch.device("cpu"),
+        collision_bboxes={bar: bar_collision_box},
+    )
+    solver = RelationSolver(RelationSolverParams(clearance_m=0.0, verbose=False))
+
+    loss = solver._compute_no_overlap_loss(state)  # pyright: ignore[reportPrivateUsage]
+    loss.sum().backward()
+
+    # The smaller face-axis volume, along the bar's own axes, does not change when the bar moves.
+    position = torch.tensor([[0.05, 0.0, 1.0]], requires_grad=True)
+    smaller_volume = bar_collision_box.translated(position).overlap_volume_upper_bound(cube.get_world_bounding_box())
+    smaller_volume.sum().backward()
+    assert loss.item() > 0 and position.grad.abs().sum() == 0
+    # Descending the loss moves the bar away from the cube along +x.
+    assert state.optimizable_positions.grad[0, 0, 0] < 0
+
+
 def test_oriented_loss_pushes_zero_thickness_panel_out_of_fixed_block():
     """A yawed panel with zero thickness partly inside a fixed block has a loss to reduce, and the solver moves it out."""
     table = _create_table()
@@ -1040,8 +1087,8 @@ def test_oriented_collision_cache_uses_current_positions_on_repeated_backward():
         for subject_index, subject, obstacle_index, obstacle in ((0, first, 1, second), (1, second, 0, first)):
             subject_world = collision_boxes[subject].translated(reference_positions[:, subject_index])
             obstacle_world = collision_boxes[obstacle].translated(reference_positions[:, obstacle_index].detach())
-            reference_loss += solver._no_collision_strategy.slope * subject_world.overlap_volume_upper_bound(
-                obstacle_world, margin=solver.params.clearance_m
+            reference_loss += solver._no_collision_strategy.slope * _harmonic_face_axis_volume(
+                subject_world, obstacle_world, margin=solver.params.clearance_m
             )
         loss = solver._compute_no_overlap_loss(state)
         loss.sum().backward()
