@@ -473,3 +473,33 @@ def test_random_choice_set_without_apply_cfg_fails_the_build(resolved_registry_n
 
     with pytest.raises(AssertionError, match="Change random_choice by passing a cfg to apply_cfg"):
         variation.configure_at_build_time(seed=0, variation_key=SELECTION_KEY)
+
+
+def test_random_choice_override_swaps_the_sampler(resolved_registry_names):
+    from isaaclab_arena.variations import variations_hydra
+    from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariation
+    from isaaclab_arena.variations.choice_sampler import ChoiceSampler
+    from isaaclab_arena.variations.sequential_sampler import SequentialSampler
+
+    rigid_object = _RecordingRigidObject()
+    variation = AssetSelectionVariation(rigid_object)
+    variations = {"pickup": [variation]}
+    notified_registry_names = []
+    variation.add_sample_listener(lambda sample, _env_ids: notified_registry_names.extend(sample))
+
+    variations_hydra.apply_overrides(
+        variations,
+        [
+            f"{SELECTION_KEY}.enabled=true",
+            f"{SELECTION_KEY}.random_choice=true",
+            f"{SELECTION_KEY}.registry_names=[mustard_bottle,sugar_box]",
+        ],
+    )
+    assert isinstance(variation.sampler, ChoiceSampler)
+
+    variations_hydra.apply_overrides(variations, [f"{SELECTION_KEY}.random_choice=false"])
+    assert isinstance(variation.sampler, SequentialSampler)
+    # Rebuild 1 takes the second name, and the listener added before both swaps is notified of it.
+    variation.configure_at_build_time(seed=0, variation_key=SELECTION_KEY, rebuild_index=1)
+    assert rigid_object.selected_registry_names == ["sugar_box"]
+    assert notified_registry_names == ["sugar_box"]
