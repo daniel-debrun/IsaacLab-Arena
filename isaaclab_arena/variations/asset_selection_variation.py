@@ -16,6 +16,8 @@ from isaaclab.utils.configclass import configclass
 from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.assets.registries import AssetRegistry
 from isaaclab_arena.variations.choice_sampler import ChoiceSamplerCfg
+from isaaclab_arena.variations.sampler_base import SamplerBaseCfg
+from isaaclab_arena.variations.sequential_sampler import SequentialSamplerCfg
 from isaaclab_arena.variations.variation_base import BuildTimeVariationBase, VariationBaseCfg
 
 if TYPE_CHECKING:
@@ -36,8 +38,9 @@ class AssetSelectionVariationCfg(VariationBaseCfg):
     """Registry names of the rigid objects to choose from, in this order. Required when enabled. A name listed more
     than once is selected more often."""
 
-    sampler_cfg: ChoiceSamplerCfg = field(default_factory=ChoiceSamplerCfg)
-    """Sampler that draws the registry name."""
+    sampler_cfg: SamplerBaseCfg = field(default_factory=SequentialSamplerCfg)
+    """Sampler that selects the registry name. Set from random_choice when the cfg is applied: SequentialSamplerCfg
+    when it is false, ChoiceSamplerCfg when it is true."""
 
 
 class AssetSelectionVariation(BuildTimeVariationBase):
@@ -62,6 +65,12 @@ class AssetSelectionVariation(BuildTimeVariationBase):
         self._variation_key: str | None = None
         self._rebuild_index: int = 0
 
+    def apply_cfg(self, cfg: AssetSelectionVariationCfg) -> None:
+        # Chosen here, not once in __init__, because a Hydra override of random_choice reaches the variation only
+        # through apply_cfg and must swap the sampler as well.
+        cfg.sampler_cfg = ChoiceSamplerCfg() if cfg.random_choice else SequentialSamplerCfg()
+        super().apply_cfg(cfg)
+
     def configure_at_build_time(self, seed: int, variation_key: str, rebuild_index: int = 0) -> None:
         # VariationBase does not keep these: the checks name the key, and in-order selection needs the index.
         self._variation_key = variation_key
@@ -84,13 +93,11 @@ class AssetSelectionVariation(BuildTimeVariationBase):
         spawn_cfgs_by_registry_name = {
             registry_name: _get_rigid_object_spawn_cfg(registry_name) for registry_name in dict.fromkeys(registry_names)
         }
-        # Both modes call self.sampler.sample(), which reports the name to the variation recorder and returns the
-        # recorded name during replay.
-        if self.cfg.random_choice:
-            selected_registry_name = self.sampler.sample(1, registry_names)[0]
-        else:
-            in_order_index = self._rebuild_index % len(registry_names)
-            selected_registry_name = self.sampler.sample(1, registry_names, index=in_order_index)[0]
+        if not self.cfg.random_choice:
+            # Rebuild k starts at the k-th name, so the rebuilds of a Run take the names in list order.
+            self.sampler.set_position(self._rebuild_index)
+        # The sampler reports the name to the variation recorder and returns the recorded name during replay.
+        selected_registry_name = self.sampler.sample(1, registry_names)[0]
         self._rigid_object.set_asset(selected_registry_name, spawn_cfgs_by_registry_name[selected_registry_name])
 
 

@@ -24,6 +24,7 @@ from isaaclab_arena.variations.recorded_variation_samples import (
     load_rebuild_variation_record,
     validate_recorded_variation_sample_keys,
 )
+from isaaclab_arena.variations.sequential_sampler import SequentialSampler, SequentialSamplerCfg
 from isaaclab_arena.variations.uniform_sampler import UniformSamplerCfg
 from isaaclab_arena.variations.variation_base import (
     BuildTimeVariationBase,
@@ -194,6 +195,10 @@ def test_replay_samplers_preserve_output_types() -> None:
     choice.set_replay_sampler(lambda _count, _env_ids: ["recorded"])
     assert choice.sample(1, choices=["live", "recorded"]) == ["recorded"]
 
+    sequential = SequentialSampler()
+    sequential.set_replay_sampler(lambda _count, _env_ids: ["recorded"])
+    assert sequential.sample(1, choices=["live", "recorded"]) == ["recorded"]
+
     bernoulli = BernoulliSampler(probability=0.0)
     bernoulli.set_replay_sampler(lambda _count, _env_ids: [True, False])
     assert bernoulli.sample(2) == [True, False]
@@ -209,12 +214,25 @@ def test_replay_samplers_preserve_public_preconditions() -> None:
     choice.set_replay_sampler(lambda _count, _env_ids: ["recorded"])
     with pytest.raises(AssertionError, match="non-empty"):
         choice.sample(1, choices=[])
-    with pytest.raises(AssertionError, match=r"samples \['recorded'\] must belong to 'choices': \['live'\]"):
+    with pytest.raises(AssertionError, match="must belong"):
         choice.sample(1, choices=["live"])
 
+    sequential = SequentialSampler()
+    sequential.set_replay_sampler(lambda _count, _env_ids: ["recorded"])
+    with pytest.raises(AssertionError, match=r"samples \['recorded'\] must belong to 'choices': \['live'\]"):
+        sequential.sample(1, choices=["live"])
 
-def test_choice_sampler_returns_the_choice_at_index() -> None:
-    assert ChoiceSampler().sample(3, choices=["a", "b", "c"], index=2) == ["c", "c", "c"]
+
+def test_sequential_sampler_takes_choices_in_order_from_its_position() -> None:
+    sampler = SequentialSamplerCfg().build()
+    choices = ["a", "b", "c"]
+
+    assert sampler.sample(2, choices) == ["a", "b"]
+    # The next draw continues after the last item and starts over after the last choice.
+    assert sampler.sample(2, choices) == ["c", "a"]
+    # Position 4 of 3 choices starts over at index 1.
+    sampler.set_position(4)
+    assert sampler.sample(1, choices) == ["b"]
 
 
 def test_variation_replay_scheduler_cycles_globally_across_partial_resets() -> None:
