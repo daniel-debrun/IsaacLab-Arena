@@ -40,7 +40,7 @@ def _test_task_contact_sensors_follow_object_spawn(simulation_app, tmp_path, tas
         task = SortMultiObjectTask(pickups, destinations, background)
         sensor_names = task.contact_sensor_name_list
 
-    # Replace each spawn configuration after the task is built, as Object.set_asset() does. The file's
+    # Replace each spawn configuration after the task is built, as Object.set_spawned_asset_class() does. The file's
     # default prim is /Object, so its rigid body is at /Group/Body below the spawn root.
     nested_body_usd_path = _write_rigid_cube_usd(tmp_path / "nested_body.usda", body_path="/Object/Group/Body")
     for scene_object in pickups + destinations:
