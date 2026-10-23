@@ -120,18 +120,26 @@ def _get_rigid_object_spawn_cfg(registry_name: str) -> SpawnerCfg:
     # object classes and register_asset_factory functions declare one.
     declared_object_type = getattr(asset_class_or_factory, "object_type", None)
     if declared_object_type is not None:
-        _assert_rigid_object_type(registry_name, declared_object_type)
+        _assert_rigid_object_type(registry_name, asset_class_or_factory.__name__, declared_object_type)
     candidate_asset = asset_class_or_factory()
-    # Classes such as ProceduralCube set their object type only in __init__, and assets that are not objects, such as
-    # embodiments, have none.
-    _assert_rigid_object_type(registry_name, getattr(candidate_asset, "object_type", None))
+    # Classes such as ProceduralCube set their object type only in __init__. Assets that are not objects, such as
+    # embodiments, have none, so they are built before this check rejects them.
+    _assert_rigid_object_type(
+        registry_name, type(candidate_asset).__name__, getattr(candidate_asset, "object_type", None)
+    )
     return deepcopy(candidate_asset.object_cfg.spawn)
 
 
-def _assert_rigid_object_type(registry_name: str, object_type: ObjectType | None) -> None:
-    """Check that the registered asset ``registry_name``, of type ``object_type``, is a rigid object."""
-    object_type_name = object_type.value if object_type is not None else None
+def _assert_rigid_object_type(registry_name: str, asset_class_name: str, object_type: ObjectType | None) -> None:
+    """Check that the registered asset ``registry_name`` is a rigid object.
+
+    Args:
+        registry_name: Registry name of the asset.
+        asset_class_name: Name of the asset's class or factory, shown in the error message.
+        object_type: Object type of the asset, or None when it has none.
+    """
+    object_type_description = f"object type: {object_type.value}" if object_type is not None else "no object type"
     assert object_type == ObjectType.RIGID, (
-        f"Asset '{registry_name}' is not a rigid object (object type: {object_type_name}). Use the registry name of a"
-        " rigid object."
+        f"Asset '{registry_name}' ({asset_class_name}, {object_type_description}) is not a rigid object. Use the"
+        " registry name of a rigid object."
     )

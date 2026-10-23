@@ -295,11 +295,11 @@ def _test_asset_selection_rejects_invalid_configuration(simulation_app, case_id)
         "unknown_name": (lambda: build_with_registry_names(["sugar_box", "banana_split"]), "'banana_split' is not a"),
         "non_rigid_name": (
             lambda: build_with_registry_names(["ground_plane"]),
-            r"'ground_plane' is not a rigid object \(object type: base\)",
+            r"'ground_plane' \(GroundPlane, object type: base\) is not a rigid object",
         ),
         "non_object_name": (
             lambda: build_with_registry_names(["droid_differential_ik"]),
-            r"'droid_differential_ik' is not a rigid object \(object type: None\)",
+            r"'droid_differential_ik' \(DroidDifferentialIKEmbodiment, no object type\) is not a rigid object",
         ),
         "bounding_box_override": (build_with_bounding_box_override, "'pickup' sets a bounding_box override"),
     }
