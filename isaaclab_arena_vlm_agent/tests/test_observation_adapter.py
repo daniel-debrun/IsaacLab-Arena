@@ -46,7 +46,19 @@ def _inputs():
         return torch.tensor([[x, 0, 0, 0, 0, 0, 1], [x + 10, 0, 0, 0, 0, 0, 1]])
 
     world = SimpleNamespace(get_body_pose_in_root=Mock(side_effect=get_pose))
-    env = SimpleNamespace(unwrapped=SimpleNamespace(num_envs=2, arena_world=world))
+    env = SimpleNamespace(
+        unwrapped=SimpleNamespace(
+            num_envs=2,
+            arena_world=world,
+            observation_manager=SimpleNamespace(
+                active_terms={"policy": ["left_joints", "right_joints"]}, group_obs_concatenate={"policy": False}
+            ),
+            action_manager=SimpleNamespace(
+                active_terms=list(vars(action_cfg)),
+                get_term=lambda name: SimpleNamespace(cfg=getattr(action_cfg, name)),
+            ),
+        )
+    )
     observation = {
         "policy": {
             "left_joints": torch.tensor([[1.0, 2.0], [3.0, 4.0]]),
@@ -77,7 +89,7 @@ def test_selects_only_requested_modalities_and_configured_terms(adapter_type, in
     if not include_images:
         del observation["camera_obs"]
         embodiment.get_observation_cfg.return_value.camera_obs = None
-    adapter = adapter_type(embodiment)
+    adapter = adapter_type() if adapter_type is StateObservationAdapter else adapter_type(embodiment)
     images, state = adapter.extract_vlm_input_from_observation(env, observation, 1)
     if include_state:
         assert state["policy"] == {"left_joints": [3.0, 4.0], "right_joints": [7.0, 8.0]}
@@ -101,8 +113,8 @@ def test_selects_only_requested_modalities_and_configured_terms(adapter_type, in
 
 def test_joint_only_state_does_not_require_command_body_queries():
     embodiment, env, observation = _inputs()
-    embodiment.get_action_cfg.return_value = SimpleNamespace(joints=SimpleNamespace(asset_name="humanoid"))
-    adapter = StateObservationAdapter(embodiment)
+    env.unwrapped.action_manager.active_terms = ["joints"]
+    adapter = StateObservationAdapter()
     state = adapter.extract_robot_state(env, observation, 0)
     assert state["command_body_poses"] == {}
     assert state["policy"]["right_joints"] == [5.0, 6.0]
@@ -110,10 +122,10 @@ def test_joint_only_state_does_not_require_command_body_queries():
 
 
 def test_state_modality_requires_named_observation_terms():
-    embodiment, _, _ = _inputs()
-    embodiment.get_observation_cfg.return_value.policy.concatenate_terms = True
+    _, env, observation = _inputs()
+    env.unwrapped.observation_manager.group_obs_concatenate["policy"] = True
     with pytest.raises(AssertionError, match="unconcatenated"):
-        StateObservationAdapter(embodiment)
+        StateObservationAdapter().extract_robot_state(env, observation, 0)
 
 
 def test_rgb_modality_requires_configured_rgb_views():
@@ -128,3 +140,17 @@ def test_rgb_modality_requires_configured_rgb_views():
 def test_observation_base_requires_a_modality_implementation():
     with pytest.raises(TypeError, match="extract_vlm_input_from_observation"):
         VLMObservationAdapter()
+
+
+def test_state_uses_live_managers_after_environment_configuration_changes():
+    embodiment, env, observation = _inputs()
+    adapter = ImageStateObservationAdapter(embodiment)
+    env.unwrapped.observation_manager.active_terms["policy"] = ["task_only_term"]
+    env.unwrapped.action_manager.active_terms = ["new_arm"]
+    env.unwrapped.action_manager.get_term = lambda name: SimpleNamespace(
+        cfg=SimpleNamespace(asset_name="new_robot", body_name="new_tool")
+    )
+    _, state = adapter.extract_vlm_input_from_observation(env, observation, 0)
+    assert state["policy"] == {"task_only_term": [1.0, 1.0, 1.0]}
+    assert set(state["command_body_poses"]) == {"new_arm"}
+    env.unwrapped.arena_world.get_body_pose_in_root.assert_called_once_with("new_robot", "new_tool")

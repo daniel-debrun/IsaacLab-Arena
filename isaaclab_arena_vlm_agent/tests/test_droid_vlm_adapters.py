@@ -41,7 +41,14 @@ def inputs(monkeypatch):
             action_dim=8,
             device="cpu",
             arena_world=world,
-            action_manager=SimpleNamespace(action=torch.zeros(2, 8)),
+            observation_manager=SimpleNamespace(
+                active_terms={"policy": ["gripper_pos"]}, group_obs_concatenate={"policy": False}
+            ),
+            action_manager=SimpleNamespace(
+                action=torch.zeros(2, 8),
+                active_terms=["arm"],
+                get_term=lambda name: SimpleNamespace(cfg=embodiment.get_action_cfg().arm),
+            ),
             episode_length_buf=torch.zeros(2, dtype=torch.long),
         )
     )
@@ -68,7 +75,7 @@ def _policy(mode, inputs, infer):
         policy_type, adapter = VLMChunkPolicy, AbsoluteChunkActionAdapter(2)
     else:
         policy_type = VLMGoalPolicy
-        adapter = AbsoluteGoalActionAdapter(PoseTargetMotionGenerator({"gripper": gripper}))
+        adapter = AbsoluteGoalActionAdapter(PoseTargetMotionGenerator(gripper))
         config = VLMGoalPolicyCfg(system_prompt="Return absolute robot-root targets.", max_steps_per_goal=2)
     policy = policy_type(
         config,

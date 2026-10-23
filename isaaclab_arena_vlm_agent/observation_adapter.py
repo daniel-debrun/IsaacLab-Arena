@@ -45,30 +45,8 @@ class VLMObservationAdapter(ABC):
 class StateObservationAdapter(VLMObservationAdapter):
     """Include named robot state and command-body poses for one environment."""
 
-    def __init__(self, embodiment: EmbodimentBase):
-        self._command_bodies: dict[str, tuple[str, str]] = {}
-        observation_cfg = embodiment.get_observation_cfg()
-        state_cfg = getattr(observation_cfg, POLICY_OBSERVATION_GROUP, None)
-        assert state_cfg is not None, (
-            "State modality requires embodiment.get_observation_cfg().policy: an Isaac Lab observation "
-            "group named 'policy' containing robot state terms (e.g. joint_pos and gripper_pos). "
-            "The adapter reads those terms from observation['policy'][term_name]."
-        )
-        assert not state_cfg.concatenate_terms, (
-            "State modality requires unconcatenated policy observations: set "
-            "embodiment.get_observation_cfg().policy.concatenate_terms=False so observation['policy'] "
-            "is a dictionary of named state tensors rather than one concatenated tensor."
-        )
-        self.state_keys = tuple(name for name, term in vars(state_cfg).items() if hasattr(term, "func"))
-        action_cfg = embodiment.get_action_cfg()
-        # Identifies the bodies controlled by pose action commands
-        if action_cfg is not None:
-            for name, term in vars(action_cfg).items():
-                if getattr(term, "body_name", None):
-                    self._command_bodies[name] = (term.asset_name, term.body_name)
-
     def extract_robot_state(self, env, observation, env_id: int) -> dict:
-        """Copy configured state terms and command-body poses for one environment.
+        """Copy active state terms and command-body poses for one environment.
 
         Args:
             env: Arena environment, optionally gym-wrapped.
@@ -80,12 +58,22 @@ class StateObservationAdapter(VLMObservationAdapter):
         """
         base = env.unwrapped
         state = {}
-        for key in self.state_keys:
+        manager = base.observation_manager
+        assert POLICY_OBSERVATION_GROUP in manager.active_terms, "State modality requires policy observations"
+        assert not manager.group_obs_concatenate[
+            POLICY_OBSERVATION_GROUP
+        ], "State modality requires unconcatenated policy observations"
+        # Callbacks can change the built environment independently of the embodiment configuration.
+        for key in manager.active_terms[POLICY_OBSERVATION_GROUP]:
             batch = observation[POLICY_OBSERVATION_GROUP][key]
             assert batch.ndim >= 1 and batch.shape[0] == base.num_envs, "Expected one state entry per environment"
             state[key] = batch[env_id].detach().cpu().tolist()
         poses = {}
-        for name, (asset_name, body_name) in self._command_bodies.items():
+        for name in base.action_manager.active_terms:
+            cfg = base.action_manager.get_term(name).cfg
+            if not getattr(cfg, "body_name", None):
+                continue
+            asset_name, body_name = cfg.asset_name, cfg.body_name
             # T_R_E maps the configured command body E into its articulation root frame R.
             T_R_E = base.arena_world.get_body_pose_in_root(asset_name, body_name)
             assert T_R_E.shape == (base.num_envs, 7), "Expected one root-relative body pose per environment"
@@ -129,7 +117,7 @@ class ImageStateObservationAdapter(VLMObservationAdapter):
     """Include robot state followed by current RGB camera views."""
 
     def __init__(self, embodiment: EmbodimentBase):
-        self.state_adapter = StateObservationAdapter(embodiment)
+        self.state_adapter = StateObservationAdapter()
         self.image_adapter = ImageObservationAdapter(embodiment)
 
     def extract_vlm_input_from_observation(self, env, observation, env_id: int):

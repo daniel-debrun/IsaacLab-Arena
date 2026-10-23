@@ -48,7 +48,7 @@ def _test_droid_absolute_pose_adapters(simulation_app):
     try:
         obs, _ = env.reset()
         base = env.unwrapped
-        observation_adapter = StateObservationAdapter(embodiment)
+        observation_adapter = StateObservationAdapter()
         action_adapter = AbsoluteChunkActionAdapter(1)
         assert action_adapter.is_robot_action_space_supported(env)
         states = [observation_adapter.extract_robot_state(env, obs, env_id) for env_id in range(base.num_envs)]
@@ -86,7 +86,7 @@ def _test_droid_absolute_pose_adapters(simulation_app):
         for env_id, state in enumerate(measured_states):
             assert abs(state["policy"]["gripper_pos"][0] - obs["policy"]["gripper_pos"][env_id, 0].item()) < 1e-6
 
-        generator = PoseTargetMotionGenerator({"gripper_action": embodiment.get_gripper()})
+        generator = PoseTargetMotionGenerator(embodiment.get_gripper())
         for env_id, state in enumerate(measured_states):
             pose = state["command_body_poses"]["arm_action"]
             response = Command(values=pose["position_root_m"] + pose["quaternion_root_xyzw"] + [0.0])

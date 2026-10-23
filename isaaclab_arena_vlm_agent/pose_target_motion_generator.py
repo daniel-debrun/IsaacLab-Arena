@@ -23,7 +23,7 @@ class PoseTargetMotionGenerator(MotionGenerator):
 
     def __init__(
         self,
-        grippers: dict[str, Gripper] | None = None,
+        grippers: Gripper | dict[str, Gripper] | None = None,
         position_tolerance_m: float = 0.01,
         rotation_tolerance_rad: float = 0.1,
         gripper_tolerance_m: float = 0.001,
@@ -34,7 +34,8 @@ class PoseTargetMotionGenerator(MotionGenerator):
         """Configure pose accuracy and detection of stationary closing grippers.
 
         Args:
-            grippers: Gripper measurements keyed by binary action term name; omit for pose-only robots.
+            grippers: A single gripper, or measurements keyed by binary action term name for multiple grippers.
+                Omit for pose-only robots; a single gripper requires exactly one binary action term.
             position_tolerance_m: Maximum translation error per pose.
             rotation_tolerance_rad: Maximum shortest rotation error per pose.
             gripper_tolerance_m: Maximum absolute measured-minus-commanded finger displacement.
@@ -48,7 +49,7 @@ class PoseTargetMotionGenerator(MotionGenerator):
         assert math.isfinite(stall_margin_m) and stall_margin_m >= gripper_tolerance_m
         assert math.isfinite(stall_motion_tolerance_m) and stall_motion_tolerance_m >= 0
         assert type(stall_steps) is int and stall_steps > 0
-        self.grippers = dict(grippers or {})
+        self.grippers = grippers if grippers is not None else {}
         self.position_tolerance_m = position_tolerance_m
         self.rotation_tolerance_rad = rotation_tolerance_rad
         self.gripper_tolerance_m = gripper_tolerance_m
@@ -78,8 +79,11 @@ class PoseTargetMotionGenerator(MotionGenerator):
         indices: AbsoluteCommandIndices | None = read_absolute_command_indices(env)
         assert indices is not None and indices.poses and not indices.joints, "Expected absolute pose controllers"
         assert goal.shape == (indices.action_dim,)
-        for command in indices.grippers:
-            assert command.term_name in self.grippers, f"Provide gripper measurements for {command.term_name}"
+        if isinstance(self.grippers, dict):
+            expected = {command.term_name for command in indices.grippers}
+            assert set(self.grippers) == expected, f"Provide gripper measurements for exactly {sorted(expected)}"
+        else:
+            assert len(indices.grippers) == 1, "A single gripper requires exactly one binary action term"
         return indices
 
     def _are_poses_reached(self, goal, env, env_id, indices) -> bool:
@@ -101,7 +105,7 @@ class PoseTargetMotionGenerator(MotionGenerator):
         base = env.unwrapped
         reached = True
         for command in indices.grippers:
-            gripper = self.grippers[command.term_name]
+            gripper = self.grippers[command.term_name] if isinstance(self.grippers, dict) else self.grippers
             error = float(gripper.get_closing_error_m(base)[env_id])
             gap = float(gripper.get_opening_width_m(base.arena_world)[env_id])
             step = int(base.episode_length_buf[env_id])
