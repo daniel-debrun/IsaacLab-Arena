@@ -19,8 +19,8 @@ class Asset:
     """
 
     registry_name: str | None = None
-    """Key of this asset's class in its registry, or of the registered asset an asset selection chose to spawn instead.
-    None for assets not created from a registered class."""
+    """Key of this asset's class in its registry, or None for assets not created from a registered class. An asset
+    selection may set it on the object."""
 
     def __init__(self, name: str, tags: list[str] | None = None, **kwargs):
         # NOTE: Cooperative Multiple Inheritance Pattern.

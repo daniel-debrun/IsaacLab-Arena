@@ -213,6 +213,10 @@ def test_replay_samplers_preserve_public_preconditions() -> None:
         choice.sample(1, choices=["live"])
 
 
+def test_choice_sampler_returns_the_choice_at_index() -> None:
+    assert ChoiceSampler().sample(3, choices=["a", "b", "c"], index=2) == ["c", "c", "c"]
+
+
 def test_variation_replay_scheduler_cycles_globally_across_partial_resets() -> None:
     scheduler = VariationReplayScheduler(_runtime_record([0, 1, 2]))
     observed_values: list[int] = []
