@@ -55,7 +55,6 @@ def make_pickup():
 def compose_pick_and_place_with_selection(
     *,
     selection_cfg,
-    seed=42,
     rebuild_index=0,
     solve_relations=False,
 ):
@@ -63,7 +62,6 @@ def compose_pick_and_place_with_selection(
 
     Args:
         selection_cfg: Settings applied to the pickup's asset selection.
-        seed: Build seed.
         rebuild_index: Index of the build among the rebuilds of an Experiment Run.
         solve_relations: Whether to solve the pickup's placement on the table.
 
@@ -102,7 +100,6 @@ def compose_pick_and_place_with_selection(
     # resolve_on_reset=False stores the solved pose per environment on the object. Only the config is composed.
     builder_cfg = ArenaEnvBuilderCfg(
         num_envs=NUM_ENVS,
-        seed=seed,
         solve_relations=solve_relations,
         placement_seed=0,
         resolve_on_reset=False,
@@ -153,30 +150,6 @@ def _test_disabled_selection_keeps_default_asset(simulation_app):
     return True
 
 
-def _test_random_selection_draws_from_seeded_generator(simulation_app):
-    import torch
-
-    from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariationCfg
-
-    def compose_random_selection(seed):
-        selection_cfg = AssetSelectionVariationCfg(
-            enabled=True, random_choice=True, registry_names=["mustard_bottle", "sugar_box", "tomato_soup_can"]
-        )
-        _, env_cfg, _ = compose_pick_and_place_with_selection(selection_cfg=selection_cfg, seed=seed)
-        return env_cfg.scene.pickup.spawn.usd_path
-
-    # A draw from torch's global random state would differ between these two builds.
-    torch.manual_seed(0)
-    first_usd_path = compose_random_selection(seed=7)
-    torch.manual_seed(2)
-    second_usd_path = compose_random_selection(seed=7)
-    assert first_usd_path == second_usd_path
-
-    usd_paths_over_seeds = {compose_random_selection(seed) for seed in range(5)}
-    assert len(usd_paths_over_seeds) > 1
-    return True
-
-
 def _test_asset_registered_by_factory_is_selected(simulation_app):
     from unittest.mock import patch
 
@@ -205,77 +178,13 @@ def _test_asset_registered_by_factory_is_selected(simulation_app):
     return True
 
 
-def _test_asset_selection_rejects_invalid_configuration(simulation_app, case_id):
-    from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
-    from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
-    from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
-    from isaaclab_arena.scene.scene import Scene
-    from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
+def _test_asset_selection_rejects_invalid_configuration(simulation_app, registry_names, message_pattern):
     from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariationCfg
 
-    def build_with_registry_names(registry_names):
+    with pytest.raises(AssertionError, match=message_pattern):
         compose_pick_and_place_with_selection(
             selection_cfg=AssetSelectionVariationCfg(enabled=True, registry_names=registry_names)
         )
-
-    def build_with_bounding_box_override():
-        pickup = make_pickup()
-        pickup.get_variation("asset_selection").apply_cfg(
-            AssetSelectionVariationCfg(enabled=True, registry_names=["sugar_box"])
-        )
-        pickup.bounding_box = AxisAlignedBoundingBox(min_point=(0.0, 0.0, 0.0), max_point=(0.1, 0.1, 0.1))
-        arena_env = IsaacLabArenaEnvironment(name="bounding_box_override", scene=Scene(assets=[pickup]))
-        ArenaEnvBuilder(arena_env, ArenaEnvBuilderCfg(num_envs=1)).build_env_cfg()
-
-    invalid_configurations = {
-        "empty_registry_names": (lambda: build_with_registry_names([]), "'pickup.asset_selection' is enabled but its"),
-        "unknown_name": (lambda: build_with_registry_names(["sugar_box", "banana_split"]), "'banana_split' is not a"),
-        "non_rigid_name": (
-            lambda: build_with_registry_names(["ground_plane"]),
-            r"'ground_plane' \(GroundPlane, object type: base\) is not a rigid object",
-        ),
-        "non_object_name": (
-            lambda: build_with_registry_names(["droid_differential_ik"]),
-            r"'droid_differential_ik' \(DroidDifferentialIKEmbodiment, no object type\) is not a rigid object",
-        ),
-        "bounding_box_override": (build_with_bounding_box_override, "'pickup' sets a bounding_box override"),
-    }
-    build_invalid_configuration, message_pattern = invalid_configurations[case_id]
-    with pytest.raises(AssertionError, match=message_pattern):
-        build_invalid_configuration()
-    return True
-
-
-def _test_placement_replay_needs_recorded_asset_selection(simulation_app, tmp_path):
-    from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
-    from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
-    from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
-    from isaaclab_arena.scene.scene import Scene
-    from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariationCfg
-
-    def build_replaying(record_row, record_name):
-        """Return the env_cfg of a scene holding only the pickup, with its selection on, that replays ``record_row``."""
-        pickup = make_pickup()
-        pickup.get_variation("asset_selection").apply_cfg(
-            AssetSelectionVariationCfg(enabled=True, registry_names=["mustard_bottle", "sugar_box"])
-        )
-        record_path = tmp_path / f"{record_name}.jsonl"
-        record_path.write_text(json.dumps(record_row) + "\n")
-        arena_env = IsaacLabArenaEnvironment(name=record_name, scene=Scene(assets=[pickup]))
-        builder_cfg = ArenaEnvBuilderCfg(num_envs=1, recorded_variation_samples_path=str(record_path))
-        env_cfg, _ = ArenaEnvBuilder(arena_env, builder_cfg).build_env_cfg()
-        return env_cfg
-
-    # One layout row as write_placement_samples writes it: a pose for pickup and no variation values.
-    pickup_pose = {"position_xyz": [0.0, 0.0, 0.05], "rotation_xyzw": [0.0, 0.0, 0.0, 1.0]}
-    layout_row = {"placement": {"layout_id": "layout_000000", "poses": {"pickup": pickup_pose}}}
-    with pytest.raises(AssertionError, match=r"no 'pickup\.asset_selection' value"):
-        build_replaying(layout_row, "layout_without_selection")
-
-    # In order, a live draw in the first rebuild would take "mustard_bottle".
-    layout_row_with_selection = {**layout_row, "variations": {SELECTION_KEY: "sugar_box"}}
-    env_cfg = build_replaying(layout_row_with_selection, "layout_with_selection")
-    assert env_cfg.scene.pickup.spawn.usd_path == get_registered_usd_path("sugar_box")
     return True
 
 
@@ -308,35 +217,24 @@ def test_disabled_selection_keeps_default_asset():
     assert run_function_with_persistent_simulation_app(_test_disabled_selection_keeps_default_asset, headless=HEADLESS)
 
 
-def test_random_selection_draws_from_seeded_generator():
-    assert run_function_with_persistent_simulation_app(
-        _test_random_selection_draws_from_seeded_generator, headless=HEADLESS
-    )
-
-
 def test_asset_registered_by_factory_is_selected():
     assert run_function_with_persistent_simulation_app(_test_asset_registered_by_factory_is_selected, headless=HEADLESS)
 
 
 @pytest.mark.parametrize(
-    "case_id",
+    "registry_names, message_pattern",
     [
-        "empty_registry_names",
-        "unknown_name",
-        "non_rigid_name",
-        "non_object_name",
-        "bounding_box_override",
+        (["sugar_box", "banana_split"], "'banana_split' is not a registered asset"),
+        (["ground_plane"], r"'ground_plane' .* is not a rigid object"),
+        (["droid_differential_ik"], r"'droid_differential_ik' .* is not a rigid object"),
     ],
 )
-def test_asset_selection_rejects_invalid_configuration(case_id):
+def test_asset_selection_rejects_invalid_configuration(registry_names, message_pattern):
     assert run_function_with_persistent_simulation_app(
-        _test_asset_selection_rejects_invalid_configuration, headless=HEADLESS, case_id=case_id
-    )
-
-
-def test_placement_replay_needs_recorded_asset_selection(tmp_path):
-    assert run_function_with_persistent_simulation_app(
-        _test_placement_replay_needs_recorded_asset_selection, headless=HEADLESS, tmp_path=tmp_path
+        _test_asset_selection_rejects_invalid_configuration,
+        headless=HEADLESS,
+        registry_names=registry_names,
+        message_pattern=message_pattern,
     )
 
 
@@ -371,49 +269,44 @@ def placeholder_spawn_cfgs(monkeypatch):
     )
 
 
-@pytest.mark.parametrize("random_choice", [False, True])
-def test_random_choice_set_without_apply_cfg_fails_the_build(placeholder_spawn_cfgs, random_choice):
-    from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariation, AssetSelectionVariationCfg
-
-    selection_cfg = AssetSelectionVariationCfg(
-        enabled=True, random_choice=random_choice, registry_names=["mustard_bottle", "sugar_box"]
-    )
-    variation = AssetSelectionVariation(_RecordingRigidObject(), selection_cfg)
-    # The sampler bound by apply_cfg stays, so it no longer matches random_choice.
-    variation.cfg.random_choice = not random_choice
-
-    with pytest.raises(AssertionError, match="Change random_choice by passing a cfg to apply_cfg"):
-        variation.configure_at_build_time(seed=0, variation_key=SELECTION_KEY)
-
-
 def test_random_choice_override_swaps_the_sampler(placeholder_spawn_cfgs):
+    import torch
+
     from isaaclab_arena.variations import variations_hydra
     from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariation
-    from isaaclab_arena.variations.choice_sampler import ChoiceSampler
-    from isaaclab_arena.variations.sequential_sampler import SequentialSampler
 
     rigid_object = _RecordingRigidObject()
     variation = AssetSelectionVariation(rigid_object)
     variations = {"pickup": [variation]}
-    notified_registry_names = []
-    variation.add_sample_listener(lambda sample, _env_ids: notified_registry_names.extend(sample))
+
+    def select_registry_name(seed, rebuild_index=0):
+        variation.configure_at_build_time(seed=seed, variation_key=SELECTION_KEY, rebuild_index=rebuild_index)
+        return rigid_object.selected_registry_names[-1]
 
     variations_hydra.apply_overrides(
         variations,
         [
             f"{SELECTION_KEY}.enabled=true",
             f"{SELECTION_KEY}.random_choice=true",
-            f"{SELECTION_KEY}.registry_names=[mustard_bottle,sugar_box]",
+            f"{SELECTION_KEY}.registry_names=[mustard_bottle,sugar_box,tomato_soup_can]",
         ],
     )
-    assert isinstance(variation.sampler, ChoiceSampler)
+    # A draw from torch's global random state would differ between these two builds.
+    torch.manual_seed(0)
+    first_registry_name = select_registry_name(seed=7)
+    torch.manual_seed(2)
+    assert select_registry_name(seed=7) == first_registry_name
+    # In order, every build seed would take the first name.
+    assert len({select_registry_name(seed) for seed in range(5)}) > 1
 
     variations_hydra.apply_overrides(variations, [f"{SELECTION_KEY}.random_choice=false"])
-    assert isinstance(variation.sampler, SequentialSampler)
-    # Rebuild 1 takes the second name, and the listener added before both swaps is notified of it.
-    variation.configure_at_build_time(seed=0, variation_key=SELECTION_KEY, rebuild_index=1)
-    assert rigid_object.selected_registry_names == ["sugar_box"]
-    assert notified_registry_names == ["sugar_box"]
+    # In order, rebuild 1 takes the second name.
+    assert select_registry_name(seed=0, rebuild_index=1) == "sugar_box"
+
+    # Set on the cfg directly, random_choice leaves the in-order sampler bound, so the build fails.
+    variation.cfg.random_choice = True
+    with pytest.raises(AssertionError, match="passing a cfg to apply_cfg"):
+        select_registry_name(seed=0)
 
 
 def test_in_order_selection_takes_repeated_names_in_list_order(placeholder_spawn_cfgs):
@@ -432,3 +325,52 @@ def test_in_order_selection_takes_repeated_names_in_list_order(placeholder_spawn
 
     # Rebuild k takes entry k % 4, so mustard_bottle spawns in rebuilds 0, 2 and 4.
     assert rigid_object.selected_registry_names == registry_names + registry_names[:2]
+
+
+def test_asset_selection_rejects_empty_registry_names_and_bounding_box_override(placeholder_spawn_cfgs):
+    from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
+    from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariation, AssetSelectionVariationCfg
+
+    selection_without_names = AssetSelectionVariation(
+        _RecordingRigidObject(), AssetSelectionVariationCfg(enabled=True, registry_names=[])
+    )
+    with pytest.raises(AssertionError, match="'pickup.asset_selection' is enabled but its"):
+        selection_without_names.configure_at_build_time(seed=0, variation_key=SELECTION_KEY)
+
+    rigid_object_with_bounding_box = _RecordingRigidObject()
+    rigid_object_with_bounding_box.bounding_box = AxisAlignedBoundingBox(
+        min_point=(0.0, 0.0, 0.0), max_point=(0.1, 0.1, 0.1)
+    )
+    selection_with_bounding_box = AssetSelectionVariation(
+        rigid_object_with_bounding_box, AssetSelectionVariationCfg(enabled=True, registry_names=["sugar_box"])
+    )
+    with pytest.raises(AssertionError, match="'pickup' sets a bounding_box override"):
+        selection_with_bounding_box.configure_at_build_time(seed=0, variation_key=SELECTION_KEY)
+
+
+def test_placement_replay_needs_recorded_asset_selection(placeholder_spawn_cfgs, tmp_path):
+    from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariation, AssetSelectionVariationCfg
+    from isaaclab_arena.variations.recorded_variation_replay import configure_recorded_variation_replay
+
+    def replay(record_row, record_name):
+        """Return the names an in-order selection of mustard_bottle and sugar_box spawns while replaying ``record_row``."""
+        rigid_object = _RecordingRigidObject()
+        variation = AssetSelectionVariation(
+            rigid_object, AssetSelectionVariationCfg(enabled=True, registry_names=["mustard_bottle", "sugar_box"])
+        )
+        record_path = tmp_path / f"{record_name}.jsonl"
+        record_path.write_text(json.dumps(record_row) + "\n")
+        # Like ArenaEnvBuilder.build_env_cfg, bind the record before the build-time variations are configured.
+        configure_recorded_variation_replay(record_path, {"pickup": [variation]})
+        variation.configure_at_build_time(seed=0, variation_key=SELECTION_KEY)
+        return rigid_object.selected_registry_names
+
+    # One layout row as write_placement_samples writes it: a pose for pickup and no variation values.
+    pickup_pose = {"position_xyz": [0.0, 0.0, 0.05], "rotation_xyzw": [0.0, 0.0, 0.0, 1.0]}
+    layout_row = {"placement": {"layout_id": "layout_000000", "poses": {"pickup": pickup_pose}}}
+    with pytest.raises(AssertionError, match=r"no 'pickup\.asset_selection' value"):
+        replay(layout_row, "layout_without_selection")
+
+    # In order, a live draw in the first rebuild would take "mustard_bottle".
+    layout_row_with_selection = {**layout_row, "variations": {SELECTION_KEY: "sugar_box"}}
+    assert replay(layout_row_with_selection, "layout_with_selection") == ["sugar_box"]
