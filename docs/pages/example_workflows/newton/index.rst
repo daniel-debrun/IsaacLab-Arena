@@ -1,8 +1,9 @@
-Teleoperation and Replay
-========================
+Newton Environments
+===================
 
-Launch an Arena environment, control the robot with a teleop device, and save
-successful demonstrations to an HDF5 dataset. Replay the dataset to inspect the recorded motions.
+Explore simple Arena environments running on the Newton physics backend. The
+walkthroughs cover previewing a scene, recording teleoperation demonstrations,
+and replaying the saved datasets.
 
 Each walkthrough follows three steps:
 

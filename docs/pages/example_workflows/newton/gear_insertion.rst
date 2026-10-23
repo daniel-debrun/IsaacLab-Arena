@@ -1,5 +1,5 @@
-Gear Insertion (Newton)
-=======================
+Gear Insertion
+==============
 
 Use a keyboard or SpaceMouse to teleoperate and pick up a gear with the DROID robot and insert it onto the
 peg board. This walkthrough covers previewing the environment, recording demonstrations,
