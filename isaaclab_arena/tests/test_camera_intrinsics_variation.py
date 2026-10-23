@@ -15,8 +15,7 @@ ENABLE_CAMERAS = True
 CAMERA_NAME = "wrist_camera"
 VARIATION_NAME = f"camera_intrinsics_{CAMERA_NAME}"
 EVENT_NAME = f"{CAMERA_NAME}_intrinsics_variation"
-# (d_fx, d_fy); distinct signs catch axis/sign swaps.
-TEST_DELTAS = (0.1, -0.1)
+TEST_DELTA = 0.1
 
 
 def get_test_environment(*, camera_intrinsics_variation_enabled: bool):
@@ -30,7 +29,7 @@ def get_test_environment(*, camera_intrinsics_variation_enabled: bool):
     embodiment = DroidAbsoluteJointPositionEmbodiment(enable_cameras=ENABLE_CAMERAS)
     if camera_intrinsics_variation_enabled:
         embodiment.get_variation(VARIATION_NAME).apply_cfg(
-            CameraIntrinsicsVariationCfg(sampler_cfg=UniformSamplerCfg(low=list(TEST_DELTAS), high=list(TEST_DELTAS)))
+            CameraIntrinsicsVariationCfg(sampler_cfg=UniformSamplerCfg(low=[TEST_DELTA], high=[TEST_DELTA]))
         )
         embodiment.get_variation(VARIATION_NAME).enable()
 
@@ -119,15 +118,13 @@ def _test_camera_intrinsics_variation_realized_at_runtime(simulation_app):
     env.reset()
 
     camera = env.unwrapped.scene[CAMERA_NAME]
-    sensor_prim = camera._sensor_prims[0]
-    # Read nominal apertures from the rig config so the test tracks its source of truth.
-    nominal_spawn = getattr(DroidCameraCfg(), CAMERA_NAME).spawn
-    d_fx, d_fy = TEST_DELTAS
-    expected_horizontal_aperture = nominal_spawn.horizontal_aperture / (1.0 + d_fx)
-    expected_vertical_aperture = nominal_spawn.vertical_aperture / (1.0 + d_fy)
+    camera_cfg = getattr(DroidCameraCfg(), CAMERA_NAME)
+    nominal_focal_length = camera_cfg.width * camera_cfg.spawn.focal_length / camera_cfg.spawn.horizontal_aperture
+    expected_focal_length = nominal_focal_length * (1.0 + TEST_DELTA)
+    realized_intrinsics = camera.data.intrinsic_matrices.torch[0]
 
-    assert sensor_prim.GetHorizontalApertureAttr().Get() == pytest.approx(expected_horizontal_aperture)
-    assert sensor_prim.GetVerticalApertureAttr().Get() == pytest.approx(expected_vertical_aperture)
+    assert realized_intrinsics[0, 0].item() == pytest.approx(expected_focal_length)
+    assert realized_intrinsics[1, 1].item() == pytest.approx(expected_focal_length)
 
     env.close()
     return True

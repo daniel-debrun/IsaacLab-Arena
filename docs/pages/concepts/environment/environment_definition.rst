@@ -302,16 +302,16 @@ debug output. Runtime/code-bearing values such as
 rejected. Explicit builder/CLI
 ``placement_seed`` and ``resolve_on_reset`` values take precedence over YAML.
 
-**Duplicate instances need unique names.** YAML sets ``instance_name`` to the node
-id. Asset classes default it to the registry name, so two Python instances of the
-same asset share one name unless you set ``instance_name``. Prim paths, event
+**Duplicate instances need unique names.** YAML sets ``name`` to the node
+id. Library object classes default it to the registry name, so in Python two objects created
+from the same class share one name unless you set ``name``. Prim paths, event
 terms, and observation keys all key off that name:
 
 .. code-block:: python
 
-   # Two objects, one name. Pass instance_name yourself.
-   banana_a = get("banana_ycb_robolab")(instance_name="banana_a")
-   banana_b = get("banana_ycb_robolab")(instance_name="banana_b")
+   # Two objects of one class. Give each its own name.
+   banana_a = get("banana_ycb_robolab")(name="banana_a")
+   banana_b = get("banana_ycb_robolab")(name="banana_b")
 
 **An anchor without a pose.** YAML gives an ``is_anchor`` subject with no pose
 ``Pose.identity()`` — the layout origin for the relation solver. Python leaves
