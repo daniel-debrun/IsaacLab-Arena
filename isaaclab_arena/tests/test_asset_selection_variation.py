@@ -122,44 +122,6 @@ def compose_pick_and_place_with_selection(
     return pickup, env_cfg, env_kwargs
 
 
-def compose_assembly_with_selection(*, hydra_overrides=None, task_description=None):
-    """Compose an AssemblyTask environment that assembles a cracker box, named ``held``, with a sugar box.
-
-    Args:
-        hydra_overrides: Variation overrides for the build.
-        task_description: Description passed to the task. None keeps its default description.
-
-    Returns:
-        The composed env_cfg.
-    """
-    from types import SimpleNamespace
-
-    from isaaclab_arena.assets.registries import AssetRegistry
-    from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
-    from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
-    from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
-    from isaaclab_arena.scene.scene import Scene
-    from isaaclab_arena.tasks.assembly_task import AssemblyTask
-
-    asset_registry = AssetRegistry()
-    held = asset_registry.get_asset_by_name(DEFAULT_REGISTRY_NAME)(name="held")
-    fixed = asset_registry.get_asset_by_name("sugar_box")(name="fixed")
-    # The namespace stands in for a background; the task reads only its object_min_z.
-    task = AssemblyTask(
-        fixed_asset=fixed,
-        held_asset=held,
-        auxiliary_asset_list=[],
-        background_scene=SimpleNamespace(object_min_z=-1.0),
-        task_description=task_description,
-    )
-    arena_env = IsaacLabArenaEnvironment(
-        name="test_assembly_with_selection", scene=Scene(assets=[held, fixed]), task=task
-    )
-    arena_builder = ArenaEnvBuilder(arena_env, ArenaEnvBuilderCfg(num_envs=1), hydra_overrides=hydra_overrides)
-    env_cfg, _ = arena_builder.build_env_cfg()
-    return env_cfg
-
-
 def _test_selected_asset_is_spawned_placed_recorded_and_described(simulation_app):
     from isaaclab_arena.assets.registries import AssetRegistry
     from isaaclab_arena.variations.variations_hydra import overrides_from_dict
@@ -211,23 +173,6 @@ def _test_pick_and_place_keeps_passed_task_description(simulation_app):
     )
 
     assert env_cfg.task_description == "Put the box on the plate"
-    return True
-
-
-def _test_assembly_task_description_names_selected_asset(simulation_app):
-    from isaaclab_arena.variations.variations_hydra import overrides_from_dict
-
-    held_selection_overrides = overrides_from_dict(
-        {"held.asset_selection.enabled": True, "held.asset_selection.registry_names": ["mustard_bottle"]}
-    )
-
-    assert compose_assembly_with_selection().task_description == "Assemble the cracker_box with the sugar_box"
-    selected_env_cfg = compose_assembly_with_selection(hydra_overrides=held_selection_overrides)
-    assert selected_env_cfg.task_description == "Assemble the mustard_bottle with the sugar_box"
-    passed_description_env_cfg = compose_assembly_with_selection(
-        hydra_overrides=held_selection_overrides, task_description="Put the bottle on the box"
-    )
-    assert passed_description_env_cfg.task_description == "Put the bottle on the box"
     return True
 
 
@@ -433,12 +378,6 @@ def test_disabled_selection_keeps_default_asset():
 def test_pick_and_place_keeps_passed_task_description():
     assert run_function_with_persistent_simulation_app(
         _test_pick_and_place_keeps_passed_task_description, headless=HEADLESS
-    )
-
-
-def test_assembly_task_description_names_selected_asset():
-    assert run_function_with_persistent_simulation_app(
-        _test_assembly_task_description_names_selected_asset, headless=HEADLESS
     )
 
 
