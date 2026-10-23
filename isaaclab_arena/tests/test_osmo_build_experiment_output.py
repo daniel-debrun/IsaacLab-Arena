@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
+from isaaclab_arena.evaluation.arena_experiment_kpis import ARENA_EXPERIMENT_KPIS_FILENAME, validate_experiment_kpis
 from isaaclab_arena.evaluation.arena_experiment_result import (
     ARENA_AGGREGATED_TIMINGS_FILENAME,
     ARENA_EXPERIMENT_RESULT_FILENAME,
@@ -337,6 +338,26 @@ def test_builds_experiment_output_from_separate_experiment_runner_outputs(tmp_pa
     assert "second" in report_contents
     assert "2 run(s) &middot; 2 completed &middot; 0 failed &middot; 2 episode(s)" in report_contents
     assert "Failed runs" not in report_contents
+    experiment_kpis = json.loads(
+        (experiment_output_directory / ARENA_EXPERIMENT_KPIS_FILENAME).read_text(encoding="utf-8")
+    )
+    validate_experiment_kpis(experiment_kpis)
+    assert experiment_kpis["timestamp_ns"] == START_TIMESTAMP_NS
+    assert experiment_kpis["records"][0] == {
+        "type": "per_experiment",
+        "success_rate": 0.5,
+        "num_episodes": 2,
+        "num_runs": 2,
+        "num_runs_completed": 2,
+        "num_runs_failed": 0,
+    }
+    assert [record["run_name"] for record in experiment_kpis["records"] if record["type"] == "timing"] == [
+        "all",
+        "all",
+        "first",
+        "first",
+        "second",
+    ]
 
 
 def test_reports_failed_runner_without_its_partial_artifacts(tmp_path):
@@ -402,6 +423,17 @@ def test_reports_failed_runner_without_its_partial_artifacts(tmp_path):
     assert "Failed runs (1)" in report_contents
     assert "<code>17</code>" in report_contents
     assert "These runs did not complete and are excluded from episode results." in report_contents
+    experiment_kpis = json.loads(
+        (experiment_output_directory / ARENA_EXPERIMENT_KPIS_FILENAME).read_text(encoding="utf-8")
+    )
+    validate_experiment_kpis(experiment_kpis)
+    per_run_records = {
+        record["run_name"]: record for record in experiment_kpis["records"] if record["type"] == "per_run"
+    }
+    assert per_run_records["completed-run"]["completed"] == 1
+    assert per_run_records["failed-run"]["completed"] == 0
+    assert "success_rate" not in per_run_records["failed-run"]
+    assert experiment_kpis["records"][0]["num_runs_failed"] == 1
 
 
 def test_builds_failure_report_when_every_runner_failed(tmp_path):
@@ -449,3 +481,10 @@ def test_builds_failure_report_when_every_runner_failed(tmp_path):
     assert "<code>1</code>" in report_contents
     assert "<code>2</code>" in report_contents
     assert "No results recorded yet." not in report_contents
+    experiment_kpis = json.loads(
+        (experiment_output_directory / ARENA_EXPERIMENT_KPIS_FILENAME).read_text(encoding="utf-8")
+    )
+    validate_experiment_kpis(experiment_kpis)
+    assert experiment_kpis["timestamp_ns"] == START_TIMESTAMP_NS
+    assert "success_rate" not in experiment_kpis["records"][0]
+    assert experiment_kpis["records"][0]["num_runs_failed"] == 2

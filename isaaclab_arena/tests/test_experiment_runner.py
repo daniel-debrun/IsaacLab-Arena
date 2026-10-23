@@ -13,6 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from isaaclab_arena.evaluation.arena_experiment_kpis import ARENA_EXPERIMENT_KPIS_FILENAME
 from isaaclab_arena.evaluation.arena_experiment_result import ARENA_EXPERIMENT_RESULT_FILENAME
 from isaaclab_arena.evaluation.experiment_runner_cli import parse_experiment_runner_args
 from isaaclab_arena.recording.episode_results import read_episode_records
@@ -224,6 +225,8 @@ runs:
     assert run_result["status"] == "completed"
     assert isinstance(run_result["start_timestamp_ns"], int)
     assert set(run_result) == {"environment", "policy_variant", "status", "start_timestamp_ns", "rebuilds"}
+    experiment_kpis = json.loads((tmp_path / "output" / ARENA_EXPERIMENT_KPIS_FILENAME).read_text(encoding="utf-8"))
+    assert experiment_kpis["timestamp_ns"] == run_result["start_timestamp_ns"]
 
 
 @pytest.mark.with_subprocess

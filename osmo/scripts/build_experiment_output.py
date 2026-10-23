@@ -10,6 +10,7 @@ its ``<run-name>/...`` output is included. Completed Run directories are copied 
 ``<experiment-output>/<run-name>`` layout, while failed results are preserved without partial Run artifacts. The
 ``arena_experiment_result.json`` and ``index.html`` report list every Run execution and include episode details only
 from completed Runs. ``arena_experiment_timings.json`` holds each completed Run's timings and their per-timer totals.
+``arena_experiment_kpis.json`` holds the Experiment's KPI records.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ import shutil
 from collections.abc import Mapping
 from pathlib import Path
 
+from isaaclab_arena.evaluation.arena_experiment_kpis import write_experiment_kpis
 from isaaclab_arena.evaluation.arena_experiment_result import ARENA_SINGLE_RUN_TIMINGS_FILENAME, ArenaExperimentResult
 from isaaclab_arena.evaluation.arena_run import RunStatus
 from isaaclab_arena.evaluation.experiment_timings import aggregate_experiment_timings
@@ -187,6 +189,7 @@ def build_experiment_output(
         [report.run_name for report in run_execution_reports if report.status is RunStatus.COMPLETED],
     )
     print(f"Wrote Arena Experiment timings to: {experiment_timings_path}")
+    write_experiment_kpis(experiment_output_directory)
     return build_report(experiment_output_directory, run_executions=run_execution_reports)
 
 

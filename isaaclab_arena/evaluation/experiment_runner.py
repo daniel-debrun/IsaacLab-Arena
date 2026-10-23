@@ -192,6 +192,10 @@ def main():
         timings_path = aggregate_experiment_timings(experiment_output_directory, completed_run_names)
         print(f"Wrote Arena Experiment timings to: {timings_path}")
 
+        from isaaclab_arena.evaluation.arena_experiment_kpis import write_experiment_kpis
+
+        write_experiment_kpis(experiment_output_directory)
+
         # Write HTML report.
         report_path = build_report(experiment_output_directory)
         if args_cli.serve_evaluation_report:
