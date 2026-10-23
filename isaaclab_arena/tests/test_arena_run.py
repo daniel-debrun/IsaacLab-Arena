@@ -113,7 +113,9 @@ def test_run_result_records_outcome_separately():
     result = ArenaRunResult(
         run_name="test_run",
         status=RunStatus.COMPLETED,
+        start_timestamp_ns=1760313600000000000,
     )
 
     assert result.run_name == "test_run"
+    assert result.start_timestamp_ns == 1760313600000000000
     assert result.metrics is None
