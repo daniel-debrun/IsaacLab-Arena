@@ -21,12 +21,12 @@ runs:
     rollout_limit:
       # Split across the rebuilds, so each rebuild runs 4 episodes, one in each environment.
       num_episodes: 12
-    # Each rebuild spawns the next name of asset_names in every environment.
+    # Each rebuild spawns the next name of registry_names in every environment.
     # Set num_rebuilds to the number of names to spawn each name once.
     num_rebuilds: 3
     variations:
       pick_up_object.asset_selection.enabled: true
       # Registered rigid objects to spawn, in this order. Each episode row records the chosen name.
-      pick_up_object.asset_selection.asset_names: [rubiks_cube_hot3d_robolab, mustard_bottle_hot3d_robolab, orange_01_fruits_veggies_robolab]
+      pick_up_object.asset_selection.registry_names: [rubiks_cube_hot3d_robolab, mustard_bottle_hot3d_robolab, orange_01_fruits_veggies_robolab]
       # Each build draws a name at random, and names can repeat.
       # pick_up_object.asset_selection.random_choice: true

@@ -20,11 +20,11 @@ DEFAULT_ASSET_NAME = "cracker_box"
 SELECTION_KEY = "pickup.asset_selection"
 
 
-def get_registered_usd_path(asset_name):
-    """Return the USD path of the registered object ``asset_name``."""
+def get_registered_usd_path(registry_name):
+    """Return the USD path of the registered object ``registry_name``."""
     from isaaclab_arena.assets.registries import AssetRegistry
 
-    return AssetRegistry().get_asset_by_name(asset_name).usd_path
+    return AssetRegistry().get_asset_by_name(registry_name).usd_path
 
 
 def make_table():
@@ -125,7 +125,7 @@ def _test_selected_asset_is_spawned_placed_recorded_and_described(simulation_app
     from isaaclab_arena.variations.variations_hydra import overrides_from_dict
 
     hydra_overrides = overrides_from_dict(
-        {f"{SELECTION_KEY}.enabled": True, f"{SELECTION_KEY}.asset_names": ["sugar_box"]}
+        {f"{SELECTION_KEY}.enabled": True, f"{SELECTION_KEY}.registry_names": ["sugar_box"]}
     )
 
     pickup, env_cfg, env_kwargs = compose_pick_and_place_with_selection(
@@ -152,7 +152,7 @@ def _test_disabled_selection_keeps_default_asset(simulation_app):
     from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariationCfg
 
     _, env_cfg, _ = compose_pick_and_place_with_selection(
-        selection_cfg=AssetSelectionVariationCfg(enabled=False, asset_names=["sugar_box", "mustard_bottle"])
+        selection_cfg=AssetSelectionVariationCfg(enabled=False, registry_names=["sugar_box", "mustard_bottle"])
     )
 
     assert env_cfg.scene.pickup.spawn.usd_path == get_registered_usd_path(DEFAULT_ASSET_NAME)
@@ -163,11 +163,11 @@ def _test_disabled_selection_keeps_default_asset(simulation_app):
 def _test_in_order_selection_follows_rebuild_index(simulation_app):
     from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariationCfg
 
-    asset_names = ["mustard_bottle", "sugar_box", "tomato_soup_can"]
+    registry_names = ["mustard_bottle", "sugar_box", "tomato_soup_can"]
 
     def compose_in_order_selection(seed, rebuild_index):
         _, env_cfg, _ = compose_pick_and_place_with_selection(
-            selection_cfg=AssetSelectionVariationCfg(enabled=True, asset_names=asset_names),
+            selection_cfg=AssetSelectionVariationCfg(enabled=True, registry_names=registry_names),
             seed=seed,
             rebuild_index=rebuild_index,
         )
@@ -175,8 +175,10 @@ def _test_in_order_selection_follows_rebuild_index(simulation_app):
 
     # Rebuild k takes name k % 3, so the fourth rebuild starts over at the first name.
     usd_paths_over_rebuilds = [compose_in_order_selection(seed=42, rebuild_index=k) for k in range(4)]
-    expected_names = asset_names + asset_names[:1]
-    assert usd_paths_over_rebuilds == [get_registered_usd_path(asset_name) for asset_name in expected_names]
+    expected_registry_names = registry_names + registry_names[:1]
+    assert usd_paths_over_rebuilds == [
+        get_registered_usd_path(registry_name) for registry_name in expected_registry_names
+    ]
     # Another seed takes the same name at the same rebuild index.
     assert compose_in_order_selection(seed=44, rebuild_index=1) == usd_paths_over_rebuilds[1]
     return True
@@ -189,7 +191,7 @@ def _test_random_selection_draws_from_seeded_generator(simulation_app):
 
     def compose_random_selection(seed):
         selection_cfg = AssetSelectionVariationCfg(
-            enabled=True, random_choice=True, asset_names=["mustard_bottle", "sugar_box", "tomato_soup_can"]
+            enabled=True, random_choice=True, registry_names=["mustard_bottle", "sugar_box", "tomato_soup_can"]
         )
         _, env_cfg, _ = compose_pick_and_place_with_selection(selection_cfg=selection_cfg, seed=seed)
         return env_cfg.scene.pickup.spawn.usd_path
@@ -206,7 +208,7 @@ def _test_random_selection_draws_from_seeded_generator(simulation_app):
     return True
 
 
-def _test_recorded_asset_name_is_replayed(simulation_app, tmp_path):
+def _test_recorded_registry_name_is_replayed(simulation_app, tmp_path):
     from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariationCfg
 
     recorded_samples_path = tmp_path / "asset_selection_replay.jsonl"
@@ -214,7 +216,7 @@ def _test_recorded_asset_name_is_replayed(simulation_app, tmp_path):
     recorded_samples_path.write_text(f"{recorded_row}\n" * NUM_ENVS)
     # In order, a live draw in the first rebuild takes "sugar_box".
     _, env_cfg, _ = compose_pick_and_place_with_selection(
-        selection_cfg=AssetSelectionVariationCfg(enabled=True, asset_names=["sugar_box", "mustard_bottle"]),
+        selection_cfg=AssetSelectionVariationCfg(enabled=True, registry_names=["sugar_box", "mustard_bottle"]),
         recorded_variation_samples_path=str(recorded_samples_path),
     )
 
@@ -230,27 +232,27 @@ def _test_asset_selection_rejects_invalid_configuration(simulation_app, case_id)
     from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
     from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariationCfg
 
-    def build_with_asset_names(asset_names):
+    def build_with_registry_names(registry_names):
         compose_pick_and_place_with_selection(
-            selection_cfg=AssetSelectionVariationCfg(enabled=True, asset_names=asset_names)
+            selection_cfg=AssetSelectionVariationCfg(enabled=True, registry_names=registry_names)
         )
 
     def build_with_bounding_box_override():
         pickup = make_pickup()
         pickup.get_variation("asset_selection").apply_cfg(
-            AssetSelectionVariationCfg(enabled=True, asset_names=["sugar_box"])
+            AssetSelectionVariationCfg(enabled=True, registry_names=["sugar_box"])
         )
         pickup.bounding_box = AxisAlignedBoundingBox(min_point=(0.0, 0.0, 0.0), max_point=(0.1, 0.1, 0.1))
         arena_env = IsaacLabArenaEnvironment(name="bounding_box_override", scene=Scene(assets=[pickup]))
         ArenaEnvBuilder(arena_env, ArenaEnvBuilderCfg(num_envs=1)).build_env_cfg()
 
     invalid_configurations = {
-        "empty_asset_names": (lambda: build_with_asset_names([]), "'pickup.asset_selection' is enabled but its"),
-        "unknown_name": (lambda: build_with_asset_names(["sugar_box", "banana_split"]), "'banana_split' is not a"),
-        "non_rigid_name": (lambda: build_with_asset_names(["ground_plane"]), "'ground_plane' is a base Object"),
+        "empty_registry_names": (lambda: build_with_registry_names([]), "'pickup.asset_selection' is enabled but its"),
+        "unknown_name": (lambda: build_with_registry_names(["sugar_box", "banana_split"]), "'banana_split' is not a"),
+        "non_rigid_name": (lambda: build_with_registry_names(["ground_plane"]), "'ground_plane' is a base Object"),
         "repeated_name": (
-            lambda: build_with_asset_names(["sugar_box", "sugar_box"]),
-            r"'pickup\.asset_selection\.asset_names' repeats a name",
+            lambda: build_with_registry_names(["sugar_box", "sugar_box"]),
+            r"'pickup\.asset_selection\.registry_names' repeats a name",
         ),
         "bounding_box_override": (build_with_bounding_box_override, "'pickup' sets a bounding_box override"),
     }
@@ -271,7 +273,7 @@ def _test_placement_replay_needs_recorded_asset_selection(simulation_app, tmp_pa
         """Return the env_cfg of a scene holding only the pickup, with its selection on, that replays ``record_row``."""
         pickup = make_pickup()
         pickup.get_variation("asset_selection").apply_cfg(
-            AssetSelectionVariationCfg(enabled=True, asset_names=["mustard_bottle", "sugar_box"])
+            AssetSelectionVariationCfg(enabled=True, registry_names=["mustard_bottle", "sugar_box"])
         )
         record_path = tmp_path / f"{record_name}.jsonl"
         record_path.write_text(json.dumps(record_row) + "\n")
@@ -332,14 +334,14 @@ def test_random_selection_draws_from_seeded_generator():
     )
 
 
-def test_recorded_asset_name_is_replayed(tmp_path):
+def test_recorded_registry_name_is_replayed(tmp_path):
     assert run_function_with_persistent_simulation_app(
-        _test_recorded_asset_name_is_replayed, headless=HEADLESS, tmp_path=tmp_path
+        _test_recorded_registry_name_is_replayed, headless=HEADLESS, tmp_path=tmp_path
     )
 
 
 @pytest.mark.parametrize(
-    "case_id", ["empty_asset_names", "unknown_name", "non_rigid_name", "repeated_name", "bounding_box_override"]
+    "case_id", ["empty_registry_names", "unknown_name", "non_rigid_name", "repeated_name", "bounding_box_override"]
 )
 def test_asset_selection_rejects_invalid_configuration(case_id):
     assert run_function_with_persistent_simulation_app(

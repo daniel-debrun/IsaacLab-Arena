@@ -215,7 +215,7 @@ Asset selection
 
 Every rigid object of the object library (a ``LibraryObject``, such as ``rubiks_cube_hot3d_robolab``)
 has a disabled ``asset_selection`` variation. When it is enabled, each build chooses one name from its
-``asset_names``, a list of registered rigid objects, and every parallel environment of that build
+``registry_names``, a list of registered rigid objects, and every parallel environment of that build
 spawns that asset. While the selection is off, the object spawns its own registered asset. The
 object keeps its ``name``, so its variation keys stay the same. Its ``registry_name`` becomes the
 selected name, and a task's default description, such as that of ``PickAndPlaceTask``, names the
@@ -229,7 +229,7 @@ environments:
 .. literalinclude:: ../../../../isaaclab_arena_environments/experiment_configs/asset_selection_experiment.yaml
    :language: yaml
 
-By default, the first rebuild of an Experiment Run takes the first name of ``asset_names``, the
+By default, the first rebuild of an Experiment Run takes the first name of ``registry_names``, the
 second rebuild the second name, and so on, starting over after the last name. The seed does not
 change this order, so ``n`` rebuilds take each of the ``n`` names once, in list order. With
 ``random_choice: true``, each build draws a name at random, seeded from ``environment_builder.seed``

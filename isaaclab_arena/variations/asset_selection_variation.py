@@ -32,8 +32,8 @@ class AssetSelectionVariationCfg(VariationBaseCfg):
     """False takes the names in list order, one per rebuild, starting over after the last name. True draws a name at
     random, seeded by the build seed and the variation key."""
 
-    asset_names: list[str] = field(default_factory=list)
-    """Registered names of the rigid objects to choose from, in this order. Required when enabled."""
+    registry_names: list[str] = field(default_factory=list)
+    """Registry names of the rigid objects to choose from, in this order. Required when enabled."""
 
     sampler_cfg: ChoiceSamplerCfg = field(default_factory=ChoiceSamplerCfg)
     """Sampler that draws the asset name."""
@@ -68,44 +68,46 @@ class AssetSelectionVariation(BuildTimeVariationBase):
         super().configure_at_build_time(seed, variation_key, rebuild_index)
 
     def _realize_at_build_time(self) -> None:
-        asset_names = list(self.cfg.asset_names)
-        assert asset_names, (
-            f"'{self._variation_key}' is enabled but its asset_names is empty. List the registered rigid objects to"
-            f" choose from, for example '{self._variation_key}.asset_names=[cracker_box,sugar_box]'."
+        registry_names = list(self.cfg.registry_names)
+        assert registry_names, (
+            f"'{self._variation_key}' is enabled but its registry_names is empty. List the registered rigid objects"
+            f" to choose from, for example '{self._variation_key}.registry_names=[cracker_box,sugar_box]'."
         )
-        assert len(set(asset_names)) == len(
-            asset_names
-        ), f"'{self._variation_key}.asset_names' repeats a name in {asset_names}; list each name once."
+        assert len(set(registry_names)) == len(
+            registry_names
+        ), f"'{self._variation_key}.registry_names' repeats a name in {registry_names}; list each name once."
         # Checked at build time because bounding_box can be set after the Object is created.
         assert self._rigid_object.bounding_box is None, (
             f"'{self._rigid_object.name}' sets a bounding_box override, which placement would use for every"
             " selected asset. Set bounding_box to None so placement reads the bounds of the selected asset."
         )
         # Resolve every name, not only the selected one, so that a wrong name fails in the first build.
-        spawn_cfgs_by_name = {name: _get_rigid_object_spawn_cfg(name) for name in asset_names}
+        spawn_cfgs_by_registry_name = {
+            registry_name: _get_rigid_object_spawn_cfg(registry_name) for registry_name in registry_names
+        }
         # Both modes call self.sampler.sample(), which reports the name to the variation recorder and returns the
         # recorded name during replay.
         if self.cfg.random_choice:
-            selected_name = self.sampler.sample(1, asset_names)[0]
+            selected_registry_name = self.sampler.sample(1, registry_names)[0]
         else:
-            in_order_index = self._rebuild_index % len(asset_names)
-            selected_name = self.sampler.sample(1, asset_names, index=in_order_index)[0]
-        self._rigid_object.set_asset(selected_name, spawn_cfgs_by_name[selected_name])
+            in_order_index = self._rebuild_index % len(registry_names)
+            selected_registry_name = self.sampler.sample(1, registry_names, index=in_order_index)[0]
+        self._rigid_object.set_asset(selected_registry_name, spawn_cfgs_by_registry_name[selected_registry_name])
 
 
-def _get_rigid_object_spawn_cfg(asset_name: str) -> SpawnerCfg:
-    """Return a copy of the spawn configuration of the registered rigid object ``asset_name``."""
+def _get_rigid_object_spawn_cfg(registry_name: str) -> SpawnerCfg:
+    """Return a copy of the spawn configuration of the registered rigid object ``registry_name``."""
     asset_registry = AssetRegistry()
     assert asset_registry.is_registered(
-        asset_name
-    ), f"'{asset_name}' is not a registered asset. Use the name of a registered rigid object."
-    registered_asset = asset_registry.get_asset_by_name(asset_name)()
+        registry_name
+    ), f"'{registry_name}' is not a registered asset. Use the registry name of a rigid object."
+    registered_asset = asset_registry.get_asset_by_name(registry_name)()
     assert hasattr(registered_asset, "object_type"), (
-        f"Asset '{asset_name}' is a {type(registered_asset).__name__}, not an Object. Use the name of a registered"
+        f"Asset '{registry_name}' is a {type(registered_asset).__name__}, not an Object. Use the registry name of a"
         " rigid object."
     )
     assert registered_asset.object_type == ObjectType.RIGID, (
-        f"Asset '{asset_name}' is a {registered_asset.object_type.value} Object, not a rigid one. Use the name of a"
-        " registered rigid object."
+        f"Asset '{registry_name}' is a {registered_asset.object_type.value} Object, not a rigid one. Use the"
+        " registry name of a rigid object."
     )
     return deepcopy(registered_asset.object_cfg.spawn)
