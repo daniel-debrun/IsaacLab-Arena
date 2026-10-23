@@ -235,11 +235,6 @@ def _test_asset_selection_rejects_invalid_configuration(simulation_app, case_id)
             selection_cfg=AssetSelectionVariationCfg(enabled=True, asset_names=asset_names)
         )
 
-    def repeat_name():
-        make_pickup().get_variation("asset_selection").apply_cfg(
-            AssetSelectionVariationCfg(asset_names=["sugar_box", "sugar_box"])
-        )
-
     def build_with_bounding_box_override():
         pickup = make_pickup()
         pickup.get_variation("asset_selection").apply_cfg(
@@ -253,7 +248,10 @@ def _test_asset_selection_rejects_invalid_configuration(simulation_app, case_id)
         "empty_asset_names": (lambda: build_with_asset_names([]), "'pickup.asset_selection' is enabled but its"),
         "unknown_name": (lambda: build_with_asset_names(["sugar_box", "banana_split"]), "'banana_split' is not a"),
         "non_rigid_name": (lambda: build_with_asset_names(["ground_plane"]), "'ground_plane' is a base Object"),
-        "repeated_name": (repeat_name, r"'pickup\.asset_selection\.asset_names' repeats a name"),
+        "repeated_name": (
+            lambda: build_with_asset_names(["sugar_box", "sugar_box"]),
+            r"'pickup\.asset_selection\.asset_names' repeats a name",
+        ),
         "bounding_box_override": (build_with_bounding_box_override, "'pickup' sets a bounding_box override"),
     }
     build_invalid_configuration, message_pattern = invalid_configurations[case_id]

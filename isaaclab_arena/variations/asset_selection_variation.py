@@ -56,29 +56,14 @@ class AssetSelectionVariation(BuildTimeVariationBase):
         cfg: AssetSelectionVariationCfg | None = None,
         name: str = "asset_selection",
     ):
-        # Set before super().__init__(), whose apply_cfg call reads it.
-        self._rigid_object = rigid_object
         super().__init__(cfg=cfg if cfg is not None else AssetSelectionVariationCfg(), name=name)
-        self._rebuild_index: int | None = None
-
-    @property
-    def _variation_key(self) -> str:
-        """Key of this selection in variation overrides, for example ``pickup.asset_selection``."""
-        return f"{self._rigid_object.name}.{self.name}"
-
-    def apply_cfg(self, cfg: AssetSelectionVariationCfg) -> None:
-        """Apply ``cfg`` after checking that ``asset_names`` holds each name once.
-
-        Args:
-            cfg: Selection settings to apply.
-        """
-        assert len(set(cfg.asset_names)) == len(
-            cfg.asset_names
-        ), f"'{self._variation_key}.asset_names' repeats a name in {cfg.asset_names}; list each name once."
-        super().apply_cfg(cfg)
+        self._rigid_object = rigid_object
+        self._variation_key: str | None = None
+        self._rebuild_index: int = 0
 
     def configure_at_build_time(self, seed: int, variation_key: str, rebuild_index: int = 0) -> None:
-        # VariationBase does not keep the rebuild index, and in-order selection needs it.
+        # VariationBase does not keep these: the checks name the key, and in-order selection needs the index.
+        self._variation_key = variation_key
         self._rebuild_index = rebuild_index
         super().configure_at_build_time(seed, variation_key, rebuild_index)
 
@@ -88,6 +73,9 @@ class AssetSelectionVariation(BuildTimeVariationBase):
             f"'{self._variation_key}' is enabled but its asset_names is empty. List the registered rigid objects to"
             f" choose from, for example '{self._variation_key}.asset_names=[cracker_box,sugar_box]'."
         )
+        assert len(set(asset_names)) == len(
+            asset_names
+        ), f"'{self._variation_key}.asset_names' repeats a name in {asset_names}; list each name once."
         # Checked at build time because bounding_box can be set after the Object is created.
         assert self._rigid_object.bounding_box is None, (
             f"'{self._rigid_object.name}' sets a bounding_box override, which placement would use for every"
