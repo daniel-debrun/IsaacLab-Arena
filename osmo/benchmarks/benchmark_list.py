@@ -18,6 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 _NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _TOP_LEVEL_KEYS = {"benchmarks"}
 _ENTRY_KEYS = {"name", "experiment_cfg", "overrides"}
+_RESERVED_OVERRIDE_KEYS = ("osmo.workflow_name", "osmo.output_url")
 
 
 @dataclass
@@ -87,4 +88,10 @@ def _parse_entry(raw_entry: object, path: Path) -> BenchmarkEntry:
     assert isinstance(overrides, list) and all(
         isinstance(override, str) for override in overrides
     ), f"{path}: benchmark '{name}' overrides must be a list of strings"
+    for override in overrides:
+        override_key = override.lstrip("+~")
+        for reserved_key in _RESERVED_OVERRIDE_KEYS:
+            assert override_key != reserved_key and not override_key.startswith(
+                reserved_key + "="
+            ), f"{path}: benchmark '{name}' override '{override}' sets reserved key '{reserved_key}'"
     return BenchmarkEntry(name=name, experiment_cfg=experiment_cfg, overrides=list(overrides))

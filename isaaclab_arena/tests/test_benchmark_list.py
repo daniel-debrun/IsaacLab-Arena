@@ -30,13 +30,23 @@ def _entry(name: str = "a", experiment_cfg: str = EXISTING_CFG, **extra) -> dict
 def test_load_valid_list(tmp_path):
     path = _write_list(
         tmp_path,
-        {"benchmarks": [_entry("first"), _entry("second-2", overrides=["osmo.workflow_name=x"])]},
+        {"benchmarks": [_entry("first"), _entry("second-2", overrides=["osmo.pool=x"])]},
     )
     entries = load_benchmark_list(path)
     assert entries == [
         BenchmarkEntry(name="first", experiment_cfg=EXISTING_CFG, overrides=[]),
-        BenchmarkEntry(name="second-2", experiment_cfg=EXISTING_CFG, overrides=["osmo.workflow_name=x"]),
+        BenchmarkEntry(name="second-2", experiment_cfg=EXISTING_CFG, overrides=["osmo.pool=x"]),
     ]
+
+
+@pytest.mark.parametrize(
+    "override",
+    ["osmo.workflow_name=x", "+osmo.workflow_name=x", "osmo.output_url=y", "~osmo.output_url", "++osmo.output_url=z"],
+)
+def test_rejects_reserved_overrides(tmp_path, override):
+    path = _write_list(tmp_path, {"benchmarks": [_entry("a", overrides=[override])]})
+    with pytest.raises(AssertionError, match="reserved key"):
+        load_benchmark_list(path)
 
 
 def test_rejects_duplicate_names(tmp_path):
