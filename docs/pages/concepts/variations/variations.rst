@@ -35,8 +35,8 @@ an environment resets during policy rollouts. Arena calls these *build-time* and
 This distinction matters when planning an evaluation. To collect several values of a
 build-time variation, the environment must be rebuilt; the Experiment
 Runner gives each rebuild its own seed. Set ``num_rebuilds`` in the Run; with the default of 1,
-the Experiment Runner prints a warning that each enabled build-time variation draws one value for
-the whole Run. A run-time variation can produce a new value on each
+each enabled build-time variation draws one value for the whole Run. A run-time variation can
+produce a new value on each
 reset without rebuilding the scene. Both kinds draw their values from the variation's own
 generator, seeded from ``--seed`` (see :doc:`../environment/env_builder`). The exception is
 in-order :ref:`asset selection <asset-selection-variation>`, which follows the rebuild index.
@@ -219,7 +219,8 @@ Asset selection
 To evaluate a Run on several objects, enable the object's ``asset_selection`` and list registered
 rigid objects in its ``registry_names``. The first rebuild of the Run spawns the first name in every
 parallel environment, the second rebuild the second name, and so on. Set ``num_rebuilds`` to the
-number of names to spawn each name once.
+number of names to spawn each name once. With fewer rebuilds, the Experiment Runner prints a
+warning that lists the names that never spawn.
 
 The example config ``isaaclab_arena_environments/experiment_configs/asset_selection_experiment.yaml``
 spawns three pick-up objects in ``pick_and_place_maple_table``, one per rebuild, each in four parallel
