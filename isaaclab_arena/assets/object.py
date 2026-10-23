@@ -82,7 +82,8 @@ class Object(RootedObjectBase):
     def set_asset(self, registry_name: str, spawn_cfg: SpawnerCfg) -> None:
         """Spawn the registered asset ``registry_name`` from ``spawn_cfg`` instead of the current asset.
 
-        The object keeps its name, and its registry_name becomes ``registry_name``.
+        Only the spawn configuration and ``registry_name`` change. The object keeps its name, so its scene key,
+        prim path and variation keys stay the same.
 
         Args:
             registry_name: Key of the asset's class in the asset registry.
