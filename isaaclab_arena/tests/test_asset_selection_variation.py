@@ -144,6 +144,8 @@ def _test_selected_asset_is_spawned_placed_recorded_and_described(simulation_app
     # The pickup keeps the name of its role, and its registry name and the description name the selected asset.
     assert pickup.name == "pickup"
     assert pickup.registry_name == "sugar_box"
+    # The selection sets registry_name on the object only, so its class keeps the declared registry name.
+    assert type(pickup).registry_name == DEFAULT_ASSET_NAME
     assert env_cfg.task_description == "Pick up the sugar_box, and place it into the plate"
     return True
 
@@ -301,10 +303,15 @@ def _test_registered_rigid_objects_have_disabled_asset_selection(simulation_app)
     from isaaclab_arena.assets.object import Object
     from isaaclab_arena.assets.object_set import RigidObjectSet
     from isaaclab_arena.assets.object_type import ObjectType
+    from isaaclab_arena.assets.registries import AssetRegistry
 
     pickup = make_pickup()
     assert not pickup.get_variation("asset_selection").enabled
-    assert "asset_selection" not in make_table().variations
+    # A registered library object that is not rigid has no selection.
+    ground_plane = AssetRegistry().get_asset_by_name("ground_plane")()
+    assert ground_plane.object_type == ObjectType.BASE
+    assert "asset_selection" not in ground_plane.variations
+    # Objects that are not library objects have no selection either.
     cube = Object(name="cube", object_type=ObjectType.RIGID, spawner_cfg=sim_utils.CuboidCfg(size=(0.1, 0.1, 0.1)))
     assert "asset_selection" not in cube.variations
     pickup_set = RigidObjectSet(name="pickup_set", objects=[pickup])
