@@ -55,6 +55,7 @@ class SimReadyUsdObject(Object):
             scale: Scale of the object. Defaults to ``(1.0, 1.0, 1.0)``.
             **kwargs: Extra arguments passed to ``Object``.
         """
+        assert "instance_name" not in kwargs, "instance_name was renamed to name; pass name= instead."
         assert usd_path, "simready_usd_object requires params.usd_path"
         spawn_cfg_addon = dict(kwargs.pop("spawn_cfg_addon", None) or {})
         spawn_cfg_addon.setdefault("variants", dict(SIMREADY_PHYSICS_VARIANTS))

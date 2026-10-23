@@ -67,6 +67,7 @@ class LibraryObject(Object):
             scale: Scale of the object. Defaults to the asset's scale.
             **kwargs: Extra arguments passed to ``Object``.
         """
+        assert "instance_name" not in kwargs, "instance_name was renamed to name; pass name= instead."
         name = name if name is not None else self.registry_name
         scale = scale if scale is not None else self.scale
         super().__init__(
