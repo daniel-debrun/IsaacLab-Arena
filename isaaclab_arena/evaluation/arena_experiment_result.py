@@ -100,8 +100,9 @@ def _collect_rebuilds(
 class ArenaExperimentResult:
     """Combine every Run's metadata and episode JSONLs into one Experiment result file.
 
-    The result contains the Arena commit provenance and each configured Run's environment, policy variant, execution status, start time,
-    and raw episode records grouped by rebuild. It does not compute aggregate metrics or collect videos.
+    The result contains the Arena commit provenance and each configured Run's environment, policy variant,
+    execution status, start time, and raw episode records grouped by rebuild. It does not compute aggregate
+    metrics or collect videos.
     """
 
     @staticmethod
@@ -129,6 +130,9 @@ class ArenaExperimentResult:
         assert run_metadata_by_name, "run_metadata_by_name must not be empty"
         self.experiment_output_directory = Path(experiment_output_directory)
         self._provenance = dict(provenance) if provenance is not None else read_provenance()
+        assert set(self._provenance) == {"git_sha", "git_branch"} and all(
+            isinstance(value, str) for value in self._provenance.values()
+        ), f"provenance must have exactly string git_sha and git_branch, got {self._provenance!r}"
         self._runs: dict[str, ArenaExperimentRunData] = {
             run_name: self._collect_run(run_name, run_metadata)
             for run_name, run_metadata in run_metadata_by_name.items()
