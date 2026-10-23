@@ -475,7 +475,7 @@ def test_build_environment_warns_when_in_order_asset_selection_skips_names(
     output = capsys.readouterr().out
     if names_never_spawned:
         assert f"[WARNING] Run 'test_run' has num_rebuilds: {num_rebuilds}" in output
-        assert "'pick_up_object.asset_selection' spawns one of its 3 registry names" in output
+        assert "'pick_up_object.asset_selection' spawns one of its 3 registry_names entries" in output
         assert f"so {names_never_spawned} never spawn" in output
     else:
         # The enabled light.hdr_image, a build-time variation as well, does not warn either.

@@ -199,9 +199,9 @@ def _warn_if_in_order_asset_selection_skips_names(cfg: ArenaRunCfg, arena_builde
             continue
         print(
             f"[WARNING] Run '{cfg.name}' has num_rebuilds: {cfg.num_rebuilds}, but '{variation_key}' spawns one of its"
-            f" {len(registry_names)} registry names per rebuild, in list order, so {names_never_spawned} never spawn."
-            f" Set num_rebuilds to at least {len(registry_names)}, or set '{variation_key}.random_choice' to true to"
-            " draw a name at random in each build.",
+            f" {len(registry_names)} registry_names entries per rebuild, in list order, so {names_never_spawned} never"
+            f" spawn. Set num_rebuilds to at least {len(registry_names)}, or set '{variation_key}.random_choice' to"
+            " true to draw a name at random in each build.",
             flush=True,
         )
 

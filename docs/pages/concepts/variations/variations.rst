@@ -219,8 +219,9 @@ Asset selection
 To evaluate a Run on several objects, enable the object's ``asset_selection`` and list registered
 rigid objects in its ``registry_names``. The first rebuild of the Run spawns the first name in every
 parallel environment, the second rebuild the second name, and so on. Set ``num_rebuilds`` to the
-length of ``registry_names`` to spawn each entry once. With fewer rebuilds, the Experiment Runner
-prints a warning that lists the names that never spawn.
+length of ``registry_names`` to spawn each entry once. With fewer rebuilds, a name listed only after
+the entry of the last rebuild never spawns, and the Experiment Runner prints a warning that lists
+those names.
 
 The example config ``isaaclab_arena_environments/experiment_configs/asset_selection_experiment.yaml``
 spawns three pick-up objects in ``pick_and_place_maple_table``, one per rebuild, each in four parallel
@@ -235,7 +236,7 @@ asset. When it is on, each build chooses one name, and every parallel environmen
 spawns that asset. For different objects in the environments of one build, use a
 :doc:`RigidObjectSet <../scene/concept_rigid_object_set>`, which has no ``asset_selection``.
 
-With more rebuilds than names, the order starts over after the last name. The seed does not change
+With more rebuilds than entries, the order starts over after the last entry. The seed does not change
 this order. With ``random_choice: true``, each build instead draws a name at random, seeded from
 ``environment_builder.seed`` and the variation key, and names can repeat. To select a name more
 often, list it more than once: in order, it spawns in more rebuilds, and with ``random_choice: true``

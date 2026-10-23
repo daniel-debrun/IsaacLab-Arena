@@ -22,7 +22,7 @@ runs:
       # Split across the rebuilds, so each rebuild runs 4 episodes, one in each environment.
       num_episodes: 12
     # Each rebuild spawns the next name of registry_names in every environment.
-    # Set num_rebuilds to the number of names to spawn each name once.
+    # Set num_rebuilds to the length of registry_names to spawn each entry once.
     num_rebuilds: 3
     variations:
       pick_up_object.asset_selection.enabled: true
