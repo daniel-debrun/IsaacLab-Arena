@@ -293,10 +293,13 @@ def _test_asset_selection_rejects_invalid_configuration(simulation_app, case_id)
     invalid_configurations = {
         "empty_registry_names": (lambda: build_with_registry_names([]), "'pickup.asset_selection' is enabled but its"),
         "unknown_name": (lambda: build_with_registry_names(["sugar_box", "banana_split"]), "'banana_split' is not a"),
-        "non_rigid_name": (lambda: build_with_registry_names(["ground_plane"]), "'ground_plane' is a base Object"),
+        "non_rigid_name": (
+            lambda: build_with_registry_names(["ground_plane"]),
+            r"'ground_plane' is not a rigid object \(object type: base\)",
+        ),
         "non_object_name": (
             lambda: build_with_registry_names(["droid_differential_ik"]),
-            "'droid_differential_ik' is a DroidDifferentialIKEmbodiment, not an Object",
+            r"'droid_differential_ik' is not a rigid object \(object type: None\)",
         ),
         "bounding_box_override": (build_with_bounding_box_override, "'pickup' sets a bounding_box override"),
     }

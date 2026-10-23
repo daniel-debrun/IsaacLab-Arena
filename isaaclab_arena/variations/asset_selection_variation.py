@@ -96,34 +96,27 @@ class AssetSelectionVariation(BuildTimeVariationBase):
 
 def _get_rigid_object_spawn_cfg(registry_name: str) -> SpawnerCfg:
     """Return a copy of the spawn configuration of the registered rigid object ``registry_name``."""
-    # Imported here because isaaclab_arena.assets.object loads pxr, which must not load before SimulationApp starts,
-    # and run_execution imports this module before then.
-    from isaaclab_arena.assets.object import Object
-
     asset_registry = AssetRegistry()
     assert asset_registry.is_registered(
         registry_name
     ), f"'{registry_name}' is not a registered asset. Use the registry name of a rigid object."
     asset_class_or_factory = asset_registry.get_asset_by_name(registry_name)
-    # register_asset_factory registers a function rather than a class, and always sets the object_type checked below.
-    if isinstance(asset_class_or_factory, type):
-        assert issubclass(asset_class_or_factory, Object), (
-            f"Asset '{registry_name}' is a {asset_class_or_factory.__name__}, not an Object. Use the registry name of"
-            " a rigid object."
-        )
-    # Check the declared type before building the asset, which for a wrong name can open or download its USD.
+    # Check a declared type before building the asset, which for a wrong name can open or download its USD. Library
+    # object classes and register_asset_factory functions declare one.
     declared_object_type = getattr(asset_class_or_factory, "object_type", None)
     if declared_object_type is not None:
         _assert_rigid_object_type(registry_name, declared_object_type)
-    registered_asset = asset_class_or_factory()
-    # Classes such as ProceduralCube set their object type only in __init__.
-    _assert_rigid_object_type(registry_name, registered_asset.object_type)
-    return deepcopy(registered_asset.object_cfg.spawn)
+    candidate_asset = asset_class_or_factory()
+    # Classes such as ProceduralCube set their object type only in __init__, and assets that are not objects, such as
+    # embodiments, have none.
+    _assert_rigid_object_type(registry_name, getattr(candidate_asset, "object_type", None))
+    return deepcopy(candidate_asset.object_cfg.spawn)
 
 
-def _assert_rigid_object_type(registry_name: str, object_type: ObjectType) -> None:
-    """Check that the registered asset ``registry_name`` of type ``object_type`` is a rigid object."""
+def _assert_rigid_object_type(registry_name: str, object_type: ObjectType | None) -> None:
+    """Check that the registered asset ``registry_name``, of type ``object_type``, is a rigid object."""
+    object_type_name = object_type.value if object_type is not None else None
     assert object_type == ObjectType.RIGID, (
-        f"Asset '{registry_name}' is a {object_type.value} Object, not a rigid one. Use the registry name of a rigid"
-        " object."
+        f"Asset '{registry_name}' is not a rigid object (object type: {object_type_name}). Use the registry name of a"
+        " rigid object."
     )
