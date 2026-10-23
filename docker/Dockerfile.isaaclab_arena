@@ -78,6 +78,11 @@ RUN --mount=type=bind,source=docker/setup/configure-shell.sh,target=/tmp/configu
     bash /tmp/configure-shell.sh
 COPY docker/setup/entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+# Commit stamp last, so per-commit values do not invalidate cached layers.
+ARG GIT_SHA=unknown
+ARG GIT_BRANCH=unknown
+ENV ARENA_GIT_SHA=${GIT_SHA} ARENA_GIT_BRANCH=${GIT_BRANCH}
+LABEL org.opencontainers.image.revision=${GIT_SHA}
 
 ###################################
 # STAGE: curobo-builder
@@ -102,6 +107,11 @@ RUN --mount=type=bind,from=curobo-builder,source=/wheels,target=/wheels \
     bash /tmp/install-curobo-runtime-deps.sh && \
     /isaac-sim/python.sh -m pip install --no-deps /wheels/*.whl && \
     mkdir -p /usr/local/share/arena && cp /wheels/build.json /usr/local/share/arena/curobo-build.json
+# Commit stamp last, so per-commit values do not invalidate cached layers.
+ARG GIT_SHA=unknown
+ARG GIT_BRANCH=unknown
+ENV ARENA_GIT_SHA=${GIT_SHA} ARENA_GIT_BRANCH=${GIT_BRANCH}
+LABEL org.opencontainers.image.revision=${GIT_SHA}
 
 # Default to dev (without cuRobo).
 FROM dev AS default
