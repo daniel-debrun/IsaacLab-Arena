@@ -53,7 +53,10 @@ class ChoiceSampler(SamplerBase, Generic[T]):
         assert len(choices) >= 1, "ChoiceSampler requires a non-empty 'choices' sequence."
         replay_samples = self._get_replay_samples(num_samples, env_ids)
         if replay_samples is not None:
-            assert all(value in choices for value in replay_samples), "Choice replay samples must belong to 'choices'."
+            values_outside_choices = [value for value in replay_samples if value not in choices]
+            assert (
+                not values_outside_choices
+            ), f"Choice replay samples {values_outside_choices} must belong to 'choices': {list(choices)}."
             result = replay_samples
         elif index is not None:
             result = [choices[index]] * num_samples

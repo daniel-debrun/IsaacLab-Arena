@@ -209,7 +209,7 @@ def test_replay_samplers_preserve_public_preconditions() -> None:
     choice.set_replay_sampler(lambda _count, _env_ids: ["recorded"])
     with pytest.raises(AssertionError, match="non-empty"):
         choice.sample(1, choices=[])
-    with pytest.raises(AssertionError, match="must belong"):
+    with pytest.raises(AssertionError, match=r"samples \['recorded'\] must belong to 'choices': \['live'\]"):
         choice.sample(1, choices=["live"])
 
 
