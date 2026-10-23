@@ -230,11 +230,10 @@ environments:
 .. literalinclude:: ../../../../isaaclab_arena_environments/experiment_configs/asset_selection_experiment.yaml
    :language: yaml
 
-Every rigid object of the object library (a ``LibraryObject``, such as ``rubiks_cube_hot3d_robolab``)
-has a disabled ``asset_selection`` variation. While it is off, the object spawns its own registered
-asset. When it is on, each build chooses one name, and every parallel environment of that build
-spawns that asset. For different objects in the environments of one build, use a
-:doc:`RigidObjectSet <../scene/concept_rigid_object_set>`, which has no ``asset_selection``.
+Every rigid ``Object``, such as ``rubiks_cube_hot3d_robolab``, has a disabled ``asset_selection``
+variation. While it is off, the object spawns its own asset. When it is on, each build chooses one
+name, and every parallel environment of that build spawns that asset. For different objects in the
+environments of one build, use a :doc:`RigidObjectSet <../scene/concept_rigid_object_set>`.
 
 With more rebuilds than entries, the order starts over after the last entry. The seed does not change
 this order. With ``random_choice: true``, each build instead draws a name at random, seeded from

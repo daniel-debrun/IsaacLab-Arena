@@ -32,7 +32,6 @@ from isaaclab_arena.assets.object_utils import (
 )
 from isaaclab_arena.assets.register import register_asset
 from isaaclab_arena.utils.pose import Pose
-from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariation
 
 
 class LibraryObject(Object):
@@ -83,8 +82,6 @@ class LibraryObject(Object):
             asset_cfg_addon=self.asset_cfg_addon,
             **kwargs,
         )
-        if self.object_type == ObjectType.RIGID:
-            self.add_variation(AssetSelectionVariation(self))
 
 
 @register_asset
