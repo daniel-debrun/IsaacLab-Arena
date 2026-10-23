@@ -588,26 +588,41 @@
                   
   <section id="assets">
 <h1>Assets<a class="headerlink" href="#assets" title="Link to this heading">#</a></h1>
-<p>Assets are the objects and backgrounds that make up a scene.
-Arena ships with a set of assets ready to use by name,
-and new assets can be added by registering them in the asset library.</p>
+<p>An asset is anything Arena places in a scene, such as a cracker box, a kitchen background,
+a robot, or a light. Each asset has a <code class="docutils literal notranslate"><span class="pre">name</span></code>, which identifies it in the environment:
+variation keys such as <code class="docutils literal notranslate"><span class="pre">&lt;name&gt;.mass</span></code>, its prim path, its contact sensor, and recorded data
+use it. Most assets are objects (<code class="docutils literal notranslate"><span class="pre">Object</span></code>): spawned from a USD file or a spawn configuration
+as a rigid, articulated, or static body. A robot (an embodiment) is an asset but not an object.</p>
+<p>Arena ships with a library of asset classes, and new ones can be added by registering them.
+Each asset class is registered under a <code class="docutils literal notranslate"><span class="pre">registry_name</span></code>, such as <code class="docutils literal notranslate"><span class="pre">rubiks_cube_hot3d_robolab</span></code>.
+<code class="docutils literal notranslate"><span class="pre">asset_registry.get_asset_by_name()</span></code> returns the class. Calling the class creates an asset.
+A library object such as <code class="docutils literal notranslate"><span class="pre">CrackerBox</span></code> is named after its registry name unless you pass <code class="docutils literal notranslate"><span class="pre">name</span></code>,
+for example to name it after its role in the task:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">CrackerBox</span> <span class="o">=</span> <span class="n">asset_registry</span><span class="o">.</span><span class="n">get_asset_by_name</span><span class="p">(</span><span class="s2">"cracker_box"</span><span class="p">)</span>  <span class="c1"># the class, registry_name "cracker_box"</span>
+<span class="n">cracker_box</span> <span class="o">=</span> <span class="n">CrackerBox</span><span class="p">()</span>  <span class="c1"># an asset named "cracker_box"</span>
+<span class="n">pick_up_object</span> <span class="o">=</span> <span class="n">CrackerBox</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">"pick_up_object"</span><span class="p">)</span>  <span class="c1"># an asset named "pick_up_object"</span>
+<span class="n">pick_up_object</span><span class="o">.</span><span class="n">registry_name</span>  <span class="c1"># "cracker_box"</span>
+</pre></div>
+</div>
+<p>Backgrounds and robots take no <code class="docutils literal notranslate"><span class="pre">name</span></code> argument. Their <code class="docutils literal notranslate"><span class="pre">name</span></code> is always their registry name.</p>
+<p>Most code does both steps in one line:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">background</span> <span class="o">=</span> <span class="n">asset_registry</span><span class="o">.</span><span class="n">get_asset_by_name</span><span class="p">(</span><span class="s2">"kitchen"</span><span class="p">)()</span>
 <span class="n">cracker_box</span> <span class="o">=</span> <span class="n">asset_registry</span><span class="o">.</span><span class="n">get_asset_by_name</span><span class="p">(</span><span class="s2">"cracker_box"</span><span class="p">)()</span>
 </pre></div>
 </div>
 <section id="registering-a-new-asset">
 <h2>Registering a new asset<a class="headerlink" href="#registering-a-new-asset" title="Link to this heading">#</a></h2>
-<p>To add a new object, subclass <code class="docutils literal notranslate"><span class="pre">LibraryObject</span></code>, provide the USD path and object type,
-and decorate it with <code class="docutils literal notranslate"><span class="pre">&#64;register_asset</span></code>:</p>
+<p>To add a new object, subclass <code class="docutils literal notranslate"><span class="pre">LibraryObject</span></code>, set its <code class="docutils literal notranslate"><span class="pre">registry_name</span></code>, provide the USD path
+and object type, and decorate it with <code class="docutils literal notranslate"><span class="pre">&#64;register_asset</span></code>:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@register_asset</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">MyObject</span><span class="p">(</span><span class="n">LibraryObject</span><span class="p">):</span>
-    <span class="n">name</span> <span class="o">=</span> <span class="s2">"my_object"</span>
+    <span class="n">registry_name</span> <span class="o">=</span> <span class="s2">"my_object"</span>
     <span class="n">tags</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"object"</span><span class="p">,</span> <span class="s2">"graspable"</span><span class="p">]</span>
     <span class="n">usd_path</span> <span class="o">=</span> <span class="s2">"path/to/my_object.usd"</span>
     <span class="n">object_type</span> <span class="o">=</span> <span class="n">ObjectType</span><span class="o">.</span><span class="n">RIGID</span>
 </pre></div>
 </div>
-<p>Once registered, the object is available in the registry like any other asset:</p>
+<p>Once registered, the class is available in the registry like any other asset class:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">obj</span> <span class="o">=</span> <span class="n">asset_registry</span><span class="o">.</span><span class="n">get_asset_by_name</span><span class="p">(</span><span class="s2">"my_object"</span><span class="p">)()</span>
 </pre></div>
 </div>

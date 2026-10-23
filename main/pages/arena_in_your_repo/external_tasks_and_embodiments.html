@@ -645,7 +645,7 @@ arm:</p>
 <span class="k">class</span><span class="w"> </span><span class="nc">SoftFrankaIKEmbodiment</span><span class="p">(</span><span class="n">FrankaIKEmbodiment</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">"""Franka IK embodiment with halved joint PD gains."""</span>
 
-    <span class="n">name</span> <span class="o">=</span> <span class="s2">"franka_ik_soft"</span>
+    <span class="n">registry_name</span> <span class="o">=</span> <span class="s2">"franka_ik_soft"</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
@@ -656,7 +656,7 @@ arm:</p>
 </pre></div>
 </div>
 <p>The <code class="docutils literal notranslate"><span class="pre">&#64;register_asset</span></code> decorator registers the class with the
-<code class="docutils literal notranslate"><span class="pre">AssetRegistry</span></code> under the name <code class="docutils literal notranslate"><span class="pre">&quot;franka_ik_soft&quot;</span></code>, so it can be fetched
+<code class="docutils literal notranslate"><span class="pre">AssetRegistry</span></code> under its <code class="docutils literal notranslate"><span class="pre">registry_name</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;franka_ik_soft&quot;</span></code>, so it can be fetched
 the same way as any built-in embodiment (see <a class="reference internal" href="#putting-it-all-together"><span class="std std-ref">Putting It All Together</span></a> below for an example).</p>
 </section>
 <section id="putting-it-all-together">

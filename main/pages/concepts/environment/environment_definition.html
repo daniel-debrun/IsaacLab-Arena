@@ -864,13 +864,13 @@ debug output. Runtime/code-bearing values such as
 <code class="docutils literal notranslate"><span class="pre">reachability_config.embodiment</span></code> and <code class="docutils literal notranslate"><span class="pre">solver_params.strategies</span></code> are
 rejected. Explicit builder/CLI
 <code class="docutils literal notranslate"><span class="pre">placement_seed</span></code> and <code class="docutils literal notranslate"><span class="pre">resolve_on_reset</span></code> values take precedence over YAML.</p>
-<p><strong>Duplicate instances need unique names.</strong> YAML sets <code class="docutils literal notranslate"><span class="pre">instance_name</span></code> to the node
-id. Asset classes default it to the registry name, so two Python instances of the
-same asset share one name unless you set <code class="docutils literal notranslate"><span class="pre">instance_name</span></code>. Prim paths, event
+<p><strong>Duplicate instances need unique names.</strong> YAML sets <code class="docutils literal notranslate"><span class="pre">name</span></code> to the node
+id. Library object classes default it to the registry name, so in Python two objects created
+from the same class share one name unless you set <code class="docutils literal notranslate"><span class="pre">name</span></code>. Prim paths, event
 terms, and observation keys all key off that name:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Two objects, one name. Pass instance_name yourself.</span>
-<span class="n">banana_a</span> <span class="o">=</span> <span class="n">get</span><span class="p">(</span><span class="s2">"banana_ycb_robolab"</span><span class="p">)(</span><span class="n">instance_name</span><span class="o">=</span><span class="s2">"banana_a"</span><span class="p">)</span>
-<span class="n">banana_b</span> <span class="o">=</span> <span class="n">get</span><span class="p">(</span><span class="s2">"banana_ycb_robolab"</span><span class="p">)(</span><span class="n">instance_name</span><span class="o">=</span><span class="s2">"banana_b"</span><span class="p">)</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Two objects of one class. Give each its own name.</span>
+<span class="n">banana_a</span> <span class="o">=</span> <span class="n">get</span><span class="p">(</span><span class="s2">"banana_ycb_robolab"</span><span class="p">)(</span><span class="n">name</span><span class="o">=</span><span class="s2">"banana_a"</span><span class="p">)</span>
+<span class="n">banana_b</span> <span class="o">=</span> <span class="n">get</span><span class="p">(</span><span class="s2">"banana_ycb_robolab"</span><span class="p">)(</span><span class="n">name</span><span class="o">=</span><span class="s2">"banana_b"</span><span class="p">)</span>
 </pre></div>
 </div>
 <p><strong>An anchor without a pose.</strong> YAML gives an <code class="docutils literal notranslate"><span class="pre">is_anchor</span></code> subject with no pose

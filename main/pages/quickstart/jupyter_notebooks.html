@@ -603,11 +603,11 @@ container and configure the notebook to use the Isaac Sim Python environment.</p
 </ol>
 <p>A new editor window will open, connected to the container’s filesystem.</p>
 </section>
-<section id="launch-the-jupyter-notebook-server-inside-isaac-sim">
-<h2>2. Launch the Jupyter Notebook Server Inside Isaac Sim<a class="headerlink" href="#launch-the-jupyter-notebook-server-inside-isaac-sim" title="Link to this heading">#</a></h2>
+<section id="launch-jupyter-through-the-isaac-lab-environment">
+<h2>2. Launch Jupyter Through the Isaac Lab Environment<a class="headerlink" href="#launch-jupyter-through-the-isaac-lab-environment" title="Link to this heading">#</a></h2>
 <p>Inside the container, start the Jupyter server:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>/isaac-sim
-./jupyter_notebook.sh
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>/workspaces/isaaclab_arena
+isaaclab.sh<span class="w"> </span>-p<span class="w"> </span>-m<span class="w"> </span>jupyter<span class="w"> </span>notebook<span class="w"> </span>--ip<span class="o">=</span><span class="m">0</span>.0.0.0<span class="w"> </span>--no-browser
 </pre></div>
 </div>
 <p>After startup, the terminal will print the server access information, for example:</p>
@@ -624,12 +624,12 @@ Or copy and paste one of these URLs:
 <h2>3. Create or Open a Notebook<a class="headerlink" href="#create-or-open-a-notebook" title="Link to this heading">#</a></h2>
 <ul class="simple">
 <li><p>Create a new notebook or run an existing notebook cell.</p></li>
-<li><p>By default, the notebook will connect to the system Python interpreter (e.g., Python 3.x from the base environment).</p></li>
-<li><p>This environment does not contain Isaac Sim or IsaacLab dependencies and will likely fail when importing <code class="docutils literal notranslate"><span class="pre">omni</span></code>, <code class="docutils literal notranslate"><span class="pre">isaaclab</span></code>, etc.</p></li>
+<li><p>The server and its default Python kernel run through Arena’s Isaac Lab virtual environment.</p></li>
+<li><p>Imports from Isaac Sim, Isaac Lab, and Arena are therefore available in notebook cells.</p></li>
 </ul>
 </section>
-<section id="switch-the-notebook-kernel-to-isaac-sim-python">
-<h2>4. Switch the Notebook Kernel to Isaac Sim Python<a class="headerlink" href="#switch-the-notebook-kernel-to-isaac-sim-python" title="Link to this heading">#</a></h2>
+<section id="connect-to-the-arena-jupyter-server">
+<h2>4. Connect to the Arena Jupyter Server<a class="headerlink" href="#connect-to-the-arena-jupyter-server" title="Link to this heading">#</a></h2>
 <p>In the top-right corner of the notebook UI:</p>
 <ol class="arabic">
 <li><p>Click the current kernel selector (e.g., <code class="docutils literal notranslate"><span class="pre">Python</span> <span class="pre">3</span> <span class="pre">(ipykernel)</span></code>).</p></li>
@@ -641,17 +641,9 @@ Or copy and paste one of these URLs:
 </div>
 </li>
 <li><p>Optionally set the <strong>Server Display Name</strong> (e.g., <code class="docutils literal notranslate"><span class="pre">localhost</span></code>).</p></li>
-<li><p>Under <strong>Select a Kernel from localhost</strong>, choose:</p>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>Isaac Sim Python 3  (/isaac-sim/kit/python/bin/python3)  Jupyter Kernel
-</pre></div>
-</div>
-</li>
+<li><p>Under <strong>Select a Kernel from localhost</strong>, choose its Python 3 kernel.</p></li>
 </ol>
-<p>After switching, the notebook should display:</p>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>Connected to Isaac Sim Python 3
-</pre></div>
-</div>
-<p>The notebook is now running inside the Isaac Sim Python runtime.</p>
+<p>The notebook now uses the same Isaac Lab virtual environment as Arena commands in the container.</p>
 </section>
 <section id="reloading-modules-and-recompiling-environments">
 <h2>Reloading Modules and Recompiling Environments<a class="headerlink" href="#reloading-modules-and-recompiling-environments" title="Link to this heading">#</a></h2>
@@ -717,9 +709,9 @@ and allow recompiling environments or reloading modules, you must call:</p>
   <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="pst-show_toc_level nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#start-the-isaaclab-arena-docker-container">1. Start the IsaacLab Arena Docker Container</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#launch-the-jupyter-notebook-server-inside-isaac-sim">2. Launch the Jupyter Notebook Server Inside Isaac Sim</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#launch-jupyter-through-the-isaac-lab-environment">2. Launch Jupyter Through the Isaac Lab Environment</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#create-or-open-a-notebook">3. Create or Open a Notebook</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#switch-the-notebook-kernel-to-isaac-sim-python">4. Switch the Notebook Kernel to Isaac Sim Python</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#connect-to-the-arena-jupyter-server">4. Connect to the Arena Jupyter Server</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#reloading-modules-and-recompiling-environments">Reloading Modules and Recompiling Environments</a></li>
 </ul>
   </nav></div>
