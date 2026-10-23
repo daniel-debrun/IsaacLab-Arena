@@ -25,8 +25,8 @@ class ArenaCameraCfg:
     """Parent class for camera configs in Arena.
 
     CameraCfg configclasses subclass this and declare camera fields (as per usual). The get_cfg
-    then returns a copy using independent RTX render products, or tiled cameras, according
-    to ``use_tiled_camera``. Untiled rendering currently supports RGB/RGBA without ISP
+    then returns a copy using tiled cameras by default. Setting ``use_tiled_camera=False``
+    selects independent RTX render products. Untiled rendering supports RGB/RGBA without ISP
     or custom background colors and applies to every camera in the rig.
     """
 

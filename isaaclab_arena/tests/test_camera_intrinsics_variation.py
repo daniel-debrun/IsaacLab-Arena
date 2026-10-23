@@ -3,8 +3,6 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-import sys
-
 import pytest
 
 from isaaclab_arena.tests.utils.constants import TestConstants
@@ -163,7 +161,7 @@ def _test_camera_intrinsics_variation_changes_only_selected_images(simulation_ap
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.arena_env_builder_cfg import ArenaEnvBuilderCfg
     from isaaclab_arena.variations.camera_intrinsics_variation import CameraIntrinsicsVariationCfg
-    from isaaclab_arena.variations.uniform_sampler import UniformSampler, UniformSamplerCfg
+    from isaaclab_arena.variations.uniform_sampler import UniformSamplerCfg
     from isaaclab_arena_environments.pick_and_place_maple_table_environment import (
         PickAndPlaceMapleTableEnvironment,
         PickAndPlaceMapleTableEnvironmentCfg,
@@ -172,14 +170,10 @@ def _test_camera_intrinsics_variation_changes_only_selected_images(simulation_ap
     arena_env = PickAndPlaceMapleTableEnvironment().build(
         PickAndPlaceMapleTableEnvironmentCfg(enable_cameras=True, hdr="home_office_robolab")
     )
-    rig = arena_env.embodiment.camera_config
-    for name in rig.camera_names():
-        getattr(rig, name).width = 640
-        getattr(rig, name).height = 360
+    # Keep robot poses and object placement repeatable so reset only changes the camera intrinsics.
+    arena_env.embodiment.event_config.randomize_franka_joint_state.params["std"] = 0.0
     variation = arena_env.embodiment.get_variation(VARIATION_NAME)
-    variation.apply_cfg(
-        CameraIntrinsicsVariationCfg(sampler_cfg=UniformSamplerCfg(low=list(TEST_DELTAS), high=list(TEST_DELTAS)))
-    )
+    variation.apply_cfg(CameraIntrinsicsVariationCfg(sampler_cfg=UniformSamplerCfg(low=[-0.4, -0.4], high=[0.6, 0.6])))
     variation.enable()
     env = ArenaEnvBuilder(
         arena_env, ArenaEnvBuilderCfg(num_envs=2, placement_seed=42, resolve_on_reset=False)
@@ -187,29 +181,24 @@ def _test_camera_intrinsics_variation_changes_only_selected_images(simulation_ap
     try:
         env.reset()
         base = env.unwrapped
-        camera = base.scene[CAMERA_NAME]
+        actions = torch.zeros(env.action_space.shape, device=base.device)
+        actions[:, :7] = base.scene["robot"].data.default_joint_pos[:, :7]
 
-        def capture():
-            # Freeze physics and let rendering converge before comparing pixels.
+        def step_and_capture():
             for _ in range(12):
-                base.sim.render()
-                camera.update(base.step_dt, force_recompute=True)
-                _ = camera.data.output["rgb"]
-            return camera.data.output["rgb"].torch.float().clone()
+                observations, _, terminated, truncated, _ = env.step(actions)
+                assert not (terminated | truncated).any(), "The capture must not trigger an automatic reset"
+            return observations["camera_obs"][f"{CAMERA_NAME}_rgb"].float().clone()
 
-        previous = capture()
-        term = base.event_manager.get_term_cfg(EVENT_NAME)
-        sampler = UniformSampler(low=[0.5, 0.5], high=[0.5, 0.5])
-        # Changing env 1 first catches the old renderer, which reused env 0's projection.
+        previous = step_and_capture()
+        # Reset env 1 first to catch the old renderer, which reused env 0's projection.
         for env_id in [1, 0]:
-            term.func(
-                base, torch.tensor([env_id], device=base.device), asset_cfg=term.params["asset_cfg"], sampler=sampler
-            )
-            current = capture()
+            base.reset(env_ids=[env_id])
+            current = step_and_capture()
             difference = (current - previous).abs().mean(dim=(1, 2, 3))
-            print(f"Changed env {env_id}: per-env image differences {difference.tolist()}")
-            assert difference[env_id] > 5.0, "Changing intrinsics must change the rendered image"
-            assert difference[1 - env_id] < 1.0, "Changing intrinsics must not change another environment's image"
+            print(f"Reset env {env_id}: per-env image differences {difference.tolist()}")
+            assert difference[env_id] > 5.0, "Resampling intrinsics must change the rendered image"
+            assert difference[1 - env_id] < 1.0, "Resetting one environment must not change another's image"
             previous = current
     finally:
         env.close()
@@ -276,13 +265,16 @@ def test_camera_intrinsics_variation_realized_at_runtime():
 @pytest.mark.with_cameras
 @pytest.mark.with_subprocess
 def test_camera_intrinsics_variation_changes_only_selected_images():
-    run_subprocess([TestConstants.python_path, __file__, "render"])
+    run_subprocess([
+        TestConstants.python_path,
+        "-c",
+        (
+            "from isaaclab_arena.tests.test_camera_intrinsics_variation import "
+            "_run_camera_intrinsics_test, _test_camera_intrinsics_variation_changes_only_selected_images; "
+            "_run_camera_intrinsics_test(_test_camera_intrinsics_variation_changes_only_selected_images)"
+        ),
+    ])
 
 
 if __name__ == "__main__":
-    test_function = (
-        _test_camera_intrinsics_variation_changes_only_selected_images
-        if sys.argv[1:] == ["render"]
-        else _test_camera_intrinsics_variation_realized_at_runtime
-    )
-    _run_camera_intrinsics_test(test_function)
+    _run_camera_intrinsics_test(_test_camera_intrinsics_variation_realized_at_runtime)

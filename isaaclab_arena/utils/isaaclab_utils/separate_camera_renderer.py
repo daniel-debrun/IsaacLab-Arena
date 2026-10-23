@@ -40,14 +40,17 @@ class SeparateCameraRenderer(IsaacRtxRenderer):
 
         children = []
         for path in spec.camera_prim_paths:
+            # Give each environment its own camera projection and render product.
             child_spec = replace(spec, camera_prim_paths=(path,), num_instances=1, view_count=1)
             product = rep.create.render_product(
                 camera=path,
                 resolution=(spec.cfg.width, spec.cfg.height),
                 name=f"independent_camera_{uuid4().hex}",
             )
+            # Replicator's RGB annotator returns RGBA pixels on the simulation device.
             annotator = rep.AnnotatorRegistry.get_annotator("rgb", device=spec.device, do_array_copy=False)
             annotator.attach([product.path])
+            # Reuse the RTX buffer-writing and cleanup code for each product.
             children.append(
                 IsaacRtxRenderData(
                     annotators={"rgba": annotator},
