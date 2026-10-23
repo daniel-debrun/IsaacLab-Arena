@@ -7,9 +7,11 @@
 # sim-base:       Isaac Sim, common system packages, and runtime permissions.
 # isaaclab:       Isaac Lab checkout and its dependencies, on top of sim-base.
 # arena-deps:     Arena dependencies, policy clients, and developer tools, on isaaclab.
-# dev:            Arena source, editable install, shell setup, and entrypoint.
+# dev-base:       Arena source, editable install, shell setup, and entrypoint, on arena-deps.
+# dev:            Thin stamp stage on dev-base that records the git commit and branch.
 # curobo-builder: Isolated CUDA toolkit and wheel compilation, branching from isaaclab.
-# dev-curobo:     Dev plus cuRobo installed from the builder's mounted wheel.
+# dev-curobo-base: Dev-base plus cuRobo installed from the builder's mounted wheel.
+# dev-curobo:     Thin stamp stage on dev-curobo-base that records the git commit and branch.
 #
 # The cuRobo builder's toolchain and wheel archives stay out of the final images.
 # Select a variant with --target.

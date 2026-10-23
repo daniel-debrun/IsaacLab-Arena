@@ -13,7 +13,12 @@ git_stamp_sha() {
 }
 
 # Print the current branch name of the checkout containing `$1` (default: cwd),
-# or "unknown" outside git.
+# or "unknown" outside git or on a detached HEAD.
 git_stamp_branch() {
-    git -C "${1:-.}" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown
+    local branch
+    branch=$(git -C "${1:-.}" rev-parse --abbrev-ref HEAD 2>/dev/null) || { echo unknown; return; }
+    if [ "$branch" = HEAD ]; then
+        branch=unknown
+    fi
+    echo "$branch"
 }
