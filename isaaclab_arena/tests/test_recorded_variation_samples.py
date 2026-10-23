@@ -235,6 +235,19 @@ def test_sequential_sampler_takes_choices_in_order_from_its_position() -> None:
     assert sampler.sample(1, choices) == ["b"]
 
 
+def test_sequential_sampler_replay_leaves_its_position_unchanged() -> None:
+    sampler = SequentialSampler()
+    choices = ["x", "y", "z"]
+    assert sampler.sample(2, choices) == ["x", "y"]
+
+    sampler.set_replay_sampler(lambda _count, _env_ids: ["x"])
+    assert sampler.sample(1, choices) == ["x"]
+    sampler.set_replay_sampler(None)
+
+    # The live draw continues after "y", as if the replayed draw had not happened.
+    assert sampler.sample(1, choices) == ["z"]
+
+
 def test_variation_replay_scheduler_cycles_globally_across_partial_resets() -> None:
     scheduler = VariationReplayScheduler(_runtime_record([0, 1, 2]))
     observed_values: list[int] = []
