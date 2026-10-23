@@ -433,9 +433,22 @@ def test_build_environment_tolerates_an_environment_without_recorders(monkeypatc
     assert builder.made_with.render_mode is None
 
 
-def _patch_builder_with_asset_selection(monkeypatch):
-    """Make each Run build an HDR image stand-in and an asset selection on ``pick_up_object``."""
-
+@pytest.mark.parametrize(
+    "num_rebuilds, random_choice, rebuild_index, replay_path, names_never_spawned",
+    [
+        (2, False, 0, None, ["tomato_soup_can"]),
+        (1, False, 0, None, ["sugar_box", "tomato_soup_can"]),
+        (3, False, 0, None, []),
+        (1, True, 0, None, []),
+        # The first rebuild already warned.
+        (2, False, 1, None, []),
+        # A replayed Run spawns the recorded names.
+        (2, False, 0, "recorded_variations.jsonl", []),
+    ],
+)
+def test_build_environment_warns_when_in_order_asset_selection_skips_names(
+    monkeypatch, tmp_path, capsys, num_rebuilds, random_choice, rebuild_index, replay_path, names_never_spawned
+):
     def build_arena_builder(cfg, rebuild_index):
         # Both variations start disabled. The Run's variation overrides enable them while the environment is built.
         variations = {
@@ -446,33 +459,18 @@ def _patch_builder_with_asset_selection(monkeypatch):
         return _ArenaEnvBuilder(None, variations=variations, hydra_overrides=hydra_overrides)
 
     monkeypatch.setattr(run_execution, "build_arena_builder_from_run_cfg", build_arena_builder)
-
-
-def _run_with_asset_selection(num_rebuilds, random_choice=False, **overrides):
-    """Return a Run that enables the HDR image and an asset selection of three registry names."""
-    return _run(
+    run = _run(
         num_rebuilds=num_rebuilds,
+        environment_builder=ArenaEnvBuilderCfg(recorded_variation_samples_path=replay_path),
         variations={
             "light.hdr_image.enabled": True,
             "pick_up_object.asset_selection.enabled": True,
             "pick_up_object.asset_selection.random_choice": random_choice,
             "pick_up_object.asset_selection.registry_names": ["mustard_bottle", "sugar_box", "tomato_soup_can"],
         },
-        **overrides,
     )
 
-
-@pytest.mark.parametrize(
-    "num_rebuilds, random_choice, names_never_spawned",
-    [(2, False, ["tomato_soup_can"]), (1, False, ["sugar_box", "tomato_soup_can"]), (3, False, []), (1, True, [])],
-)
-def test_build_environment_warns_when_in_order_asset_selection_skips_names(
-    monkeypatch, tmp_path, capsys, num_rebuilds, random_choice, names_never_spawned
-):
-    _patch_builder_with_asset_selection(monkeypatch)
-    run = _run_with_asset_selection(num_rebuilds, random_choice)
-
-    run_execution._build_environment_from_cfg(run, render_mode=None, output_dir=tmp_path)
+    run_execution._build_environment_from_cfg(run, render_mode=None, output_dir=tmp_path, rebuild_index=rebuild_index)
 
     output = capsys.readouterr().out
     if names_never_spawned:
@@ -482,41 +480,6 @@ def test_build_environment_warns_when_in_order_asset_selection_skips_names(
     else:
         # The enabled light.hdr_image, a build-time variation as well, does not warn either.
         assert "[WARNING]" not in output
-
-
-def test_build_environment_warns_only_in_the_first_rebuild(monkeypatch, tmp_path, capsys):
-    _patch_builder_with_asset_selection(monkeypatch)
-    # Two rebuilds never spawn the third name, which the first rebuild already warns about.
-    run = _run_with_asset_selection(num_rebuilds=2)
-
-    run_execution._build_environment_from_cfg(run, render_mode=None, output_dir=tmp_path, rebuild_index=1)
-
-    assert "[WARNING]" not in capsys.readouterr().out
-
-
-@pytest.mark.parametrize("selection_is_recorded", [True, False])
-def test_build_environment_warns_for_a_replay_only_without_the_recorded_selection(
-    monkeypatch, tmp_path, capsys, selection_is_recorded
-):
-    recorded_variations = {"light.hdr_image": "recorded_hdr_image"}
-    if selection_is_recorded:
-        recorded_variations["pick_up_object.asset_selection"] = "sugar_box"
-    replay_path = tmp_path / "recorded_variations.jsonl"
-    replay_path.write_text(json.dumps({"variations": recorded_variations}) + "\n")
-    _patch_builder_with_asset_selection(monkeypatch)
-    run = _run_with_asset_selection(
-        num_rebuilds=2, environment_builder=ArenaEnvBuilderCfg(recorded_variation_samples_path=str(replay_path))
-    )
-
-    run_execution._build_environment_from_cfg(run, render_mode=None, output_dir=tmp_path)
-
-    output = capsys.readouterr().out
-    if selection_is_recorded:
-        # Every rebuild replays the recorded name, so the order of registry_names does not matter.
-        assert "[WARNING]" not in output
-    else:
-        # Without a recorded name, the selection takes the names in order, as in a Run without replay.
-        assert "so ['tomato_soup_can'] never spawn" in output
 
 
 def test_execute_experiment_writes_one_timings_file_per_run(monkeypatch, tmp_path):
