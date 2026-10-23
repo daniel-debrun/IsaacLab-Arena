@@ -433,13 +433,9 @@ def test_build_environment_tolerates_an_environment_without_recorders(monkeypatc
     assert builder.made_with.render_mode is None
 
 
-@pytest.mark.parametrize(
-    "num_rebuilds, random_choice, names_never_spawned",
-    [(2, False, ["tomato_soup_can"]), (1, False, ["sugar_box", "tomato_soup_can"]), (3, False, []), (1, True, [])],
-)
-def test_build_environment_warns_when_in_order_asset_selection_skips_names(
-    monkeypatch, tmp_path, capsys, num_rebuilds, random_choice, names_never_spawned
-):
+def _patch_builder_with_asset_selection(monkeypatch):
+    """Make each Run build an HDR image stand-in and an asset selection on ``pick_up_object``."""
+
     def build_arena_builder(cfg, rebuild_index):
         # Both variations start disabled. The Run's variation overrides enable them while the environment is built.
         variations = {
@@ -450,7 +446,11 @@ def test_build_environment_warns_when_in_order_asset_selection_skips_names(
         return _ArenaEnvBuilder(None, variations=variations, hydra_overrides=hydra_overrides)
 
     monkeypatch.setattr(run_execution, "build_arena_builder_from_run_cfg", build_arena_builder)
-    run = _run(
+
+
+def _run_with_asset_selection(num_rebuilds, random_choice=False, **overrides):
+    """Return a Run that enables the HDR image and an asset selection of three registry names."""
+    return _run(
         num_rebuilds=num_rebuilds,
         variations={
             "light.hdr_image.enabled": True,
@@ -458,7 +458,19 @@ def test_build_environment_warns_when_in_order_asset_selection_skips_names(
             "pick_up_object.asset_selection.random_choice": random_choice,
             "pick_up_object.asset_selection.registry_names": ["mustard_bottle", "sugar_box", "tomato_soup_can"],
         },
+        **overrides,
     )
+
+
+@pytest.mark.parametrize(
+    "num_rebuilds, random_choice, names_never_spawned",
+    [(2, False, ["tomato_soup_can"]), (1, False, ["sugar_box", "tomato_soup_can"]), (3, False, []), (1, True, [])],
+)
+def test_build_environment_warns_when_in_order_asset_selection_skips_names(
+    monkeypatch, tmp_path, capsys, num_rebuilds, random_choice, names_never_spawned
+):
+    _patch_builder_with_asset_selection(monkeypatch)
+    run = _run_with_asset_selection(num_rebuilds, random_choice)
 
     run_execution._build_environment_from_cfg(run, render_mode=None, output_dir=tmp_path)
 
@@ -470,6 +482,16 @@ def test_build_environment_warns_when_in_order_asset_selection_skips_names(
     else:
         # The enabled light.hdr_image, a build-time variation as well, does not warn either.
         assert "[WARNING]" not in output
+
+
+def test_build_environment_warns_only_in_the_first_rebuild(monkeypatch, tmp_path, capsys):
+    _patch_builder_with_asset_selection(monkeypatch)
+    # Two rebuilds never spawn the third name, which the first rebuild already warns about.
+    run = _run_with_asset_selection(num_rebuilds=2)
+
+    run_execution._build_environment_from_cfg(run, render_mode=None, output_dir=tmp_path, rebuild_index=1)
+
+    assert "[WARNING]" not in capsys.readouterr().out
 
 
 def test_execute_experiment_writes_one_timings_file_per_run(monkeypatch, tmp_path):
