@@ -28,6 +28,7 @@ from isaaclab_arena.metrics.aggregate_metrics import aggregate_metrics
 from isaaclab_arena.recording.episode_results import read_episode_records
 from isaaclab_arena.utils.timer import print_timer_stats, reset_timer_stats
 from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariation
+from isaaclab_arena.variations.recorded_variation_samples import load_rebuild_variation_record
 from isaaclab_arena.variations.variation_base import get_enabled_variations_by_key
 from isaaclab_arena.variations.variations_hydra import overrides_from_dict
 from isaaclab_arena.video.video_recording import VideoRecordingCfg, wrap_env_for_video
@@ -182,9 +183,6 @@ def _warn_if_in_order_asset_selection_skips_names(cfg: ArenaRunCfg, arena_builde
 
     In-order selection spawns one name per rebuild, so the names after the last rebuild never spawn.
     """
-    # A replayed build spawns the recorded names instead.
-    if cfg.environment_builder.recorded_variation_samples_path is not None:
-        return
     # Read after make_registered(), which applies the Run's variation overrides.
     enabled_variations_by_key = get_enabled_variations_by_key(arena_builder.get_all_variations())
     for variation_key, variation in enabled_variations_by_key.items():
@@ -192,6 +190,10 @@ def _warn_if_in_order_asset_selection_skips_names(cfg: ArenaRunCfg, arena_builde
             continue
         registry_names = variation.cfg.registry_names
         if cfg.num_rebuilds >= len(registry_names):
+            continue
+        # A replay record that holds the selection spawns the recorded names. A record without it, such as one that
+        # holds only an HDR image, leaves the selection live and in order.
+        if _replay_record_holds_build_time_variation(cfg, variation_key):
             continue
         names_never_spawned = registry_names[cfg.num_rebuilds :]
         print(
@@ -201,6 +203,15 @@ def _warn_if_in_order_asset_selection_skips_names(cfg: ArenaRunCfg, arena_builde
             " draw a name at random in each build.",
             flush=True,
         )
+
+
+def _replay_record_holds_build_time_variation(cfg: ArenaRunCfg, variation_key: str) -> bool:
+    """Return whether the build's replay record holds a value for the build-time variation ``variation_key``."""
+    replay_path = cfg.environment_builder.recorded_variation_samples_path
+    if replay_path is None:
+        return False
+    variation_record = load_rebuild_variation_record(replay_path, build_time_variation_keys={variation_key})
+    return variation_key in variation_record.build_time_samples
 
 
 def build_arena_builder_from_run_cfg(cfg: ArenaRunCfg, rebuild_index: int = 0) -> ArenaEnvBuilder:

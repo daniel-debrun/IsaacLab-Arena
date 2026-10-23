@@ -494,6 +494,31 @@ def test_build_environment_warns_only_in_the_first_rebuild(monkeypatch, tmp_path
     assert "[WARNING]" not in capsys.readouterr().out
 
 
+@pytest.mark.parametrize("selection_is_recorded", [True, False])
+def test_build_environment_warns_for_a_replay_only_without_the_recorded_selection(
+    monkeypatch, tmp_path, capsys, selection_is_recorded
+):
+    recorded_variations = {"light.hdr_image": "recorded_hdr_image"}
+    if selection_is_recorded:
+        recorded_variations["pick_up_object.asset_selection"] = "sugar_box"
+    replay_path = tmp_path / "recorded_variations.jsonl"
+    replay_path.write_text(json.dumps({"variations": recorded_variations}) + "\n")
+    _patch_builder_with_asset_selection(monkeypatch)
+    run = _run_with_asset_selection(
+        num_rebuilds=2, environment_builder=ArenaEnvBuilderCfg(recorded_variation_samples_path=str(replay_path))
+    )
+
+    run_execution._build_environment_from_cfg(run, render_mode=None, output_dir=tmp_path)
+
+    output = capsys.readouterr().out
+    if selection_is_recorded:
+        # Every rebuild replays the recorded name, so the order of registry_names does not matter.
+        assert "[WARNING]" not in output
+    else:
+        # Without a recorded name, the selection takes the names in order, as in a Run without replay.
+        assert "so ['tomato_soup_can'] never spawn" in output
+
+
 def test_execute_experiment_writes_one_timings_file_per_run(monkeypatch, tmp_path):
     """Each Run's timings cover that Run alone, matching what OSMO produces per process."""
 
