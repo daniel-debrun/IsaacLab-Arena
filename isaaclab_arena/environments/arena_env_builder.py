@@ -103,10 +103,20 @@ class ArenaEnvBuilder:
         arena_env: IsaacLabArenaEnvironment,
         cfg: ArenaEnvBuilderCfg,
         hydra_overrides: list[str] | None = None,
+        rebuild_index: int = 0,
     ):
+        """Create a builder for an Arena environment.
+
+        Args:
+            arena_env: Environment to build.
+            cfg: Build settings.
+            hydra_overrides: Variation overrides applied before the build.
+            rebuild_index: Index of this build among the rebuilds of an Experiment Run; 0 for a single build.
+        """
         self.arena_env = arena_env
         self.cfg = cfg
         self.hydra_overrides = hydra_overrides
+        self.rebuild_index = rebuild_index
         self.interactive_scene_cfg = InteractiveSceneCfg(
             num_envs=cfg.num_envs, env_spacing=cfg.env_spacing, replicate_physics=False
         )
@@ -226,7 +236,7 @@ class ArenaEnvBuilder:
         """
         for variation_key, variation in get_enabled_variations_by_key(self.get_all_variations()).items():
             variation.configure_at_build_time(
-                seed=self.cfg.seed, variation_key=variation_key, rebuild_index=self.cfg.rebuild_index
+                seed=self.cfg.seed, variation_key=variation_key, rebuild_index=self.rebuild_index
             )
 
     def _modify_recorder_cfg_dataset_filename(self, recorder_cfg: RecorderManagerBaseCfg) -> RecorderManagerBaseCfg:

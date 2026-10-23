@@ -108,13 +108,15 @@ def compose_pick_and_place_with_selection(
     builder_cfg = ArenaEnvBuilderCfg(
         num_envs=NUM_ENVS,
         seed=seed,
-        rebuild_index=rebuild_index,
         solve_relations=solve_relations,
         placement_seed=0,
         resolve_on_reset=False,
         recorded_variation_samples_path=recorded_variation_samples_path,
     )
-    env_cfg, env_kwargs = ArenaEnvBuilder(arena_env, builder_cfg, hydra_overrides=hydra_overrides).build_env_cfg()
+    arena_builder = ArenaEnvBuilder(
+        arena_env, builder_cfg, hydra_overrides=hydra_overrides, rebuild_index=rebuild_index
+    )
+    env_cfg, env_kwargs = arena_builder.build_env_cfg()
     return pickup, env_cfg, env_kwargs
 
 

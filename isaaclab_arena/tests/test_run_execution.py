@@ -86,7 +86,7 @@ class _ArenaEnvBuilder:
 
 def _builder(monkeypatch, recorders):
     builder = _ArenaEnvBuilder(recorders)
-    monkeypatch.setattr(run_execution, "build_arena_builder_from_run_cfg", lambda cfg: builder)
+    monkeypatch.setattr(run_execution, "build_arena_builder_from_run_cfg", lambda cfg, rebuild_index: builder)
     return builder
 
 
@@ -110,9 +110,11 @@ def test_build_and_run_splits_episode_budget_without_mutating_config(monkeypatch
     run = _run()
     rollout_limits = []
     received_run_cfgs = []
+    received_rebuild_indices = []
 
-    def make_environment(cfg, render_mode, **kwargs):
+    def make_environment(cfg, render_mode, output_dir, rebuild_index):
         received_run_cfgs.append(cfg)
+        received_rebuild_indices.append(rebuild_index)
         return _environment()
 
     monkeypatch.setattr(run_execution, "_build_environment_from_cfg", make_environment)
@@ -131,16 +133,16 @@ def test_build_and_run_splits_episode_budget_without_mutating_config(monkeypatch
     )
 
     base_seed = run.environment_builder.seed
-    rebuild_0_run = deepcopy(run)  # Rebuild 0 keeps the configured seed.
-    rebuild_1_run = deepcopy(run)
-    rebuild_1_run.environment_builder.seed = base_seed + 1
-    rebuild_1_run.environment_builder.rebuild_index = 1
+    run_seed_0 = deepcopy(run)  # Rebuild 0 keeps the configured seed.
+    run_seed_1 = deepcopy(run)
+    run_seed_1.environment_builder.seed = base_seed + 1
 
     assert result.run_name == "test_run"
     assert result.status is RunStatus.COMPLETED
     assert rollout_limits == [(None, 3), (None, 2)]
-    # Runs are the same except for their seeds and rebuild indices.
-    assert received_run_cfgs == [rebuild_0_run, rebuild_1_run]
+    # Runs are the same except for their seeds.
+    assert received_run_cfgs == [run_seed_0, run_seed_1]
+    assert received_rebuild_indices == [0, 1]
     # The original config is never mutated.
     assert run.rollout_limit == RolloutLimitCfg(num_episodes=5)
     assert run.environment_builder.seed == base_seed
@@ -254,16 +256,14 @@ def test_recorded_variation_replay_rejects_finite_action_policy():
         run_execution._resolve_rollout_limit(run, _FinitePolicy(), num_episodes=1)
 
 
-def test_cfg_for_rebuild_sets_rebuild_index_and_offsets_seed():
+def test_cfg_for_rebuild_offsets_seed_per_rebuild():
     run = _run(num_rebuilds=3)
     base_seed = run.environment_builder.seed
 
-    for rebuild_index in range(3):
-        rebuild_builder_cfg = run_execution._cfg_for_rebuild(run, rebuild_index).environment_builder
-        assert rebuild_builder_cfg.rebuild_index == rebuild_index
-        assert rebuild_builder_cfg.seed == base_seed + rebuild_index
+    assert run_execution._cfg_for_rebuild(run, 0).environment_builder.seed == base_seed
+    assert run_execution._cfg_for_rebuild(run, 1).environment_builder.seed == base_seed + 1
+    assert run_execution._cfg_for_rebuild(run, 2).environment_builder.seed == base_seed + 2
     # The original config is never mutated.
-    assert run.environment_builder.rebuild_index == 0
     assert run.environment_builder.seed == base_seed
 
 
@@ -394,8 +394,9 @@ def test_build_environment_exports_recorder_dataset_to_the_run_directory(monkeyp
     captured = {}
     run = _run(name="pick", environment_builder=ArenaEnvBuilderCfg(record_trajectories=record_trajectories))
 
-    def capture_builder(cfg):
+    def capture_builder(cfg, rebuild_index):
         captured["environment_builder"] = cfg.environment_builder
+        captured["rebuild_index"] = rebuild_index
         return builder
 
     monkeypatch.setattr(run_execution, "build_arena_builder_from_run_cfg", capture_builder)
@@ -410,6 +411,7 @@ def test_build_environment_exports_recorder_dataset_to_the_run_directory(monkeyp
     assert captured["environment_builder"].record_trajectories is record_trajectories
     assert captured["environment_builder"].recorder_dataset_export_dir_path == str(tmp_path)
     assert captured["environment_builder"].recorder_dataset_filename == "dataset_pick_rebuild2"
+    assert captured["rebuild_index"] == 2
     assert run.environment_builder.recorder_dataset_export_dir_path is None
     assert run.environment_builder.recorder_dataset_filename is None
     assert builder.made_with.render_mode == "rgb_array"
@@ -433,7 +435,7 @@ def test_build_environment_warns_when_one_build_enables_build_time_variations(
     monkeypatch, tmp_path, capsys, num_rebuilds, enabled, expect_warning
 ):
     builder = _ArenaEnvBuilder(None, variations={"light": [_BuildTimeVariation(enabled)]})
-    monkeypatch.setattr(run_execution, "build_arena_builder_from_run_cfg", lambda cfg: builder)
+    monkeypatch.setattr(run_execution, "build_arena_builder_from_run_cfg", lambda cfg, rebuild_index: builder)
 
     run_execution._build_environment_from_cfg(_run(num_rebuilds=num_rebuilds), render_mode=None, output_dir=tmp_path)
 

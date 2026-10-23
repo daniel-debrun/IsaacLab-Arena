@@ -118,8 +118,8 @@ class VariationBase(ABC):
         Args:
             seed: Environment seed.
             variation_key: This variation's ``<asset_name>.<variation_name>`` key.
-            rebuild_index: Index of this build among the rebuilds of an Experiment Run,
-                ``ArenaEnvBuilderCfg.rebuild_index``.
+            rebuild_index: Index of this build among the rebuilds of an Experiment Run, the ``rebuild_index``
+                argument of ``ArenaEnvBuilder``.
         """
         # The key gives each variation its own random stream: with the seed alone, equal sampler cfgs draw equal values,
         # and with one shared generator, a variation's values change when others are enabled, disabled or reordered.
