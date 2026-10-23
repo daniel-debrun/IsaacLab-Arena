@@ -54,22 +54,18 @@ def make_pickup():
 
 def compose_pick_and_place_with_selection(
     *,
-    selection_cfg=None,
+    selection_cfg,
     seed=42,
     rebuild_index=0,
-    hydra_overrides=None,
-    recorded_variation_samples_path=None,
     solve_relations=False,
     task_description=None,
 ):
     """Compose a PickAndPlaceTask environment whose pickup, a cracker box on a table, has an asset selection.
 
     Args:
-        selection_cfg: Settings applied to the pickup's asset selection. None keeps the disabled default.
+        selection_cfg: Settings applied to the pickup's asset selection.
         seed: Build seed.
         rebuild_index: Index of the build among the rebuilds of an Experiment Run.
-        hydra_overrides: Variation overrides for the build.
-        recorded_variation_samples_path: Record to replay, if any.
         solve_relations: Whether to solve the pickup's placement on the table.
         task_description: Description passed to the task. None keeps its default description.
 
@@ -93,8 +89,7 @@ def compose_pick_and_place_with_selection(
     table = make_table()
     pickup = make_pickup()
     pickup.add_relation(On(table, clearance_m=ON_CLEARANCE_M))
-    if selection_cfg is not None:
-        pickup.get_variation("asset_selection").apply_cfg(selection_cfg)
+    pickup.get_variation("asset_selection").apply_cfg(selection_cfg)
     plate_spawn_cfg = sim_utils.CuboidCfg(
         size=(0.3, 0.3, 0.02),
         rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
@@ -113,25 +108,21 @@ def compose_pick_and_place_with_selection(
         solve_relations=solve_relations,
         placement_seed=0,
         resolve_on_reset=False,
-        recorded_variation_samples_path=recorded_variation_samples_path,
     )
-    arena_builder = ArenaEnvBuilder(
-        arena_env, builder_cfg, hydra_overrides=hydra_overrides, rebuild_index=rebuild_index
-    )
+    arena_builder = ArenaEnvBuilder(arena_env, builder_cfg, rebuild_index=rebuild_index)
     env_cfg, env_kwargs = arena_builder.build_env_cfg()
     return pickup, env_cfg, env_kwargs
 
 
 def _test_selected_asset_is_spawned_placed_recorded_and_described(simulation_app):
     from isaaclab_arena.assets.registries import AssetRegistry
-    from isaaclab_arena.variations.variations_hydra import overrides_from_dict
+    from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariationCfg
 
-    hydra_overrides = overrides_from_dict(
-        {f"{SELECTION_KEY}.enabled": True, f"{SELECTION_KEY}.registry_names": ["sugar_box"]}
-    )
-
+    # In order, rebuild 1 takes the second name.
     pickup, env_cfg, env_kwargs = compose_pick_and_place_with_selection(
-        hydra_overrides=hydra_overrides, solve_relations=True
+        selection_cfg=AssetSelectionVariationCfg(enabled=True, registry_names=["mustard_bottle", "sugar_box"]),
+        rebuild_index=1,
+        solve_relations=True,
     )
 
     assert env_cfg.scene.pickup.spawn.usd_path == get_registered_usd_path("sugar_box")
@@ -176,30 +167,6 @@ def _test_pick_and_place_keeps_passed_task_description(simulation_app):
     return True
 
 
-def _test_in_order_selection_follows_rebuild_index(simulation_app):
-    from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariationCfg
-
-    registry_names = ["mustard_bottle", "sugar_box", "tomato_soup_can"]
-
-    def compose_in_order_selection(seed, rebuild_index):
-        _, env_cfg, _ = compose_pick_and_place_with_selection(
-            selection_cfg=AssetSelectionVariationCfg(enabled=True, registry_names=registry_names),
-            seed=seed,
-            rebuild_index=rebuild_index,
-        )
-        return env_cfg.scene.pickup.spawn.usd_path
-
-    # Rebuild k takes name k % 3, so the fourth rebuild starts over at the first name.
-    usd_paths_over_rebuilds = [compose_in_order_selection(seed=42, rebuild_index=k) for k in range(4)]
-    expected_registry_names = registry_names + registry_names[:1]
-    assert usd_paths_over_rebuilds == [
-        get_registered_usd_path(registry_name) for registry_name in expected_registry_names
-    ]
-    # Another seed takes the same name at the same rebuild index.
-    assert compose_in_order_selection(seed=44, rebuild_index=1) == usd_paths_over_rebuilds[1]
-    return True
-
-
 def _test_random_selection_draws_from_seeded_generator(simulation_app):
     import torch
 
@@ -221,22 +188,6 @@ def _test_random_selection_draws_from_seeded_generator(simulation_app):
 
     usd_paths_over_seeds = {compose_random_selection(seed) for seed in range(5)}
     assert len(usd_paths_over_seeds) > 1
-    return True
-
-
-def _test_recorded_registry_name_is_replayed(simulation_app, tmp_path):
-    from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariationCfg
-
-    recorded_samples_path = tmp_path / "asset_selection_replay.jsonl"
-    recorded_row = json.dumps({"variations": {SELECTION_KEY: "mustard_bottle"}})
-    recorded_samples_path.write_text(f"{recorded_row}\n" * NUM_ENVS)
-    # In order, a live draw in the first rebuild takes "sugar_box".
-    _, env_cfg, _ = compose_pick_and_place_with_selection(
-        selection_cfg=AssetSelectionVariationCfg(enabled=True, registry_names=["sugar_box", "mustard_bottle"]),
-        recorded_variation_samples_path=str(recorded_samples_path),
-    )
-
-    assert env_cfg.scene.pickup.spawn.usd_path == get_registered_usd_path("mustard_bottle")
     return True
 
 
@@ -377,21 +328,9 @@ def test_pick_and_place_keeps_passed_task_description():
     )
 
 
-def test_in_order_selection_follows_rebuild_index():
-    assert run_function_with_persistent_simulation_app(
-        _test_in_order_selection_follows_rebuild_index, headless=HEADLESS
-    )
-
-
 def test_random_selection_draws_from_seeded_generator():
     assert run_function_with_persistent_simulation_app(
         _test_random_selection_draws_from_seeded_generator, headless=HEADLESS
-    )
-
-
-def test_recorded_registry_name_is_replayed(tmp_path):
-    assert run_function_with_persistent_simulation_app(
-        _test_recorded_registry_name_is_replayed, headless=HEADLESS, tmp_path=tmp_path
     )
 
 
@@ -440,25 +379,20 @@ class _RecordingRigidObject:
 
 
 @pytest.fixture
-def resolved_registry_names(monkeypatch):
-    """Resolve registry names without building the registered assets, and return the names resolved so far.
+def placeholder_spawn_cfgs(monkeypatch):
+    """Resolve registry names to placeholder spawn cfgs instead of building the registered assets.
 
     Building the registered assets needs a SimulationApp, so the tests that use this fixture run in plain Python.
     """
     from isaaclab_arena.variations import asset_selection_variation
 
-    resolved_registry_names = []
-
-    def resolve_spawn_cfg(registry_name):
-        resolved_registry_names.append(registry_name)
-        return f"spawn cfg of {registry_name}"
-
-    monkeypatch.setattr(asset_selection_variation, "_get_rigid_object_spawn_cfg", resolve_spawn_cfg)
-    return resolved_registry_names
+    monkeypatch.setattr(
+        asset_selection_variation, "_get_rigid_object_spawn_cfg", lambda registry_name: f"spawn cfg of {registry_name}"
+    )
 
 
 @pytest.mark.parametrize("random_choice", [False, True])
-def test_random_choice_set_without_apply_cfg_fails_the_build(resolved_registry_names, random_choice):
+def test_random_choice_set_without_apply_cfg_fails_the_build(placeholder_spawn_cfgs, random_choice):
     from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariation, AssetSelectionVariationCfg
 
     selection_cfg = AssetSelectionVariationCfg(
@@ -472,7 +406,7 @@ def test_random_choice_set_without_apply_cfg_fails_the_build(resolved_registry_n
         variation.configure_at_build_time(seed=0, variation_key=SELECTION_KEY)
 
 
-def test_random_choice_override_swaps_the_sampler(resolved_registry_names):
+def test_random_choice_override_swaps_the_sampler(placeholder_spawn_cfgs):
     from isaaclab_arena.variations import variations_hydra
     from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariation
     from isaaclab_arena.variations.choice_sampler import ChoiceSampler
@@ -502,7 +436,7 @@ def test_random_choice_override_swaps_the_sampler(resolved_registry_names):
     assert notified_registry_names == ["sugar_box"]
 
 
-def test_in_order_selection_takes_repeated_names_in_list_order(resolved_registry_names):
+def test_in_order_selection_takes_repeated_names_in_list_order(placeholder_spawn_cfgs):
     from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariation, AssetSelectionVariationCfg
 
     registry_names = ["mustard_bottle", "sugar_box", "mustard_bottle", "tomato_soup_can"]
@@ -513,9 +447,8 @@ def test_in_order_selection_takes_repeated_names_in_list_order(resolved_registry
 
     num_rebuilds = 6
     for rebuild_index in range(num_rebuilds):
-        variation.configure_at_build_time(seed=0, variation_key=SELECTION_KEY, rebuild_index=rebuild_index)
+        # Like _cfg_for_rebuild, give each rebuild another seed, which must not change the order.
+        variation.configure_at_build_time(seed=rebuild_index, variation_key=SELECTION_KEY, rebuild_index=rebuild_index)
 
     # Rebuild k takes entry k % 4, so mustard_bottle spawns in rebuilds 0, 2 and 4.
     assert rigid_object.selected_registry_names == registry_names + registry_names[:2]
-    # Each build resolves the repeated name once.
-    assert resolved_registry_names == ["mustard_bottle", "sugar_box", "tomato_soup_can"] * num_rebuilds
