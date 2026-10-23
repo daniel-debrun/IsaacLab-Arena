@@ -56,9 +56,8 @@ def load_env_graph_spec_dict(path: str | Path) -> dict[str, Any]:
     return _merge_env_graph_dicts(named_dicts)
 
 
-def _load_yaml_dict(path: str | Path) -> dict[str, Any]:
+def _load_yaml_dict(path: Path) -> dict[str, Any]:
     """Read a single YAML file that must parse to a dict."""
-    path = Path(path).resolve()
     if not path.is_file():
         raise FileNotFoundError(f"Env graph spec YAML not found: {path}")
     with path.open("r", encoding="utf-8") as f:
