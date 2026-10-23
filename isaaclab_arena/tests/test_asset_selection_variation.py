@@ -252,6 +252,10 @@ def _test_asset_selection_rejects_invalid_configuration(simulation_app, case_id)
         "empty_registry_names": (lambda: build_with_registry_names([]), "'pickup.asset_selection' is enabled but its"),
         "unknown_name": (lambda: build_with_registry_names(["sugar_box", "banana_split"]), "'banana_split' is not a"),
         "non_rigid_name": (lambda: build_with_registry_names(["ground_plane"]), "'ground_plane' is a base Object"),
+        "non_object_name": (
+            lambda: build_with_registry_names(["droid_differential_ik"]),
+            "'droid_differential_ik' is a DroidDifferentialIKEmbodiment, not an Object",
+        ),
         "repeated_name": (
             lambda: build_with_registry_names(["sugar_box", "sugar_box"]),
             r"'pickup\.asset_selection\.registry_names' repeats a name",
@@ -348,7 +352,15 @@ def test_recorded_registry_name_is_replayed(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "case_id", ["empty_registry_names", "unknown_name", "non_rigid_name", "repeated_name", "bounding_box_override"]
+    "case_id",
+    [
+        "empty_registry_names",
+        "unknown_name",
+        "non_rigid_name",
+        "non_object_name",
+        "repeated_name",
+        "bounding_box_override",
+    ],
 )
 def test_asset_selection_rejects_invalid_configuration(case_id):
     assert run_function_with_persistent_simulation_app(

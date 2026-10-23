@@ -97,17 +97,31 @@ class AssetSelectionVariation(BuildTimeVariationBase):
 
 def _get_rigid_object_spawn_cfg(registry_name: str) -> SpawnerCfg:
     """Return a copy of the spawn configuration of the registered rigid object ``registry_name``."""
+    # Imported here because isaaclab_arena.assets.object loads pxr, which must not load before SimulationApp starts,
+    # and run_execution imports this module before then.
+    from isaaclab_arena.assets.object import Object
+
     asset_registry = AssetRegistry()
     assert asset_registry.is_registered(
         registry_name
     ), f"'{registry_name}' is not a registered asset. Use the registry name of a rigid object."
-    registered_asset = asset_registry.get_asset_by_name(registry_name)()
-    assert hasattr(registered_asset, "object_type"), (
-        f"Asset '{registry_name}' is a {type(registered_asset).__name__}, not an Object. Use the registry name of a"
-        " rigid object."
-    )
-    assert registered_asset.object_type == ObjectType.RIGID, (
-        f"Asset '{registry_name}' is a {registered_asset.object_type.value} Object, not a rigid one. Use the"
-        " registry name of a rigid object."
-    )
+    asset_class = asset_registry.get_asset_by_name(registry_name)
+    assert issubclass(
+        asset_class, Object
+    ), f"Asset '{registry_name}' is a {asset_class.__name__}, not an Object. Use the registry name of a rigid object."
+    # Check the declared type before building the asset, which for a wrong name can open or download its USD.
+    declared_object_type = getattr(asset_class, "object_type", None)
+    if declared_object_type is not None:
+        _assert_rigid_object_type(registry_name, declared_object_type)
+    registered_asset = asset_class()
+    # Classes such as ProceduralCube set their object type only in __init__.
+    _assert_rigid_object_type(registry_name, registered_asset.object_type)
     return deepcopy(registered_asset.object_cfg.spawn)
+
+
+def _assert_rigid_object_type(registry_name: str, object_type: ObjectType) -> None:
+    """Check that the registered asset ``registry_name`` of type ``object_type`` is a rigid object."""
+    assert object_type == ObjectType.RIGID, (
+        f"Asset '{registry_name}' is a {object_type.value} Object, not a rigid one. Use the registry name of a rigid"
+        " object."
+    )
