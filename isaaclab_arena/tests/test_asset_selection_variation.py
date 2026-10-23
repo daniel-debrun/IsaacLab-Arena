@@ -212,7 +212,7 @@ def placeholder_spawn_cfgs(monkeypatch):
     )
 
 
-def test_random_choice_override_swaps_the_sampler(placeholder_spawn_cfgs):
+def test_random_choice_override_draws_seeded_names_and_swaps_the_sampler(placeholder_spawn_cfgs):
     import torch
 
     from isaaclab_arena.variations import variations_hydra
