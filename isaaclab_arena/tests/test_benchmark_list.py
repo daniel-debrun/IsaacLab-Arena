@@ -3,6 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import subprocess
 import yaml
 from pathlib import Path
@@ -47,7 +48,7 @@ def test_rejects_duplicate_names(tmp_path):
 @pytest.mark.parametrize("name", ["Has Space", "UPPER", "a/b", "-lead", ""])
 def test_rejects_unsafe_names(tmp_path, name):
     path = _write_list(tmp_path, {"benchmarks": [_entry(name)]})
-    with pytest.raises(AssertionError):
+    with pytest.raises(AssertionError, match="must match"):
         load_benchmark_list(path)
 
 
@@ -55,6 +56,18 @@ def test_rejects_missing_experiment_file(tmp_path):
     path = _write_list(tmp_path, {"benchmarks": [_entry("gone", "does/not/exist.yaml")]})
     with pytest.raises(AssertionError, match="gone"):
         load_benchmark_list(path)
+
+
+def test_rejects_experiment_file_outside_repo(tmp_path):
+    outside = tmp_path / "outside.yaml"
+    outside.write_text("x: 1\n")
+    repo_root = Path(TestConstants.repo_root).resolve()
+    traversing = Path(os.path.relpath(outside, repo_root)).as_posix()
+    assert traversing.startswith("..")
+    for experiment_cfg in (traversing, str(outside)):
+        path = _write_list(tmp_path, {"benchmarks": [_entry("escape", experiment_cfg)]})
+        with pytest.raises(AssertionError, match="escape"):
+            load_benchmark_list(path)
 
 
 def test_rejects_empty_list(tmp_path):
@@ -99,3 +112,5 @@ def test_every_entry_renders_a_dry_run(entry):
         timeout=900,
     )
     assert result.returncode == 0, f"dry run of '{entry.name}' failed:\n{result.stdout}\n{result.stderr}"
+    assert "[dry-run] Rendered workflow YAML:" in result.stdout, f"no rendered workflow for '{entry.name}'"
+    assert "\nworkflow:\n" in result.stdout, f"rendered output for '{entry.name}' has no workflow section"

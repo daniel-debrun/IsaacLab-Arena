@@ -72,9 +72,16 @@ def _parse_entry(raw_entry: object, path: Path) -> BenchmarkEntry:
 
     experiment_cfg = raw_entry.get("experiment_cfg")
     assert isinstance(experiment_cfg, str), f"{path}: benchmark '{name}' needs a string 'experiment_cfg'"
+    assert not Path(
+        experiment_cfg
+    ).is_absolute(), f"{path}: benchmark '{name}' experiment_cfg '{experiment_cfg}' must be relative to the repo root"
+    experiment_cfg_resolved = (REPO_ROOT / experiment_cfg).resolve()
+    assert experiment_cfg_resolved.is_relative_to(
+        REPO_ROOT
+    ), f"{path}: benchmark '{name}' experiment_cfg '{experiment_cfg}' is outside the repo root {REPO_ROOT}"
     assert (
-        REPO_ROOT / experiment_cfg
-    ).is_file(), f"{path}: benchmark '{name}' experiment_cfg '{experiment_cfg}' does not exist relative to {REPO_ROOT}"
+        experiment_cfg_resolved.is_file()
+    ), f"{path}: benchmark '{name}' experiment_cfg '{experiment_cfg}' does not exist relative to {REPO_ROOT}"
 
     overrides = raw_entry.get("overrides", [])
     assert isinstance(overrides, list) and all(
