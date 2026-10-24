@@ -295,7 +295,7 @@ class DroidDifferentialIKEmbodiment(DroidEmbodimentBase):
 class DroidAbsoluteDifferentialIKEmbodiment(DroidDifferentialIKEmbodiment):
     """DROID differential IK accepting unscaled root-relative XYZ/XYZW pose targets."""
 
-    name = "droid_abs_ik"
+    registry_name = "droid_abs_ik"
 
     def get_action_cfg(self):
         """Return absolute pose actions after applying the selected physics backend's IK settings."""
