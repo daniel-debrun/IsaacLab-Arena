@@ -188,9 +188,6 @@ def resolve_env_spec(args_cli: argparse.Namespace) -> Path | None:
         relation_catalog=relation_catalog,
         task_catalog=task_catalog,
     )
-    asset_report = agent.simready_asset_report(env_graph_spec)
-    if asset_report:
-        print(f"\n[runner] SimReady assets:\n{json.dumps(asset_report, indent=2)}", flush=True)
     # agent.traces holds one line per failure, e.g.
     #   "embodiment.registry_name: Unknown asset registry_name 'not_a_real_asset'"
     #   "Task 'PickAndPlaceTask' is missing required param 'pick_up_object'"

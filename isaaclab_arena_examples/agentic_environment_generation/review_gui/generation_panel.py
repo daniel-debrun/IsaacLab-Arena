@@ -212,7 +212,6 @@ def _finish(severity: str, message: str) -> tuple[bool, str]:
 
 def run_generation_pipeline(prompt: str) -> tuple[bool, str]:
     """Call the LLM and load the returned environment graph spec YAML into the editor."""
-    st.session_state.pop("simready_asset_report", None)
     prompt = prompt.strip()
     if not prompt:
         return False, "Enter a prompt describing the environment."
@@ -235,8 +234,6 @@ def run_generation_pipeline(prompt: str) -> tuple[bool, str]:
         )
     except Exception:
         return False, traceback.format_exc()
-
-    st.session_state["simready_asset_report"] = agent.simready_asset_report(spec)
 
     try:
         yaml_text = yaml.safe_dump(
@@ -369,8 +366,3 @@ def render_generation_panel() -> None:
             st.rerun()
         else:
             st.error(f"Generation failed\n\n```\n{message}\n```", icon="🛑")
-
-    asset_report = st.session_state.get("simready_asset_report", [])
-    if asset_report:
-        with st.expander("Returned SimReady assets", expanded=True):
-            st.dataframe(asset_report, hide_index=True, width="stretch")

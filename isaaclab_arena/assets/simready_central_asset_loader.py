@@ -9,13 +9,23 @@ from __future__ import annotations
 import hashlib
 import re
 from pathlib import Path, PurePosixPath
+from urllib.parse import urlsplit
+
+
+def is_central_asset_url(url: str) -> bool:
+    """Identify Hugging Face dataset URLs handled by the Central asset loader."""
+    parsed = urlsplit(url)
+    return (
+        parsed.scheme in ("https", "hf") and parsed.netloc == "huggingface.co" and parsed.path.startswith("/datasets/")
+    )
 
 
 def _parse_central_asset_url(url: str) -> tuple[str, str, str, str]:
     """Parse a revision-pinned Central dataset URL and its asset package folder."""
-    match = re.fullmatch(
-        r"(?:hf|https)://huggingface\.co/datasets/([^/]+/[^/]+)/(?:resolve|blob)/([0-9a-f]{40})/(.+)", url
-    )
+    assert is_central_asset_url(url), "expected a Hugging Face dataset URL"
+    parsed = urlsplit(url)
+    assert not parsed.query and not parsed.fragment, "expected a plain asset URL"
+    match = re.fullmatch(r"/datasets/([^/]+/[^/]+)/(?:resolve|blob)/([0-9a-f]{40})/(.+)", parsed.path)
     assert match, "expected a pinned Hugging Face dataset URL"
     repo_id, revision, filename = match.groups()
     path = PurePosixPath(filename)

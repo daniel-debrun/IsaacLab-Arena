@@ -67,7 +67,8 @@ def _create_asset_library_for_source(source: SimReadySourceKind, *, s3_url: str,
 
     library = AssetLibrary()
     if source in (SimReadySourceKind.ISAAC_SIM_GA, SimReadySourceKind.S3):
-        asyncio.run(library.add_s3_source(s3_url or ISAAC_SIMREADY_GA_S3_URL))
+        url = ISAAC_SIMREADY_GA_S3_URL if source == SimReadySourceKind.ISAAC_SIM_GA else s3_url
+        asyncio.run(library.add_s3_source(url or ISAAC_SIMREADY_GA_S3_URL))
     else:
         library.add_service_source(service_url or DEFAULT_SIMREADY_SERVICE_URL)
     return library

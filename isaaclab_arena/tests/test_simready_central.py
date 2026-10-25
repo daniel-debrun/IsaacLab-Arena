@@ -15,7 +15,7 @@ from isaaclab_arena.agentic_environment_generation.simready_search_interface imp
     SimReadySearchConfig,
     SimReadySourceKind,
 )
-from isaaclab_arena.assets.simready_central_asset_loader import _parse_central_asset_url
+from isaaclab_arena.assets.simready_central_asset_loader import _parse_central_asset_url, is_central_asset_url
 
 MODULE = "isaaclab_arena.agentic_environment_generation.simready_central_assets"
 LOADER = "isaaclab_arena.assets.simready_central_asset_loader"
@@ -141,3 +141,24 @@ def test_central_download_lists_only_the_selected_package():
     )
     assert {call.kwargs["filename"] for call in download.call_args_list} == set(filenames)
     assert all(call.kwargs["revision"] == REVISION for call in download.call_args_list)
+
+
+@pytest.mark.parametrize("scheme", ["https", "hf"])
+def test_central_url_recognition_and_parsing_share_supported_schemes(scheme):
+    url = URL.replace("hf://", f"{scheme}://")
+    assert is_central_asset_url(url)
+    assert _parse_central_asset_url(url) == _parse_central_asset_url(URL)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "/cache/pallet.usda",
+        "s3://bucket/pallet.usd",
+        URL.replace("huggingface.co", "huggingface.co.example.com"),
+        URL.replace("/datasets/", "/models/"),
+        URL.replace("hf://", "http://"),
+    ],
+)
+def test_central_url_recognition_leaves_other_asset_paths_unchanged(url):
+    assert not is_central_asset_url(url)

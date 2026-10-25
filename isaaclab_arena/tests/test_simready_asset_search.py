@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import logging
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -311,3 +311,15 @@ def test_backend_keeps_other_phrase_results_when_one_phrase_fails(source):
     assert search.call_count == 2
     assert result.candidates == [candidate]
     assert result.unmatched_phrases == ["missing"]
+
+
+@pytest.mark.parametrize("source", [SimReadySourceKind.ISAAC_SIM_GA, SimReadySourceKind.S3])
+def test_ga_ignores_custom_s3_url(source):
+    from isaaclab_arena.agentic_environment_generation.simready_ga_assets import _create_asset_library_for_source
+    from isaaclab_arena.assets.simready_constants import ISAAC_SIMREADY_GA_S3_URL
+
+    with patch("simready.search.AssetLibrary") as library:
+        library.return_value.add_s3_source = AsyncMock()
+        _create_asset_library_for_source(source, s3_url="s3://custom/assets", service_url="")
+    expected = ISAAC_SIMREADY_GA_S3_URL if source == SimReadySourceKind.ISAAC_SIM_GA else "s3://custom/assets"
+    library.return_value.add_s3_source.assert_awaited_once_with(expected)
