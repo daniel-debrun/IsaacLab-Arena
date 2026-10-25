@@ -171,9 +171,9 @@ class Scene:
         export_scene_to_usd(self, output_path, root_prim_path)
 
     def validate_simulation_cfg(self, sim_cfg: SimulationCfg) -> None:
-        """Validate the resolved simulation configuration against every asset."""
+        """Validate the resolved simulation configuration against every asset the scene spawns."""
         for asset in self.assets.values():
-            asset.validate_simulation_cfg(sim_cfg)
+            asset.get_asset_to_validate().validate_simulation_cfg(sim_cfg)
 
 
 def export_scene_to_usd(scene: Scene, output_path: pathlib.Path, root_prim_path: str = "/World") -> None:
