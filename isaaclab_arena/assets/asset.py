@@ -58,8 +58,8 @@ class Asset:
         """Return the Isaac Lab scene key for the asset."""
         return self.name
 
-    def get_asset_to_validate(self) -> Asset:
-        """Return the asset whose validate_simulation_cfg() checks this asset in a scene."""
+    def get_spawned_asset(self) -> Asset:
+        """Return the asset this scene entry spawns: itself, or the selected asset after an asset selection."""
         return self
 
     def validate_simulation_cfg(self, sim_cfg: SimulationCfg) -> None:

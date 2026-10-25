@@ -104,7 +104,7 @@ class AssetSelectionVariation(BuildTimeVariationBase):
             selected_registry_name = self.sampler.sample(1, registry_names, start_index=self._rebuild_index)[0]
         else:
             selected_registry_name = self.sampler.sample(1, registry_names)[0]
-        self._rigid_object.set_spawned_asset_class(
+        self._rigid_object.set_spawned_asset(
             selected_registry_name, rigid_objects_by_registry_name[selected_registry_name]
         )
 
