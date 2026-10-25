@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import torch
 from typing import TYPE_CHECKING
 
@@ -49,8 +50,7 @@ class PlacementCandidateGenerator:
         for env_id, bounds in enumerate(env_bboxes):
             for candidate_id in range(candidates_per_env):
                 if generator is not None:
-                    assert self.params.placement_seed is not None
-                    generator.manual_seed(self.params.placement_seed + env_id * candidates_per_env + candidate_id)
+                    self._seed_candidate(generator, env_id, candidate_id)
                 candidates.append(
                     PlacementCandidate(
                         env_id=env_id,
@@ -66,11 +66,15 @@ class PlacementCandidateGenerator:
         for candidate in batch.candidates:
             if generator is not None:
                 # Reuse each candidate's seed without changing position or yaw sampling.
-                generator.manual_seed(
-                    self.params.placement_seed + candidate.env_id * candidates_per_env + candidate.candidate_id
-                )
+                self._seed_candidate(generator, candidate.env_id, candidate.candidate_id)
             self.initialize_clutter_positions(candidate.positions, candidate.bboxes, collision_bboxes, generator)
         return batch
+
+    def _seed_candidate(self, generator: torch.Generator, env_id: int, candidate_id: int) -> None:
+        """Seed the generator for one candidate, independently of every other placement seed and candidate."""
+        assert self.params.placement_seed is not None
+        key = f"{self.params.placement_seed}:{env_id}:{candidate_id}".encode()
+        generator.manual_seed(int.from_bytes(hashlib.sha256(key).digest()[:8], "little"))
 
     def generate_positions(
         self,

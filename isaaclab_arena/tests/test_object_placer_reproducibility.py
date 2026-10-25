@@ -142,6 +142,21 @@ def test_object_placer_different_seeds_produce_different_results():
     assert any_different, "Different seeds should produce different results"
 
 
+def test_object_placer_consecutive_seeds_produce_different_results():
+    """Test that consecutive seeds sample independent candidates rather than shifted copies."""
+
+    solver_params = RelationSolverParams(max_iters=10)
+    results = []
+    for seed in (42, 43):
+        desk, box1, box2 = _create_test_objects()
+        (result,) = ObjectPlacer(params=ObjectPlacerParams(placement_seed=seed, solver_params=solver_params)).place(
+            objects=[desk, box1, box2]
+        )
+        results.append(result.positions[box1])
+
+    assert results[0] != results[1], "Consecutive seeds should produce different results"
+
+
 def test_object_placer_multi_env_returns_multi_env_result():
     """place() with num_envs>1 returns one PlacementResult per env."""
     num_envs = 4
