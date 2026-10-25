@@ -7,13 +7,11 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 from dataclasses import field
 from typing import TYPE_CHECKING
 
 from isaaclab.utils.configclass import configclass
 
-from isaaclab_arena.assets.asset import Asset
 from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.assets.registries import AssetRegistry
 from isaaclab_arena.variations.choice_sampler import ChoiceSampler, ChoiceSamplerCfg
@@ -22,8 +20,6 @@ from isaaclab_arena.variations.sequential_sampler import SequentialSampler, Sequ
 from isaaclab_arena.variations.variation_base import BuildTimeVariationBase, VariationBaseCfg
 
 if TYPE_CHECKING:
-    from isaaclab.sim.spawners.spawner_cfg import SpawnerCfg
-
     from isaaclab_arena.assets.object import Object
 
 
@@ -97,10 +93,10 @@ class AssetSelectionVariation(BuildTimeVariationBase):
             f"'{self._rigid_object.name}' sets a bounding_box override, which placement would use for every"
             " selected asset. Set bounding_box to None so placement reads the bounds of the selected asset."
         )
-        # Resolve every name, not only the selected one, so that a wrong name fails in the first build. A repeated
-        # name is resolved once.
-        spawn_cfgs_by_registry_name = {
-            registry_name: _get_rigid_object_spawn_cfg(registry_name) for registry_name in dict.fromkeys(registry_names)
+        # Build every name, not only the selected one, so that a wrong name fails in the first build. A repeated
+        # name is built once.
+        rigid_objects_by_registry_name = {
+            registry_name: _build_rigid_object(registry_name) for registry_name in dict.fromkeys(registry_names)
         }
         # The sampler reports the name to the variation recorder and returns the recorded name during replay.
         if isinstance(self.sampler, SequentialSampler):
@@ -109,12 +105,12 @@ class AssetSelectionVariation(BuildTimeVariationBase):
         else:
             selected_registry_name = self.sampler.sample(1, registry_names)[0]
         self._rigid_object.set_spawned_asset_class(
-            selected_registry_name, spawn_cfgs_by_registry_name[selected_registry_name]
+            selected_registry_name, rigid_objects_by_registry_name[selected_registry_name]
         )
 
 
-def _get_rigid_object_spawn_cfg(registry_name: str) -> SpawnerCfg:
-    """Return a copy of the spawn configuration of the registered rigid object ``registry_name``."""
+def _build_rigid_object(registry_name: str) -> Object:
+    """Build the registered rigid object ``registry_name``."""
     asset_registry = AssetRegistry()
     assert asset_registry.is_registered(
         registry_name
@@ -131,13 +127,7 @@ def _get_rigid_object_spawn_cfg(registry_name: str) -> SpawnerCfg:
     _assert_rigid_object_type(
         registry_name, type(candidate_asset).__name__, getattr(candidate_asset, "object_type", None)
     )
-    # TODO(cvolk, 2026.10.25): Run the selected asset's own validate_simulation_cfg() instead of rejecting it, so that
-    # assets with a backend check, such as the Newton-only gears, can be selected.
-    assert type(candidate_asset).validate_simulation_cfg is Asset.validate_simulation_cfg, (
-        f"Asset '{registry_name}' ({type(candidate_asset).__name__}) has its own validate_simulation_cfg(), which"
-        " asset selection does not run for the selected asset. Use the registry name of an asset without one."
-    )
-    return deepcopy(candidate_asset.object_cfg.spawn)
+    return candidate_asset
 
 
 def _assert_rigid_object_type(registry_name: str, asset_class_name: str, object_type: ObjectType | None) -> None:

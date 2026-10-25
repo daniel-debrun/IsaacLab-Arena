@@ -58,5 +58,9 @@ class Asset:
         """Return the Isaac Lab scene key for the asset."""
         return self.name
 
+    def get_asset_to_validate(self) -> Asset:
+        """Return the asset whose validate_simulation_cfg() checks this asset in a scene."""
+        return self
+
     def validate_simulation_cfg(self, sim_cfg: SimulationCfg) -> None:
         """Validate that a resolved simulation configuration supports this asset."""

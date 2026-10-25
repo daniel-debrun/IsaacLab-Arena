@@ -148,6 +148,7 @@ Rigid bodies and articulations are not checked automatically; pairing them with 
    self.arena_env.scene.validate_simulation_cfg(env_cfg.sim)
 
 Per-asset checks, such as ``DeformableObject.validate_simulation_cfg``, verify the asset is compatible with the selected backend.
+After an asset selection, the scene runs the check of the selected asset instead of the declared one.
 
 Pipeline
 --------

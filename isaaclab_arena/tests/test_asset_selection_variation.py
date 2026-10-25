@@ -158,6 +158,37 @@ def _test_rigid_objects_have_disabled_asset_selection(simulation_app):
     return True
 
 
+def _test_scene_validates_the_selected_asset(simulation_app):
+    from isaaclab.sim import SimulationCfg
+    from isaaclab_newton.physics import NewtonCfg
+    from isaaclab_physx.physics import PhysxCfg
+
+    from isaaclab_arena.assets.object_library import CrackerBox, GearInsertionMediumGear
+    from isaaclab_arena.scene.scene import Scene
+    from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariationCfg
+
+    def make_scene_with_selection(declared_asset_class, selected_registry_name):
+        pickup = declared_asset_class(name="pickup")
+        selection = pickup.get_variation("asset_selection")
+        selection.apply_cfg(AssetSelectionVariationCfg(enabled=True, registry_names=[selected_registry_name]))
+        selection.configure_at_build_time(seed=0, variation_key=SELECTION_KEY)
+        return Scene(assets=[pickup])
+
+    # The selected Newton-only gear brings its own check.
+    scene = make_scene_with_selection(CrackerBox, "gear_insertion_medium_gear")
+    scene.validate_simulation_cfg(SimulationCfg(physics=NewtonCfg()))
+    with pytest.raises(AssertionError, match="'gear_insertion_medium_gear' requires the Newton physics backend"):
+        scene.validate_simulation_cfg(SimulationCfg(physics=PhysxCfg()))
+    # The declared gear is not spawned, so its check does not run.
+    scene = make_scene_with_selection(GearInsertionMediumGear, "cracker_box")
+    scene.validate_simulation_cfg(SimulationCfg(physics=PhysxCfg()))
+    return True
+
+
+def test_scene_validates_the_selected_asset():
+    assert run_function_with_persistent_simulation_app(_test_scene_validates_the_selected_asset, headless=HEADLESS)
+
+
 def test_selected_asset_is_spawned_placed_recorded_and_described():
     assert run_function_with_persistent_simulation_app(
         _test_selected_asset_is_spawned_placed_recorded_and_described, headless=HEADLESS
@@ -170,7 +201,6 @@ def test_selected_asset_is_spawned_placed_recorded_and_described():
         (["sugar_box", "banana_split"], "'banana_split' is not a registered asset"),
         (["ground_plane"], r"'ground_plane' .* is not a rigid object"),
         (["droid_differential_ik"], r"'droid_differential_ik' .* is not a rigid object"),
-        (["gear_insertion_medium_gear"], r"'gear_insertion_medium_gear' .* has its own validate_simulation_cfg"),
     ],
 )
 def test_asset_selection_rejects_invalid_configuration(registry_names, message_pattern):
@@ -196,24 +226,24 @@ class _RecordingRigidObject:
         self.bounding_box = None
         self.selected_registry_names: list[str] = []
 
-    def set_spawned_asset_class(self, registry_name, spawn_cfg):
+    def set_spawned_asset_class(self, registry_name, selected_asset):
         self.selected_registry_names.append(registry_name)
 
 
 @pytest.fixture
-def placeholder_spawn_cfgs(monkeypatch):
-    """Resolve registry names to placeholder spawn cfgs instead of building the registered assets.
+def placeholder_rigid_objects(monkeypatch):
+    """Resolve registry names to placeholders instead of building the registered assets.
 
     Building the registered assets needs a SimulationApp, so the tests that use this fixture run in plain Python.
     """
     from isaaclab_arena.variations import asset_selection_variation
 
     monkeypatch.setattr(
-        asset_selection_variation, "_get_rigid_object_spawn_cfg", lambda registry_name: f"spawn cfg of {registry_name}"
+        asset_selection_variation, "_build_rigid_object", lambda registry_name: f"rigid object {registry_name}"
     )
 
 
-def test_random_choice_override_draws_seeded_names_and_swaps_the_sampler(placeholder_spawn_cfgs):
+def test_random_choice_override_draws_seeded_names_and_swaps_the_sampler(placeholder_rigid_objects):
     import torch
 
     from isaaclab_arena.variations import variations_hydra
@@ -253,7 +283,7 @@ def test_random_choice_override_draws_seeded_names_and_swaps_the_sampler(placeho
         select_registry_name(seed=0)
 
 
-def test_in_order_selection_takes_repeated_names_in_list_order(placeholder_spawn_cfgs):
+def test_in_order_selection_takes_repeated_names_in_list_order(placeholder_rigid_objects):
     from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariation, AssetSelectionVariationCfg
 
     registry_names = ["mustard_bottle", "sugar_box", "mustard_bottle", "tomato_soup_can"]
@@ -271,7 +301,7 @@ def test_in_order_selection_takes_repeated_names_in_list_order(placeholder_spawn
     assert rigid_object.selected_registry_names == registry_names + registry_names[:2]
 
 
-def test_asset_selection_rejects_empty_registry_names_and_bounding_box_override(placeholder_spawn_cfgs):
+def test_asset_selection_rejects_empty_registry_names_and_bounding_box_override(placeholder_rigid_objects):
     from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
     from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariation, AssetSelectionVariationCfg
 
@@ -292,7 +322,7 @@ def test_asset_selection_rejects_empty_registry_names_and_bounding_box_override(
         selection_with_bounding_box.configure_at_build_time(seed=0, variation_key=SELECTION_KEY)
 
 
-def test_placement_replay_needs_recorded_asset_selection(placeholder_spawn_cfgs, tmp_path):
+def test_placement_replay_needs_recorded_asset_selection(placeholder_rigid_objects, tmp_path):
     from isaaclab_arena.variations.asset_selection_variation import AssetSelectionVariation, AssetSelectionVariationCfg
     from isaaclab_arena.variations.recorded_variation_replay import configure_recorded_variation_replay
 
