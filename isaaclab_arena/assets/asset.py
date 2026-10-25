@@ -59,7 +59,7 @@ class Asset:
         return self.name
 
     def get_spawned_asset(self) -> Asset:
-        """Return the asset this scene entry spawns: itself, or the selected asset after an asset selection."""
+        """Return the asset this asset spawns in a scene."""
         return self
 
     def validate_simulation_cfg(self, sim_cfg: SimulationCfg) -> None:
