@@ -114,6 +114,45 @@ class FaceTo(RelationBase):
 
 @agent_ready
 @register_object_relation
+class AlignWith(Relation):
+    """Align bounding-box centres along one world axis, leaving other axes unconstrained."""
+
+    name = "align_with"
+
+    def __init__(
+        self,
+        parent: PlaceableAsset,
+        axis: str,
+        offset_m: float = 0.0,
+        tolerance_m: float = 0.02,
+        relation_loss_weight: float = 1.0,
+    ):
+        """Specify the subject centre relative to the reference centre.
+
+        Args:
+            parent: Reference asset participating in placement.
+            axis: World axis to align, one of ``x``, ``y``, or ``z``.
+            offset_m: Signed subject-minus-reference centre displacement along that axis.
+            tolerance_m: Zero-penalty alignment band and maximum error accepted by placement validation.
+            relation_loss_weight: Weight of the alignment objective during solving.
+        """
+        super().__init__(parent, relation_loss_weight)
+        assert axis in ("x", "y", "z"), f"Expected world axis x, y, or z, got {axis!r}"
+        assert math.isfinite(offset_m), "offset_m must be finite"
+        assert math.isfinite(tolerance_m) and tolerance_m >= 0, "tolerance_m must be finite and non-negative"
+        assert math.isfinite(relation_loss_weight) and relation_loss_weight > 0, "Alignment weight must be positive"
+        self.axis = axis
+        self.offset_m = offset_m
+        self.tolerance_m = tolerance_m
+
+    def validate_placement_configuration(self, subject: PlaceableAsset, objects: set[PlaceableAsset]) -> None:
+        """Require a distinct reference that participates in placement."""
+        assert self.parent is not subject, "AlignWith requires a different reference asset"
+        assert self.parent in objects, f"AlignWith reference '{self.parent.name}' must participate in placement"
+
+
+@agent_ready
+@register_object_relation
 class NextTo(Relation):
     """Represents a 'next to' relationship between objects.
 

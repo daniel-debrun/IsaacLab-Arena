@@ -180,6 +180,54 @@ Most environments can be described with a small set of relations:
    ``side`` accepts ``Side.POSITIVE_X``, ``Side.NEGATIVE_X``,
    ``Side.POSITIVE_Y``, or ``Side.NEGATIVE_Y``.
 
+``AlignWith(parent, axis, offset_m=0.0, tolerance_m=0.02)``
+   Aligns the centres of two placement bounding boxes along one world axis
+   (``"x"``, ``"y"``, or ``"z"``). The subject's centre is placed within
+   ``tolerance_m`` of the reference centre plus ``offset_m`` on that axis;
+   the other axes and both objects' orientations remain unconstrained.
+   The offset is signed, in metres.
+
+   The solver applies zero alignment penalty throughout this tolerance band
+   and a linear penalty outside it. Other relations can still favour particular
+   positions inside the band, so this does not guarantee uniform sampling.
+
+   The default ``ON_TREE`` initializer samples the reference first where possible
+   and intersects the subject's ``On`` footprint and position boxes with the
+   alignment band. It samples uniformly within the resulting intervals, using
+   the supplied bounding-box centres to convert centre offsets to origin bounds.
+   If alignment dependencies form a cycle, an unsampled reference is skipped
+   for initialization and left to the solver. An infeasible axis keeps its
+   original ``On`` range, as with position boxes. Objects without ``On`` retain
+   their fallback initialization. Yaw changes sampled after initialization can
+   change the bounds; the solver and placement validators still determine which
+   final layouts are accepted.
+
+   Use this with ``On`` to align objects on different shelves, or with
+   ``NextTo`` to enforce lateral alignment instead of its soft
+   ``cross_position_ratio`` preference. Bounding-box centres, including the
+   candidate's orientation and asset scale, are used rather than asset origins.
+   This relation uses world axes, not the reference object's local axes.
+
+   Both assets can move during solving; this relation does not fix the reference
+   in place. Use ``IsAnchor`` to fix it, or ``PositionLimitsBox`` to bound its
+   placement region.
+
+   Placement validation rejects an alignment error larger than ``tolerance_m``.
+   The ``align_with`` check is enabled and required by default. If specifying
+   ``enabled_checks`` or ``required_checks`` explicitly, include ``align_with``.
+   Set ``allow_best_loss_fallbacks: false`` to prevent pooled placement from
+   returning a rejected layout as a fallback. Alignment alone does not establish
+   reachability or collision-free manipulation.
+
+   .. code-block:: yaml
+
+      - kind: align_with
+        subject: droid
+        reference: wooden_bowl
+        params:
+          axis: x
+          tolerance_m: 0.04
+
 ``NotNextTo(parent)``
    Defines a side-specific keep-out region next to the parent. The region
    extends outward from the selected side and spans the parent's footprint

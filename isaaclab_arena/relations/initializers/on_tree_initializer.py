@@ -17,7 +17,7 @@ from isaaclab_arena.relations.initializers.sampling import (
     get_world_bbox_at_initial_pose,
     sample_position_in_bbox,
 )
-from isaaclab_arena.relations.relations import On, PositionLimitsBox, RelationBase, get_relation
+from isaaclab_arena.relations.relations import AlignWith, On, PositionLimitsBox, RelationBase, get_relation
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 
 if TYPE_CHECKING:
@@ -27,7 +27,8 @@ if TYPE_CHECKING:
 class OnTreeInitializer(PlacementInitializerBase):
     """Generates initial positions for objects by walking down the ``On`` tree in the relation graph.
 
-    Each object is sampled inside the footprint its own parent was just sampled at.
+    Each object is sampled inside its parent's footprint, narrowed by position boxes and
+    available AlignWith reference bands. Alignment cycles are left for the solver.
     """
 
     def generate_initial_positions(
@@ -63,7 +64,9 @@ class OnTreeInitializer(PlacementInitializerBase):
                         obj, parent_world_bbox, asset_to_bbox
                     )
                     # The positions obj's other relations allow.
-                    other_bounds = _get_bounds_from_other_supported_relations(obj)
+                    other_bounds = _get_bounds_from_other_supported_relations(
+                        obj, asset_to_bbox[obj], sampled_world_bboxes
+                    )
                     # Both at once, which keeps obj near where the solve will pull it.
                     sampling_bbox = _maybe_narrow_bounds(child_bbox_given_parent_position, other_bounds)
                     # One position drawn from what is left.
@@ -81,18 +84,27 @@ def _order_parents_before_children(
     objects: list[PlaceableAsset],
     anchor_objects: set[PlaceableAsset],
 ) -> list[PlaceableAsset]:
-    """Return objects ordered so every ``On`` parent precedes its children."""
+    """Order On parents first and AlignWith references first when dependencies permit."""
     # Anchors are at fixed poses and unparented objects fall back to the anchor center, so
     # neither needs a parent sampled first. These seed the ordering.
     ordered: list[PlaceableAsset] = []
     ordered_set: set[PlaceableAsset] = set()
     remaining: list[PlaceableAsset] = []
+    object_set = set(objects)
+    alignment_references: dict[PlaceableAsset, list[PlaceableAsset]] = {}
     for obj in objects:
         if obj in anchor_objects or get_relation(obj, On) is None:
             ordered.append(obj)
             ordered_set.add(obj)
         else:
             remaining.append(obj)
+            alignment_references[obj] = []
+            for relation in obj.get_relations():
+                if isinstance(relation, AlignWith):
+                    assert (
+                        relation.parent in object_set
+                    ), f"AlignWith reference '{relation.parent.name}' must participate in placement."
+                    alignment_references[obj].append(relation.parent)
 
     while remaining:
         # An object is ready once its parent has been ordered. Each round therefore descends one
@@ -104,6 +116,13 @@ def _order_parents_before_children(
             "On relations must form a forest rooted at anchors, but no parent could be resolved for "
             f"{[obj.name for obj in remaining]}. Check for a cycle or a parent outside the placement set."
         )
+        references_ready = [
+            obj for obj in ready if all(reference in ordered_set for reference in alignment_references[obj])
+        ]
+        # Alignment can form cycles, including an On parent aligned to its child. Break
+        # one such dependency without breaking On ordering; unsampled references are
+        # omitted from that object's initial bounds and remain solver constraints.
+        ready = references_ready or ready[:1]
         ordered += ready
         ordered_set.update(ready)
         remaining = [obj for obj in remaining if obj not in ordered_set]
@@ -138,21 +157,64 @@ def _bounds_from_position_limits_box(relation: PositionLimitsBox) -> AxisAligned
     )
 
 
-# Relation types that are currently supported by narrowing.
+# Relations whose narrowing bounds do not depend on sampled reference positions.
 # TODO(alexmillane, 2026.09.27): Expand this list of relations used for narrowing as required.
 _BOUNDS_FACTORY_BY_RELATION_TYPE: dict[type[RelationBase], Callable[[RelationBase], AxisAlignedBoundingBox]] = {
     PositionLimitsBox: _bounds_from_position_limits_box,
 }
 
 
-def _get_bounds_from_other_supported_relations(obj: PlaceableAsset) -> AxisAlignedBoundingBox:
+def _bounds_from_align_with(
+    relation: AlignWith,
+    child_bbox: AxisAlignedBoundingBox,
+    reference_world_bbox: AxisAlignedBoundingBox,
+) -> AxisAlignedBoundingBox:
+    """Return origin bounds for alignment to a reference's sampled bounding-box centre.
+
+    Args:
+        relation: Alignment axis, signed centre offset, and tolerance band.
+        child_bbox: Subject bounds relative to its origin, expressed along world axes.
+        reference_world_bbox: Reference bounds at its sampled world position.
+
+    Returns:
+        Bounds on the subject origin, unbounded on the other axes.
+    """
+    axis_index = "xyz".index(relation.axis)
+    target_origin_W = (
+        reference_world_bbox.center[0, axis_index] - child_bbox.center[0, axis_index] + relation.offset_m
+    ).item()
+    lower = [None, None, None]
+    upper = [None, None, None]
+    lower[axis_index] = target_origin_W - relation.tolerance_m
+    upper[axis_index] = target_origin_W + relation.tolerance_m
+    return _bounding_box_from_partial_limits(tuple(lower), tuple(upper))
+
+
+def _get_bounds_from_other_supported_relations(
+    obj: PlaceableAsset,
+    child_bbox: AxisAlignedBoundingBox,
+    sampled_world_bboxes: dict[PlaceableAsset, AxisAlignedBoundingBox],
+) -> AxisAlignedBoundingBox:
     """Return the box obj's supported non-``On`` relations confine its position to.
 
     Every supported relation contributes a box of allowed positions and the result is their
-    intersection. An object with no such relation gets an unbounded box, which narrows nothing.
+    intersection. Unsampled alignment references are skipped to break dependency cycles.
+
+    Args:
+        obj: Object whose starting position is being sampled.
+        child_bbox: Subject bounds relative to its origin, expressed along world axes.
+        sampled_world_bboxes: World bounds for objects already sampled.
+
+    Returns:
+        Intersected bounds, or an unbounded box when no supported relation is available.
     """
     bounds = _bounding_box_from_partial_limits((None, None, None), (None, None, None))
     for relation in obj.get_relations():
+        if isinstance(relation, AlignWith):
+            if relation.parent in sampled_world_bboxes:
+                alignment_bounds = _bounds_from_align_with(relation, child_bbox, sampled_world_bboxes[relation.parent])
+                bounds = bounds.intersected(alignment_bounds)
+            continue
         for relation_type, bounds_factory in _BOUNDS_FACTORY_BY_RELATION_TYPE.items():
             if isinstance(relation, relation_type):
                 bounds = bounds.intersected(bounds_factory(relation))

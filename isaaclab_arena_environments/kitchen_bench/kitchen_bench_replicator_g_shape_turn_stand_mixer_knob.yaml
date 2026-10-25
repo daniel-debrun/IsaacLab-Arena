@@ -30,6 +30,7 @@ object_references:
   prim_path: CornerCounter_00_0
   object_type: base
   params: {}
+# Sample within alignment bands instead of pulling each layout to a single offset.
 relations:
 - kind: is_anchor
   subject: floor
@@ -41,14 +42,13 @@ relations:
   subject: droid
   reference: floor
   params: {}
-- kind: next_to
+- kind: align_with
   subject: droid
   reference: corner_counter
   params:
-    side: negative_y
-    distance_m: 0.15
-    tolerance_m: 0.15
-    cross_position_ratio: -0.35
+    axis: y
+    offset_m: -1.04
+    tolerance_m: 0.05
 - kind: rotate_around_solution
   subject: droid
   params:
@@ -65,9 +65,16 @@ relations:
   subject: stand_mixer
   params:
     x_min: -2.06
-    x_max: -2.04
-    y_min: 2.12
-    y_max: 2.14
+    x_max: -1.74
+    y_min: 2.07
+    y_max: 2.19
+- kind: align_with
+  subject: droid
+  reference: stand_mixer
+  params:
+    axis: x
+    offset_m: 0.1
+    tolerance_m: 0.12
 task:
   composition: atomic
   description: Turn the speed knob on the stand mixer clockwise to the lowest speed setting.
@@ -83,3 +90,5 @@ task:
 env_cfg_override:
   sim:
     render_interval: 8
+placer_params:
+  allow_best_loss_fallbacks: false

@@ -16,10 +16,20 @@ from isaaclab_arena.relations.placement_candidate_batch import PlacementCandidat
 from isaaclab_arena.relations.relation_loss_strategies import (
     SIDE_CONFIGS,
     NotNextToLossStrategy,
+    align_with_error,
     next_to_violations,
     not_next_to_violations,
 )
-from isaaclab_arena.relations.relations import ClutterOn, FaceTo, NextTo, NotNextTo, On, RelationBase, get_relation
+from isaaclab_arena.relations.relations import (
+    AlignWith,
+    ClutterOn,
+    FaceTo,
+    NextTo,
+    NotNextTo,
+    On,
+    RelationBase,
+    get_relation,
+)
 from isaaclab_arena.relations.validation import base
 from isaaclab_arena.relations.validation.registry import PlacementValidatorRegistry, register_validator
 from isaaclab_arena.relations.validation.types import PlacementCheck
@@ -192,6 +202,40 @@ class ClutterOnRelationValidator(OnRelationValidator):
         self, relation: ClutterOn, child: AxisAlignedBoundingBox, parent: AxisAlignedBoundingBox
     ) -> bool:
         return super()._validate_footprint(relation, child, relation.get_release_region_bbox(parent))
+
+
+@register_validator
+class AlignWithValidator(PrePhysicsPlacementValidator):
+    """Reject layouts whose bounding-box centres miss the requested alignment tolerance."""
+
+    check = PlacementCheck.ALIGN_WITH
+
+    def validate_batch(self, batch: PlacementCandidateBatch, collision_objects: list[CollisionObject]) -> list[bool]:
+        return [self._validate(candidate.positions, candidate.bboxes) for candidate in batch.candidates]
+
+    def _validate(
+        self,
+        positions: dict[PlaceableAsset, tuple[float, float, float]],
+        env_bboxes: dict[PlaceableAsset, AxisAlignedBoundingBox],
+    ) -> bool:
+        """Check every alignment against the same geometry as the solver objective."""
+        for obj, t_W_C in positions.items():
+            for relation in obj.get_relations():
+                if not isinstance(relation, AlignWith):
+                    continue
+                assert relation.parent in positions, "AlignWith reference is missing from the candidate"
+                child_bbox = env_bboxes[obj]
+                parent_world = env_bboxes[relation.parent].translated(positions[relation.parent])
+                error = align_with_error(relation, child_bbox.min_point.new_tensor(t_W_C), child_bbox, parent_world)
+                if not torch.isfinite(error).all() or error.abs().item() > relation.tolerance_m:
+                    if self._params.verbose:
+                        print(
+                            f"AlignWith: '{obj.name}' align_with({relation.parent.name}) violated "
+                            f"(world {relation.axis} error={error.item():.4f} m; "
+                            f"tolerance_m={relation.tolerance_m})"
+                        )
+                    return False
+        return True
 
 
 @register_validator

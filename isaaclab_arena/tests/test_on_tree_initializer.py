@@ -12,8 +12,9 @@ import pytest
 from isaaclab_arena.relations.initializers.on_tree_initializer import (
     OnTreeInitializer,
     _bounding_box_from_partial_limits,
+    _bounds_from_align_with,
 )
-from isaaclab_arena.relations.relations import NextTo, On, PositionLimitsBox, Side
+from isaaclab_arena.relations.relations import AlignWith, NextTo, On, PositionLimitsBox, Side
 from isaaclab_arena.tests.dummy_object import DummyObject
 from isaaclab_arena.tests.test_object_placer_init import _assert_footprint_within, _make_box, _make_desk, _seed
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
@@ -197,3 +198,188 @@ def test_ontree_init_ignores_bounds_that_are_unreachable_on_the_parent():
     x, _unused_y, _unused_z = _seed(OnTreeInitializer(), [desk, box], {desk})[box]
 
     assert 0.0 <= x <= 0.8, "Expected seeding on the parent, as if the limits were absent"
+
+
+@pytest.mark.parametrize("axis", ["x", "y", "z"])
+@pytest.mark.parametrize("offset_m", [-0.25, 0.25])
+def test_alignment_bounds_use_bbox_centres_and_leave_other_axes_free(axis, offset_m):
+    """Convert centre alignment to origin bounds using the supplied oriented geometry."""
+    reference = _make_box("reference")
+    child_bbox = AxisAlignedBoundingBox((-0.3, -0.4, -0.5), (-0.1, -0.2, -0.3))
+    reference_world_bbox = AxisAlignedBoundingBox((4.0, 5.0, 6.0), (6.0, 9.0, 12.0))
+    relation = AlignWith(reference, axis, offset_m=offset_m, tolerance_m=0.125)
+
+    bounds = _bounds_from_align_with(relation, child_bbox, reference_world_bbox)
+
+    axis_index = "xyz".index(axis)
+    expected_origin = (5.2, 7.3, 9.4)[axis_index] + offset_m
+    assert bounds.min_point[0, axis_index].item() == pytest.approx(expected_origin - 0.125)
+    assert bounds.max_point[0, axis_index].item() == pytest.approx(expected_origin + 0.125)
+    for other_axis in range(3):
+        if other_axis != axis_index:
+            assert bounds.min_point[0, other_axis].item() == -float("inf")
+            assert bounds.max_point[0, other_axis].item() == float("inf")
+
+
+@pytest.mark.parametrize("axis", ["x", "y"])
+@pytest.mark.parametrize("offset_m", [-0.1, 0.0, 0.1])
+def test_ontree_samples_across_alignment_band_of_moving_reference(axis, offset_m):
+    """Moving references are sampled first, retaining spread throughout the alignment band."""
+    desk = _make_desk()
+    reference = _make_box("reference", size=0.2)
+    reference.add_relation(On(desk))
+    reference.add_relation(PositionLimitsBox(x_min=0.3, x_max=0.4, y_min=0.3, y_max=0.4))
+    subject = DummyObject("subject", AxisAlignedBoundingBox((-0.05, 0.02, 0.0), (0.15, 0.12, 0.1)))
+    subject.add_relation(On(desk))
+    subject.add_relation(AlignWith(reference, axis, offset_m=offset_m, tolerance_m=0.04))
+    objects = [subject, desk, reference]
+    generator = torch.Generator().manual_seed(42)
+    errors = []
+    unconstrained = []
+    axis_index = "xy".index(axis)
+    for _ in range(100):
+        positions = _seed(OnTreeInitializer(), objects, {desk}, generator=generator)
+        assert list(positions) == objects
+        subject_center_W = torch.tensor(positions[subject]) + subject.get_bounding_box().center[0]
+        reference_center_W = torch.tensor(positions[reference]) + reference.get_bounding_box().center[0]
+        error = (subject_center_W - reference_center_W)[axis_index].item() - offset_m
+        assert abs(error) <= 0.040001
+        _assert_footprint_within(positions[subject], subject.get_bounding_box(), desk.get_world_bounding_box())
+        errors.append(error)
+        unconstrained.append(positions[subject][1 - axis_index])
+
+    # Check that seeding fills the interior rather than collapsing at the centre or one edge.
+    assert min(errors) < -0.032 and max(errors) > 0.032
+    assert torch.tensor(errors).std().item() > 0.018
+    assert max(unconstrained) - min(unconstrained) > 0.5
+
+
+def test_ontree_intersects_alignment_bands_with_position_box():
+    """Multiple references and a position box jointly narrow the sampling interval."""
+    desk = _make_desk()
+    left = _make_box("left", size=0.1)
+    right = _make_box("right", size=0.1)
+    subject = _make_box("subject", size=0.1)
+    for reference, x in ((left, 0.4), (right, 0.5)):
+        reference.add_relation(On(desk))
+        reference.add_relation(PositionLimitsBox(x_min=x, x_max=x + 0.02, y_min=0.6, y_max=0.62))
+    subject.add_relation(On(desk))
+    subject.add_relation(AlignWith(left, "x", tolerance_m=0.1))
+    subject.add_relation(AlignWith(right, "x", tolerance_m=0.1))
+    subject.add_relation(AlignWith(left, "y", tolerance_m=0.05))
+    subject.add_relation(PositionLimitsBox(x_min=0.42))
+
+    generator = torch.Generator().manual_seed(42)
+    for _ in range(30):
+        positions = _seed(OnTreeInitializer(), [subject, right, desk, left], {desk}, generator=generator)
+        x, y, _ = positions[subject]
+        assert x >= 0.42 - 1e-6
+        assert abs(x - positions[left][0]) <= 0.100001
+        assert abs(x - positions[right][0]) <= 0.100001
+        assert abs(y - positions[left][1]) <= 0.050001
+
+
+def test_ontree_orders_alignment_chains_across_on_trees():
+    """A reference below another On parent is sampled before the aligned subject."""
+    desk = _make_desk()
+    tray = _make_box("tray", size=0.5, height=0.05)
+    tray.add_relation(On(desk))
+    reference = _make_box("reference", size=0.1)
+    reference.add_relation(On(tray))
+    middle = _make_box("middle", size=0.1)
+    middle.add_relation(On(desk))
+    middle.add_relation(AlignWith(reference, "x", tolerance_m=0.0))
+    subject = _make_box("subject", size=0.1)
+    subject.add_relation(On(desk))
+    subject.add_relation(AlignWith(middle, "x", tolerance_m=0.0))
+
+    positions = _seed(OnTreeInitializer(), [subject, middle, reference, tray, desk], {desk})
+
+    assert positions[subject][0] == pytest.approx(positions[reference][0], abs=1e-6)
+    assert positions[middle][0] == pytest.approx(positions[reference][0], abs=1e-6)
+    _assert_footprint_within(
+        positions[reference], reference.get_bounding_box(), tray.get_bounding_box().translated(positions[tray])
+    )
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_ontree_breaks_alignment_cycles_deterministically(reverse):
+    """An alignment cycle keeps valid On placements and uses references as they become available."""
+    desk = _make_desk()
+    left = _make_box("left")
+    right = _make_box("right")
+    for subject, reference in ((left, right), (right, left)):
+        subject.add_relation(On(desk))
+        subject.add_relation(AlignWith(reference, "x", tolerance_m=0.02))
+    objects = [desk, right, left] if reverse else [desk, left, right]
+
+    positions = _seed(OnTreeInitializer(), objects, {desk}, generator=torch.Generator().manual_seed(42))
+    repeated = _seed(OnTreeInitializer(), objects, {desk}, generator=torch.Generator().manual_seed(42))
+
+    assert positions == repeated
+    assert abs(positions[left][0] - positions[right][0]) <= 0.020001
+    for obj in (left, right):
+        _assert_footprint_within(positions[obj], obj.get_bounding_box(), desk.get_world_bounding_box())
+
+
+def test_ontree_alignment_to_on_descendant_preserves_parent_order():
+    """A parent aligned to its child does not invalidate the required On ordering."""
+    desk = _make_desk()
+    tray = _make_box("tray", size=0.5, height=0.05)
+    child = _make_box("child", size=0.1)
+    tray.add_relation(On(desk))
+    child.add_relation(On(tray))
+    tray.add_relation(AlignWith(child, "x"))
+
+    positions = _seed(OnTreeInitializer(), [child, tray, desk], {desk})
+
+    _assert_footprint_within(positions[tray], tray.get_bounding_box(), desk.get_world_bounding_box())
+    _assert_footprint_within(
+        positions[child], child.get_bounding_box(), tray.get_bounding_box().translated(positions[tray])
+    )
+
+
+def test_ontree_unreachable_alignment_axis_keeps_other_narrowing():
+    """An impossible Z alignment keeps both On support and feasible X/Y sampling bands."""
+    desk = _make_desk()
+    reference = _make_box("reference")
+    reference.add_relation(On(desk))
+    reference.add_relation(PositionLimitsBox(x_min=0.4, x_max=0.41))
+    subject = _make_box("subject")
+    subject.add_relation(On(desk))
+    subject.add_relation(AlignWith(reference, "x", tolerance_m=0.03))
+    subject.add_relation(AlignWith(reference, "z", offset_m=1.0, tolerance_m=0.03))
+    subject.add_relation(PositionLimitsBox(y_min=0.2, y_max=0.3))
+
+    positions = _seed(OnTreeInitializer(), [subject, desk, reference], {desk})
+
+    x, y, z = positions[subject]
+    assert abs(x - positions[reference][0]) <= 0.030001
+    assert 0.2 <= y <= 0.3
+    assert z == pytest.approx(positions[reference][2])
+
+
+def test_ontree_rejects_alignment_reference_outside_placement():
+    desk = _make_desk()
+    subject = _make_box("subject")
+    subject.add_relation(On(desk))
+    subject.add_relation(AlignWith(_make_box("absent"), "x"))
+
+    with pytest.raises(AssertionError, match="must participate"):
+        _seed(OnTreeInitializer(), [desk, subject], {desk})
+
+
+def test_ontree_aligns_to_translated_anchor_with_zero_tolerance():
+    """An anchored reference uses its world centre, including its initial translation."""
+    from isaaclab_arena.utils.pose import Pose
+
+    desk = _make_desk()
+    desk.set_initial_pose(Pose(position_xyz=(3.0, -2.0, 1.0), rotation_xyzw=(0.0, 0.0, 0.0, 1.0)))
+    subject = _make_box("subject")
+    subject.add_relation(On(desk))
+    subject.add_relation(AlignWith(desk, "x", offset_m=0.1, tolerance_m=0.0))
+
+    positions = _seed(OnTreeInitializer(), [subject, desk], {desk})
+
+    assert positions[subject][0] == pytest.approx(3.5)
+    _assert_footprint_within(positions[subject], subject.get_bounding_box(), desk.get_world_bounding_box())

@@ -22,6 +22,7 @@ from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 
 if TYPE_CHECKING:
     from isaaclab_arena.relations.relations import (
+        AlignWith,
         AtPosition,
         ClutterOn,
         NextTo,
@@ -211,6 +212,52 @@ class RelationLossStrategy(ABC):
             Scalar loss tensor when child_pos is (3,), or (N,) tensor when (N, 3).
         """
         pass
+
+
+def align_with_error(
+    relation: AlignWith,
+    t_W_C: torch.Tensor,
+    child_bbox: AxisAlignedBoundingBox,
+    parent_world_bbox: AxisAlignedBoundingBox,
+) -> torch.Tensor:
+    """Return signed alignment errors for subject origins expressed in world coordinates.
+
+    Args:
+        relation: Alignment axis and subject-minus-reference offset.
+        t_W_C: Subject origins in world frame W, shaped (3,) or (N, 3).
+        child_bbox: Oriented subject bounds relative to its origin, shaped (1, 3) or (N, 3).
+        parent_world_bbox: Reference bounds expressed in W, shaped (1, 3) or (N, 3).
+
+    Returns:
+        Error in metres, shaped (N,), broadcasting singleton bounds.
+    """
+    axis_index = "xyz".index(relation.axis)
+    offset_W_child_center = (child_bbox.min_point + child_bbox.max_point) * 0.5
+    p_W_parent_center = (parent_world_bbox.min_point + parent_world_bbox.max_point) * 0.5
+    p_W_child_center = t_W_C + offset_W_child_center
+    return p_W_child_center[..., axis_index] - p_W_parent_center[..., axis_index] - relation.offset_m
+
+
+class AlignWithLossStrategy(RelationLossStrategy):
+    """Penalize centre displacement only outside the alignment tolerance band."""
+
+    def __init__(self, slope: float = 100.0):
+        """Set the loss increase per metre of alignment error."""
+        self.slope = slope
+
+    def compute_loss(
+        self,
+        relation: AlignWith,
+        child_pos: torch.Tensor,
+        child_bbox: AxisAlignedBoundingBox,
+        parent_world_bbox: AxisAlignedBoundingBox,
+    ) -> torch.Tensor:
+        """Return alignment loss with the same scalar or batch shape as other relations."""
+        error = align_with_error(relation, child_pos, child_bbox, parent_world_bbox)
+        loss = relation.relation_loss_weight * linear_band_loss(
+            error, -relation.tolerance_m, relation.tolerance_m, slope=self.slope
+        )
+        return loss.squeeze(0) if child_pos.ndim == 1 else loss
 
 
 class NextToLossStrategy(RelationLossStrategy):
