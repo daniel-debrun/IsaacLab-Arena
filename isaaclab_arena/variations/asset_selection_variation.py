@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from isaaclab.utils.configclass import configclass
 
+from isaaclab_arena.assets.asset import Asset
 from isaaclab_arena.assets.object_type import ObjectType
 from isaaclab_arena.assets.registries import AssetRegistry
 from isaaclab_arena.variations.choice_sampler import ChoiceSampler, ChoiceSamplerCfg
@@ -101,11 +102,12 @@ class AssetSelectionVariation(BuildTimeVariationBase):
         spawn_cfgs_by_registry_name = {
             registry_name: _get_rigid_object_spawn_cfg(registry_name) for registry_name in dict.fromkeys(registry_names)
         }
+        # The sampler reports the name to the variation recorder and returns the recorded name during replay.
         if isinstance(self.sampler, SequentialSampler):
             # Rebuild k starts at the k-th name, so the rebuilds of a Run take the names in list order.
-            self.sampler.set_position(self._rebuild_index)
-        # The sampler reports the name to the variation recorder and returns the recorded name during replay.
-        selected_registry_name = self.sampler.sample(1, registry_names)[0]
+            selected_registry_name = self.sampler.sample(1, registry_names, start_index=self._rebuild_index)[0]
+        else:
+            selected_registry_name = self.sampler.sample(1, registry_names)[0]
         self._rigid_object.set_spawned_asset_class(
             selected_registry_name, spawn_cfgs_by_registry_name[selected_registry_name]
         )
@@ -128,6 +130,12 @@ def _get_rigid_object_spawn_cfg(registry_name: str) -> SpawnerCfg:
     # embodiments, have none, so they are built before this check rejects them.
     _assert_rigid_object_type(
         registry_name, type(candidate_asset).__name__, getattr(candidate_asset, "object_type", None)
+    )
+    # TODO(cvolk, 2026.10.25): Run the selected asset's own validate_simulation_cfg() instead of rejecting it, so that
+    # assets with a backend check, such as the Newton-only gears, can be selected.
+    assert type(candidate_asset).validate_simulation_cfg is Asset.validate_simulation_cfg, (
+        f"Asset '{registry_name}' ({type(candidate_asset).__name__}) has its own validate_simulation_cfg(), which"
+        " asset selection does not run for the selected asset. Use the registry name of an asset without one."
     )
     return deepcopy(candidate_asset.object_cfg.spawn)
 

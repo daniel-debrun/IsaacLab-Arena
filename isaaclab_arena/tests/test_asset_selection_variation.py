@@ -170,6 +170,7 @@ def test_selected_asset_is_spawned_placed_recorded_and_described():
         (["sugar_box", "banana_split"], "'banana_split' is not a registered asset"),
         (["ground_plane"], r"'ground_plane' .* is not a rigid object"),
         (["droid_differential_ik"], r"'droid_differential_ik' .* is not a rigid object"),
+        (["gear_insertion_medium_gear"], r"'gear_insertion_medium_gear' .* has its own validate_simulation_cfg"),
     ],
 )
 def test_asset_selection_rejects_invalid_configuration(registry_names, message_pattern):
