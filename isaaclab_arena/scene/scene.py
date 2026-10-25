@@ -227,9 +227,11 @@ def _create_prim_from_asset(stage: Usd.Stage, asset: Asset) -> None:
         return
 
     assert isinstance(asset, Object)
+    # After an asset selection, the object spawns another asset. The prim keeps the object's name and pose.
+    spawned_asset = asset.get_spawned_asset()
     # Create the prim and reference the asset USD file.
     prim = stage.DefinePrim(asset_path, "Xform")
-    prim.GetReferences().AddReference(asset.usd_path)
+    prim.GetReferences().AddReference(spawned_asset.usd_path)
     # Apply a contact reporter API this is a rigid object
     if asset.object_type == ObjectType.RIGID:
         add_contact_report(prim)
@@ -250,7 +252,7 @@ def _create_prim_from_asset(stage: Usd.Stage, asset: Asset) -> None:
         r_precision = UsdGeom.XformOp.PrecisionDouble if orient_double else UsdGeom.XformOp.PrecisionFloat
         prim_xform.AddTranslateOp(precision=t_precision).Set(t)
         prim_xform.AddOrientOp(precision=r_precision).Set(r)
-    s = Gf.Vec3d(asset.scale) if scale_double else Gf.Vec3f(asset.scale)
+    s = Gf.Vec3d(spawned_asset.scale) if scale_double else Gf.Vec3f(spawned_asset.scale)
     s_precision = UsdGeom.XformOp.PrecisionDouble if scale_double else UsdGeom.XformOp.PrecisionFloat
     prim_xform.AddScaleOp(precision=s_precision).Set(s)
 
