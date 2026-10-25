@@ -81,8 +81,8 @@ class Object(RootedObjectBase):
         if self.object_type == ObjectType.RIGID:
             self.add_variation(AssetSelectionVariation(self))
 
-    def set_spawned_asset_class(self, registry_name: str, selected_asset: Object) -> None:
-        """Spawn the asset class registered under ``registry_name`` instead of the declared one.
+    def set_spawned_asset(self, registry_name: str, selected_asset: Object) -> None:
+        """Spawn ``selected_asset``, registered under ``registry_name``, instead of the declared asset.
 
         The object takes the spawn configuration and the simulation check of ``selected_asset``. It keeps its name,
         so its scene key, root prim path and variation keys stay the same.
@@ -96,8 +96,8 @@ class Object(RootedObjectBase):
         self.object_cfg.spawn = deepcopy(selected_asset.object_cfg.spawn)
         self._selected_asset = selected_asset
 
-    def get_asset_to_validate(self) -> Object:
-        """Return the asset an asset selection spawns in place of this object, or this object without a selection."""
+    def get_spawned_asset(self) -> Object:
+        """Return the asset this object spawns: itself, or the selected asset after an asset selection."""
         return self._selected_asset if self._selected_asset is not None else self
 
     def get_bounding_box(self) -> AxisAlignedBoundingBox:
