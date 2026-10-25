@@ -80,10 +80,10 @@ def test_sequential_sampler_notifies_listeners_with_live_and_replayed_items():
     sampler = SequentialSampler()
     notified_samples: list = []
     sampler.add_listener(lambda sample, env_ids: notified_samples.append((sample, env_ids)))
-    sampler.sample(num_samples=2, choices=["x", "y", "z"], env_ids=[4, 5])
-    # A live draw would return "z" next.
+    sampler.sample(num_samples=2, choices=["x", "y", "z"], start_index=0, env_ids=[4, 5])
+    # A live draw from start index 2 would return "z".
     sampler.set_replay_sampler(lambda _count, _env_ids: ["x"])
-    sampler.sample(num_samples=1, choices=["x", "y", "z"])
+    sampler.sample(num_samples=1, choices=["x", "y", "z"], start_index=2)
     assert notified_samples == [(["x", "y"], [4, 5]), (["x"], None)]
 
 
