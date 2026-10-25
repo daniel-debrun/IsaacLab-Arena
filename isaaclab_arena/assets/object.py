@@ -67,8 +67,6 @@ class Object(RootedObjectBase):
         self.asset_cfg_addon = asset_cfg_addon
         self.bounding_box: AxisAlignedBoundingBox | None = None
         """Explicit local bounds. None derives bounds from object_cfg.spawn."""
-        # TODO(cvolk, 2026.10.25): Separate the object's place in the scene from the asset it spawns, so that an
-        # asset selection can also replace scale, spawn_cfg_addon and the methods of the asset's class.
         self._spawned_asset: Object = self
         """Asset whose spawn configuration and simulation check this object uses. An asset selection replaces it."""
         # TODO(cvolk, 2026.10.13): Replace this per-object cache with one cache in spawn_cfg_geometry.py
