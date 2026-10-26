@@ -10,14 +10,14 @@ from unittest.mock import Mock, patch
 import pytest
 
 from isaaclab_arena.agentic_environment_generation.simready_asset_search import search_simready_objects
-from isaaclab_arena.agentic_environment_generation.simready_central_assets import search_central_objects
+from isaaclab_arena.agentic_environment_generation.simready_central_search import search_central_objects
 from isaaclab_arena.agentic_environment_generation.simready_search_interface import (
     SimReadySearchConfig,
     SimReadySourceKind,
 )
 from isaaclab_arena.assets.simready_central_asset_loader import _parse_central_asset_url, is_central_asset_url
 
-MODULE = "isaaclab_arena.agentic_environment_generation.simready_central_assets"
+MODULE = "isaaclab_arena.agentic_environment_generation.simready_central_search"
 LOADER = "isaaclab_arena.assets.simready_central_asset_loader"
 REVISION = "a" * 40
 URL = f"hf://huggingface.co/datasets/nvidia/simready-assets/resolve/{REVISION}/pallet/simready_usd/pallet.usd"
@@ -38,7 +38,8 @@ def test_central_requires_single_body_metadata_and_skips_invalid_usd():
         ) as prepare,
     ):
         candidates = search_central_objects("pallet", max_results=1)
-    assert [candidate.usd_path for candidate in candidates] == ["/cache/pallet.usda"]
+    assert [candidate.usd_path for candidate in candidates] == [URL.replace("hf://", "https://", 1)]
+    assert all(call.args == (URL.replace("hf://", "https://", 1),) for call in prepare.call_args_list)
     assert prepare.call_count == 2
     assert post.call_args.kwargs["json"]["filter_by_properties_numeric"] == "simready_metadata_rigid_body_count=1"
     assert post.call_args.kwargs["timeout"] == 30

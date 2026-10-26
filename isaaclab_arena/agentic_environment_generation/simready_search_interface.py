@@ -47,7 +47,6 @@ class SimReadyObjectCandidate:
     usd_path: str
     tags: tuple[str, ...] = ("sim-ready",)
     relevance_score: float | None = None
-    source_url: str | None = None
 
     @property
     def registry_name(self) -> str:

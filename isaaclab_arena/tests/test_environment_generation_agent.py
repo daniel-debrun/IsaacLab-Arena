@@ -292,8 +292,7 @@ class TestGenerateSpec:
                 SimReadyObjectCandidate(search_phrase="can", usd_path=paths[0], tags=("ga-can",)),
                 SimReadyObjectCandidate(
                     search_phrase="can",
-                    usd_path="/other-machine/cache/can.usda",
-                    source_url=central_url,
+                    usd_path=central_url,
                     tags=("central-can",),
                 ),
             ]
@@ -313,7 +312,6 @@ class TestGenerateSpec:
         selected = [obj for obj in exported["objects"] if obj["id"].startswith("can_")]
         assert [obj["params"]["usd_path"] for obj in selected] == paths
         assert all(obj["registry_name"] == SIMREADY_USD_OBJECT_REGISTRY_NAME for obj in selected)
-        assert "/other-machine/" not in json.dumps(exported)
         for path, tag in zip(paths, ["ga-can", "central-can"], strict=True):
             cls = AssetRegistry().get_asset_by_name(simready_search_registry_name("can", path))
             assert tag in cls.tags

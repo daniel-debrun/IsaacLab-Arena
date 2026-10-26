@@ -65,14 +65,14 @@ def search_central_objects(phrase: str, *, max_results: int) -> list[SimReadyObj
             ]
             if not counts or any(float(count) != 1 for count in counts):
                 continue
-            usd_path = download_and_wrap_central_asset(source["path"])
+            usd_path = source["path"].replace("hf://", "https://", 1)
+            download_and_wrap_central_asset(usd_path)  # Validate and populate the local cache.
             candidates.append(
                 SimReadyObjectCandidate(
                     search_phrase=phrase,
                     usd_path=usd_path,
                     tags=("sim-ready", "single-rigid-body"),
                     relevance_score=hit.get("rrf_score"),
-                    source_url=source["path"].replace("hf://", "https://", 1),
                 )
             )
         except Exception as exc:

@@ -209,7 +209,7 @@ class EnvironmentGenerationAgent:
             return asset_catalog
         extended = replace(asset_catalog, objects=list(asset_catalog.objects))
         for candidate in search_result.candidates:
-            usd_path = candidate.source_url or candidate.usd_path
+            usd_path = candidate.usd_path
             asset_cls = register_searched_simready_object(candidate.search_phrase, usd_path, candidate.tags)
             tags = [tag for tag in asset_cls.tags if tag != "object"]
             extended.objects.append({

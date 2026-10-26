@@ -57,9 +57,9 @@ def search_simready_objects(object_phrases: list[str], config: SimReadySearchCon
 def _create_search_backend(source: SimReadySourceKind, config: SimReadySearchConfig) -> SimReadySearchBackend:
     """Construct the implementation for one selected source."""
     if source == SimReadySourceKind.CENTRAL:
-        from isaaclab_arena.agentic_environment_generation.simready_central_assets import CentralSearchBackend
+        from isaaclab_arena.agentic_environment_generation.simready_central_search import CentralSearchBackend
 
         return CentralSearchBackend()
-    from isaaclab_arena.agentic_environment_generation.simready_ga_assets import AssetLibrarySearchBackend
+    from isaaclab_arena.agentic_environment_generation.simready_asset_library_search import AssetLibrarySearchBackend
 
     return AssetLibrarySearchBackend(source, s3_url=config.s3_url, service_url=config.service_url)

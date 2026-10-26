@@ -6,8 +6,8 @@
 # Assets: NVIDIA SimReady Central (nvidia/simready-assets), CC-BY-4.0.
 env_name: tabletop_pick_place_spray_gun_stand_bearing_wrench
 embodiment:
-  id: franka
-  registry_name: franka_ik
+  id: droid
+  registry_name: droid_abs_joint_pos
   params: {}
 background:
   id: maple_table
@@ -76,9 +76,8 @@ relations:
   params: {}
 task:
   composition: atomic
-  description: Franka picks up the spray gun from the maple table and places it on
-    the bench stand, leaving the paint jar, brush, paint tube, ball bearing, and
-    combination wrench as distractors.
+  description: DROID picks up the spray gun from the maple table and places it on
+    the bench stand.
   subtasks:
   - kind: PickAndPlaceTask
     params:
