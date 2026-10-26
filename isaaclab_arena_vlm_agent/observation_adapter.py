@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 from abc import ABC, abstractmethod
+from scipy.spatial.transform import Rotation
 from typing import TYPE_CHECKING, Any
 
 from isaaclab_arena_vlm_agent.image_utils import extract_rgb_images_from_camera_observations
@@ -112,13 +113,60 @@ class ImageObservationAdapter(VLMObservationAdapter):
         self.camera_keys = camera_keys
 
     def extract_vlm_input_from_observation(self, env, observation, env_id: int):
-        """Return configured RGB views for the selected environment."""
+        """Return RGB views and optical-frame camera calibration for one environment."""
         if self.camera_keys is None:
             self._set_camera_keys(env.unwrapped.cfg.observations)
         images = extract_rgb_images_from_camera_observations(
             observation[CAMERA_OBSERVATION_GROUP], self.camera_keys, env_id
         )
-        return images, {}
+        base = env.unwrapped
+        camera_cfg = getattr(base.cfg.observations, CAMERA_OBSERVATION_GROUP)
+        roots = {}
+        for name in base.action_manager.active_terms:
+            asset_name = base.action_manager.get_term(name).cfg.asset_name
+            if asset_name not in roots:
+                roots[asset_name] = base.arena_world.get_pose_w(asset_name)[env_id].detach().cpu().numpy()
+        geometry = {}
+        for key, image in images.items():
+            term = getattr(camera_cfg, key)
+            sensor = base.scene[term.params["sensor_cfg"].name]
+            assert sensor.cfg.update_latest_camera_pose, "VLM calibration requires update_latest_camera_pose=True"
+            data = sensor.data
+            capture = ((data.info or {}).get("rgb") or {}).get("capture")
+            if capture:
+                from isaaclab.utils.math import convert_camera_frame_orientation_convention
+
+                t_W_C = capture["pos_w"].torch[env_id].detach().cpu().numpy()
+                q_W_C = (
+                    convert_camera_frame_orientation_convention(
+                        capture["quat_w_world"].torch[env_id : env_id + 1], origin="world", target="ros"
+                    )[0]
+                    .detach()
+                    .cpu()
+                    .numpy()
+                )
+                intrinsics = capture["intrinsic_matrices"].torch[env_id]
+            else:
+                t_W_C = data.pos_w.torch[env_id].detach().cpu().numpy()
+                q_W_C = data.quat_w_ros.torch[env_id].detach().cpu().numpy()
+                intrinsics = data.intrinsic_matrices.torch[env_id]
+            # C is the optical frame (+X right, +Y down, +Z forward); R is an asset root.
+            poses = {}
+            for asset_name, T_W_R in roots.items():
+                rotation_R_W = Rotation.from_quat(T_W_R[3:]).inv()
+                poses[asset_name] = {
+                    "position_root_m": rotation_R_W.apply(t_W_C - T_W_R[:3]).tolist(),
+                    "quaternion_root_xyzw": (rotation_R_W * Rotation.from_quat(q_W_C)).as_quat().tolist(),
+                }
+            geometry[key] = {
+                "image_size_px": [image.shape[1], image.shape[0]],
+                "intrinsic_matrix": intrinsics.detach().cpu().tolist(),
+                "optical_frame": "x_right_y_down_z_forward",
+                "position_world_m": t_W_C.tolist(),
+                "quaternion_world_xyzw": q_W_C.tolist(),
+                "poses_in_robot_roots": poses,
+            }
+        return images, {"camera_geometry": geometry}
 
 
 class ImageStateObservationAdapter(VLMObservationAdapter):
@@ -131,5 +179,5 @@ class ImageStateObservationAdapter(VLMObservationAdapter):
     def extract_vlm_input_from_observation(self, env, observation, env_id: int):
         """Return state and RGB views for the selected environment."""
         _, state = self.state_adapter.extract_vlm_input_from_observation(env, observation, env_id)
-        images, _ = self.image_adapter.extract_vlm_input_from_observation(env, observation, env_id)
-        return images, state
+        images, geometry = self.image_adapter.extract_vlm_input_from_observation(env, observation, env_id)
+        return images, {**state, **geometry}

@@ -53,6 +53,12 @@ class DroidVLMAdapter:
             + response
             + "absolute XYZ in meters and a unit XYZW quaternion for the gripper base_link body, expressed in "
             "the robot root frame, followed by the gripper command (0 opens, 1 closes). Read the current "
+            "camera_geometry for each named image: image_size_px is [width, height], intrinsic_matrix is K "
+            "in the transmitted image's pixels, and camera poses map optical coordinates (+X right, +Y down, "
+            "+Z forward) into the named world or robot root frame. For a camera point p_C, "
+            "p_R = rotate(quaternion_root_xyzw, p_C) + position_root_m; pixels project as K p_C / p_C.z. "
+            "All quaternions in input and output use XYZW. policy.eef_pos is in world meters and "
+            "policy.eef_quat is the gripper's world orientation in XYZW. Read the current "
             "commanded-body pose from command_body_poses.arm_action when state is provided. This body is not "
             "the finger midpoint. Predict nearby waypoints using small pose changes. Approach with the gripper "
             "open, close around the object, lift it, move above the destination, and open to release. "

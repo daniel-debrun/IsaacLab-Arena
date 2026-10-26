@@ -133,6 +133,27 @@ def inputs(action_dim=2):
     return env, {"position": positions, CAMERA_OBSERVATION_GROUP: {"front_view": images}}
 
 
+@pytest.mark.parametrize("max_size,expected_size", [(8, (8, 4)), (32, (17, 9))])
+def test_request_intrinsics_match_encoded_pixels(backend, max_size, expected_size):
+    policy = make_policy(backend)
+    policy.config.image_max_width_or_height = max_size
+    env, observation = inputs()
+    pixels = np.zeros((9, 17, 3), dtype=np.uint8)
+    intrinsics = np.array([[12.0, 0.0, 8.0], [0.0, 10.0, 4.0], [0.0, 0.0, 1.0]])
+    policy.observation_adapter.extract_vlm_input_from_observation = lambda *args: (
+        {"front_view": pixels},
+        {"camera_geometry": {"front_view": {"image_size_px": [17, 9], "intrinsic_matrix": intrinsics.tolist()}}},
+    )
+    content = policy._request_content(env, observation, 0)
+    geometry = json.loads(content[1]["text"])["camera_geometry"]["front_view"]
+    encoded = Image.open(io.BytesIO(base64.b64decode(content[3]["image_url"]["url"].split(",", 1)[1])))
+    assert encoded.size == expected_size == tuple(geometry["image_size_px"])
+    p_C = np.array([0.2, -0.1, 2.0])
+    original_pixel = (intrinsics @ p_C)[:2] / p_C[2]
+    resized_pixel = (np.array(geometry["intrinsic_matrix"]) @ p_C)[:2] / p_C[2]
+    np.testing.assert_allclose(resized_pixel, original_pixel * np.array(expected_size) / [17, 9])
+
+
 @pytest.mark.parametrize("action_dim", [2, 5])
 def test_policy_uses_adapter_actions_for_each_environment(backend, action_dim):
     client = backend.client

@@ -240,15 +240,26 @@ class VLMPolicy(PolicyBase[VLMPolicyCfg]):
     def _request_content(self, env: gym.Env, observation: dict[str, Any], env_id: int) -> list[dict[str, Any]]:
         """Encode selected images and assemble the task and observation values into chat content."""
         images, prompt_values = self.observation_adapter.extract_vlm_input_from_observation(env, observation, env_id)
+        encoded_images = {}
+        for camera_name, image in images.items():
+            url, size = image_to_jpeg_data_url(image, self.config.image_max_width_or_height)
+            encoded_images[camera_name] = url
+            if camera_name in prompt_values.get("camera_geometry", {}):
+                geometry = prompt_values["camera_geometry"][camera_name]
+                intrinsics = np.array(geometry["intrinsic_matrix"], dtype=float)
+                intrinsics[0] *= size[0] / image.shape[1]
+                intrinsics[1] *= size[1] / image.shape[0]
+                geometry["intrinsic_matrix"] = intrinsics.tolist()
+                geometry["image_size_px"] = list(size)
         content = [{"type": "text", "text": json.dumps({"task": self.task_description})}]
         if prompt_values:
             content.append({"type": "text", "text": json.dumps(prompt_values, allow_nan=False)})
-        for camera_name, image in images.items():
+        for camera_name, url in encoded_images.items():
             content.extend([
                 {"type": "text", "text": f"camera={camera_name}"},
                 {
                     "type": "image_url",
-                    "image_url": {"url": image_to_jpeg_data_url(image, self.config.image_max_width_or_height)},
+                    "image_url": {"url": url},
                 },
             ])
         return content

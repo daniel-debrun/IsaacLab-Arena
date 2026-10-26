@@ -71,12 +71,27 @@ def test_configured_execution_and_partial_reset(monkeypatch, policy_type, cfg_ty
     for module in ("absolute_action_adapter", "pose_target_motion_generator"):
         monkeypatch.setattr(f"isaaclab_arena_vlm_agent.{module}.read_absolute_command_indices", lambda env: indices)
     observation_cfg = SimpleNamespace(
-        camera_obs=SimpleNamespace(live_camera=SimpleNamespace(func=Mock(), params={"data_type": "rgb"}))
+        camera_obs=SimpleNamespace(
+            live_camera=SimpleNamespace(
+                func=Mock(), params={"data_type": "rgb", "sensor_cfg": SimpleNamespace(name="sensor")}
+            )
+        )
     )
     env = SimpleNamespace(
         unwrapped=SimpleNamespace(
             num_envs=2,
             device="cpu",
+            scene={
+                "sensor": SimpleNamespace(
+                    cfg=SimpleNamespace(update_latest_camera_pose=True),
+                    data=SimpleNamespace(
+                        pos_w=SimpleNamespace(torch=torch.zeros(2, 3)),
+                        quat_w_ros=SimpleNamespace(torch=torch.tensor([[0.0, 0.0, 0.0, 1.0]] * 2)),
+                        intrinsic_matrices=SimpleNamespace(torch=torch.eye(3).repeat(2, 1, 1)),
+                        info={},
+                    ),
+                )
+            },
             arena_world=SimpleNamespace(
                 get_body_pose_in_root=lambda *args: torch.tensor([[0, 0, 0, 0, 0, 0, 1.0]] * 2)
             ),
@@ -175,6 +190,7 @@ def test_example_yaml_policy_selectors_and_round_trip(monkeypatch, tmp_path):
     assert len(experiment.runs) == 3
     for run, (policy_type, cfg_type) in zip(experiment.runs.values(), POLICIES, strict=True):
         assert isinstance(run.policy, cfg_type)
+        assert run.policy.model == "openai/openai/gpt-6-astra"
         assert run.environment_builder.device == "cpu"
         assert registries.PolicyRegistry().get_policy_type_for_cfg(run.policy) is policy_type
     assert experiment.runs["droid_pnp_vlm_goal"].policy.max_steps_per_goal == 5

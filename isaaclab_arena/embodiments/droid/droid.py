@@ -583,6 +583,7 @@ class DroidCameraCfg(ArenaCameraCfg):
     """Configuration for cameras. DROID cameras are mounted with pre-set poses."""
 
     external_camera: CameraCfg = CameraCfg(
+        update_latest_camera_pose=True,
         prim_path="{ENV_REGEX_NS}/Robot/panda_link0/external_camera",
         height=720,
         width=1280,
@@ -596,6 +597,7 @@ class DroidCameraCfg(ArenaCameraCfg):
         offset=CameraCfg.OffsetCfg(pos=(0.05, 0.57, 0.66), rot=(-0.195, 0.399, 0.805, -0.393), convention="opengl"),
     )
     external_camera_2: CameraCfg = CameraCfg(
+        update_latest_camera_pose=True,
         prim_path="{ENV_REGEX_NS}/Robot/panda_link0/external_camera_2",
         height=720,
         width=1280,
@@ -609,6 +611,7 @@ class DroidCameraCfg(ArenaCameraCfg):
         offset=CameraCfg.OffsetCfg(pos=(0.05, -0.57, 0.66), rot=(0.399, -0.195, -0.393, 0.805), convention="opengl"),
     )
     wrist_camera: CameraCfg = CameraCfg(
+        update_latest_camera_pose=True,
         prim_path="{ENV_REGEX_NS}/Robot/Gripper/Robotiq_2F_85/base_link/wrist_camera",
         height=720,
         width=1280,
