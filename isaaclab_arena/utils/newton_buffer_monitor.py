@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 ITERATION_LIMIT_FLAGS = int(OverflowType.ITERATIONS | OverflowType.LS_ITERATIONS)
 """MuJoCo-Warp flags for a step whose solver or line search stopped at its iteration limit. The step keeps its last
-iterate, as in MuJoCo, and no physics data is dropped, so these flags are counted instead of aborting the run."""
+iterate, as in MuJoCo, and no physics data is dropped, so these flags are logged instead of aborting the run."""
 
 
 @wp.kernel
@@ -39,11 +39,6 @@ def _record_solver_status(
     wp.atomic_or(peaks, 2, overflow_flags[world_index])
 
 
-@wp.kernel
-def _clear_flags(peaks: wp.array(dtype=int), flags: int) -> None:
-    peaks[2] = peaks[2] & ~flags
-
-
 class NewtonBufferMonitor:
     """Latch MuJoCo-Warp buffer failures across substeps and CUDA graph replay."""
 
@@ -59,8 +54,9 @@ class NewtonBufferMonitor:
         """Latched contact count, maximum constraint count, and overflow flags."""
         self._num_rigid_contacts_max: int | None = None
         """External Newton contact capacity, populated when external contacts are recorded."""
-        self.num_iteration_limit_checks: int = 0
-        """Checks in which some world reached the solver or line-search iteration limit."""
+        self._iteration_limit_logged: bool = False
+        """Whether the iteration-limit warning was already emitted. MuJoCo-Warp only ORs bits into ``data.overflow``
+        and the pinned Newton does not clear it between steps, so the flags stay set after the first hit."""
 
     def record_newton_contacts(self, contacts: "Contacts") -> None:
         """Record the raw Newton contact count before transfer can truncate it.
@@ -91,20 +87,18 @@ class NewtonBufferMonitor:
     def check(self) -> None:
         """Abort on overflow after replay, synchronizing one small status array to the host.
 
-        Iteration-limit flags (``ITERATION_LIMIT_FLAGS``) are counted and logged instead.
+        Iteration-limit flags (``ITERATION_LIMIT_FLAGS``) are logged once instead.
         """
         num_contacts, num_constraints, flags = self._peaks.numpy().tolist()
         iteration_flags = flags & ITERATION_LIMIT_FLAGS
-        if iteration_flags:
-            self.num_iteration_limit_checks += 1
-            if self.num_iteration_limit_checks == 1:
-                logger.warning(
-                    "MuJoCo-Warp reached a solver iteration limit (flags %#x). The step keeps its last iterate."
-                    " Raise sim.physics.solver_cfg.iterations or ls_iterations if this repeats.",
-                    iteration_flags,
-                )
-            wp.launch(_clear_flags, dim=1, inputs=[self._peaks, iteration_flags], device=self._peaks.device)
-            flags &= ~ITERATION_LIMIT_FLAGS
+        if iteration_flags and not self._iteration_limit_logged:
+            logger.warning(
+                "MuJoCo-Warp reached a solver iteration limit (flags %#x). The step keeps its last iterate."
+                " Raise sim.physics.solver_cfg.iterations or ls_iterations if this repeats.",
+                iteration_flags,
+            )
+            self._iteration_limit_logged = True
+        flags &= ~ITERATION_LIMIT_FLAGS
         failures = []
         if num_contacts > self._data.naconmax:
             num_contacts_required = (num_contacts + self._data.nworld - 1) // self._data.nworld

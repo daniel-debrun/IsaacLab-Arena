@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 import warp as wp
+from mujoco_warp import OverflowType
 
 from isaaclab_arena.utils.newton_buffer_monitor import NewtonBufferMonitor
 
@@ -35,7 +36,7 @@ def _make_monitor(device: str = "cpu") -> tuple[NewtonBufferMonitor, SimpleNames
         (1, [1, 7], [0, 0], "njmax.*at least 7"),
         (1, [1, 1], [0, 1], "overflow flags"),
         (1, [1, 1], [0, 16], "overflow flags"),
-        (1, [1, 1], [0, 16 | 512], "overflow flags"),
+        (1, [1, 1], [0, int(OverflowType.CCD | OverflowType.ITERATIONS)], "overflow flags"),
     ],
 )
 def test_newton_buffer_limits(
@@ -54,17 +55,24 @@ def test_newton_buffer_limits(
             monitor.check()
 
 
-@pytest.mark.parametrize("flags", [512, 1024, 512 | 1024])
-def test_iteration_limits_are_counted(flags: int) -> None:
+@pytest.mark.parametrize(
+    "flags",
+    [
+        int(OverflowType.ITERATIONS),
+        int(OverflowType.LS_ITERATIONS),
+        int(OverflowType.ITERATIONS | OverflowType.LS_ITERATIONS),
+    ],
+)
+def test_iteration_limits_do_not_abort(flags: int, caplog: pytest.LogCaptureFixture) -> None:
     monitor, data, _ = _make_monitor()
+    # MuJoCo-Warp only ORs bits into data.overflow and the pinned Newton does not clear it between steps, so the flags
+    # stay set on every later substep, as here.
     data.overflow.assign([0, flags])
-    monitor.record_solver_status()
-    monitor.check()
-    assert monitor.num_iteration_limit_checks == 1
-    data.overflow.assign([0, 0])
-    monitor.record_solver_status()
-    monitor.check()
-    assert monitor.num_iteration_limit_checks == 1
+    with caplog.at_level("WARNING"):
+        for _ in range(3):
+            monitor.record_solver_status()
+            monitor.check()
+    assert sum("iteration limit" in record.getMessage() for record in caplog.records) == 1
 
 
 def test_newton_collision_pipeline_capacity() -> None:
