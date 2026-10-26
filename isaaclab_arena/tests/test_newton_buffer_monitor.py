@@ -35,6 +35,7 @@ def _make_monitor(device: str = "cpu") -> tuple[NewtonBufferMonitor, SimpleNames
         (1, [1, 7], [0, 0], "njmax.*at least 7"),
         (1, [1, 1], [0, 1], "overflow flags"),
         (1, [1, 1], [0, 16], "overflow flags"),
+        (1, [1, 1], [0, 16 | 512], "overflow flags"),
     ],
 )
 def test_newton_buffer_limits(
@@ -51,6 +52,19 @@ def test_newton_buffer_limits(
     else:
         with pytest.raises(AssertionError, match=message):
             monitor.check()
+
+
+@pytest.mark.parametrize("flags", [512, 1024, 512 | 1024])
+def test_iteration_limits_are_counted(flags: int) -> None:
+    monitor, data, _ = _make_monitor()
+    data.overflow.assign([0, flags])
+    monitor.record_solver_status()
+    monitor.check()
+    assert monitor.num_iteration_limit_checks == 1
+    data.overflow.assign([0, 0])
+    monitor.record_solver_status()
+    monitor.check()
+    assert monitor.num_iteration_limit_checks == 1
 
 
 def test_newton_collision_pipeline_capacity() -> None:
