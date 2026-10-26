@@ -8,9 +8,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 from typing import TYPE_CHECKING, Any
 
+from isaaclab_arena.agentic_environment_generation.simready_name_matching import (
+    count_phrase_words_in_path,
+    path_words_match_singular_or_plural,
+    split_path_into_words,
+    split_phrase_into_words,
+)
 from isaaclab_arena.agentic_environment_generation.simready_search_interface import (
     MIN_INSPECTED_MATCHES_PER_PHRASE,
     SimReadyObjectCandidate,
@@ -49,10 +54,6 @@ class AssetLibrarySearchBackend:
             except Exception as exc:
                 _logger.warning("simready search failed for %r: %s", phrase, exc)
         return candidates
-
-
-_CAMEL_CASE_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
-_NON_ALPHANUMERIC = re.compile(r"[^a-z0-9]+")
 
 
 def _create_asset_library_for_source(source: SimReadySourceKind, *, s3_url: str, service_url: str) -> Any | None:
@@ -104,24 +105,24 @@ def _build_path_filters_from_phrase(phrase: str) -> list[Any]:
     """Build one path filter per word of the phrase, so a hit only has to match one word."""
     from simready.search import SearchFilterPathContains
 
-    return [SearchFilterPathContains(word) for word in _split_phrase_into_words(phrase)]
+    return [SearchFilterPathContains(word) for word in split_phrase_into_words(phrase)]
 
 
 def _filter_and_rank_path_matches(matches: list[Any], phrase: str) -> list[Any]:
     """Keep only the hits named after the object being asked for, best match first."""
-    words = _split_phrase_into_words(phrase)
+    words = split_phrase_into_words(phrase)
     assert words, "a search phrase needs at least one word"
     object_word = words[-1]
     kept = [
         match
         for match in matches
-        if _path_words_match_singular_or_plural(object_word, _split_path_into_words(str(match.asset_path)))
+        if path_words_match_singular_or_plural(object_word, split_path_into_words(str(match.asset_path)))
     ]
     # The sort is stable, so hits that tie on both counts keep the order the search gave them.
     kept.sort(
         key=lambda match: (
             getattr(match, "relevance_score", None) or 0.0,
-            _count_phrase_words_in_path(phrase, str(match.asset_path)),
+            count_phrase_words_in_path(phrase, str(match.asset_path)),
         ),
         reverse=True,
     )
@@ -154,31 +155,6 @@ def _build_simready_object_candidate_from_match(match: Any, phrase: str) -> SimR
     return SimReadyObjectCandidate(
         search_phrase=phrase,
         usd_path=str(match.asset_path),
-        tags=tuple(dict.fromkeys(("sim-ready", *_split_phrase_into_words(phrase)))),
+        tags=tuple(dict.fromkeys(("sim-ready", *split_phrase_into_words(phrase)))),
         relevance_score=getattr(match, "relevance_score", None),
     )
-
-
-def _split_phrase_into_words(phrase: str) -> list[str]:
-    """Split a search phrase into its lowercase words, in order."""
-    return [word for word in _NON_ALPHANUMERIC.split(phrase.lower()) if word]
-
-
-def _split_path_into_words(asset_path: str) -> frozenset[str]:
-    """Split an asset path into lowercase words, also splitting camelCase."""
-    # e.g. trashcan_wheeled_green_a01_01.usd -> trashcan wheeled green a01 01
-    spaced = _CAMEL_CASE_BOUNDARY.sub(" ", asset_path)
-    return frozenset(word for word in _NON_ALPHANUMERIC.split(spaced.lower()) if word)
-
-
-def _path_words_match_singular_or_plural(word: str, path_words: frozenset[str]) -> bool:
-    """True if the word is one of the path words. A trailing "s" on either side is ignored."""
-    if word in path_words or f"{word}s" in path_words:
-        return True
-    return word.endswith("s") and word[:-1] in path_words
-
-
-def _count_phrase_words_in_path(phrase: str, asset_path: str) -> int:
-    """Count how many words of the phrase appear as whole words in the asset path."""
-    path_words = _split_path_into_words(asset_path)
-    return sum(1 for word in _split_phrase_into_words(phrase) if _path_words_match_singular_or_plural(word, path_words))

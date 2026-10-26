@@ -13,12 +13,14 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from isaaclab_arena.agentic_environment_generation.simready_asset_library_search import (
-    _count_phrase_words_in_path,
     _filter_and_rank_path_matches,
     _has_single_rigid_body,
-    _split_path_into_words,
 )
 from isaaclab_arena.agentic_environment_generation.simready_asset_search import search_simready_objects
+from isaaclab_arena.agentic_environment_generation.simready_name_matching import (
+    count_phrase_words_in_path,
+    split_path_into_words,
+)
 from isaaclab_arena.agentic_environment_generation.simready_search_interface import (
     SimReadyObjectCandidate,
     SimReadySearchConfig,
@@ -65,7 +67,7 @@ class _FakeLibrary:
 
 
 def test_split_path_into_words_splits_camel_case_and_separators():
-    words = _split_path_into_words(TRASH_CAN_PATH)
+    words = split_path_into_words(TRASH_CAN_PATH)
     assert {"trash", "can", "wheeled", "green", "garage"} <= words
     # "trashCan" must not survive as one token, or camelCase names stay unsearchable.
     assert "trashcan" not in words
@@ -73,13 +75,13 @@ def test_split_path_into_words_splits_camel_case_and_separators():
 
 def test_count_phrase_words_in_path_ignores_substring_hits():
     # "bin" only appears inside "Cabinets", which is how a cabinet got picked for a grey bin.
-    assert _count_phrase_words_in_path("grey bin", CABINET_PATH) == 0
-    assert _count_phrase_words_in_path("kitchen cabinet", CABINET_PATH) == 2
+    assert count_phrase_words_in_path("grey bin", CABINET_PATH) == 0
+    assert count_phrase_words_in_path("kitchen cabinet", CABINET_PATH) == 2
 
 
 def test_count_phrase_words_in_path_tolerates_plurals():
-    assert _count_phrase_words_in_path("cabinet", CABINET_PATH) == 1
-    assert _count_phrase_words_in_path("cabinets", CABINET_PATH) == 1
+    assert count_phrase_words_in_path("cabinet", CABINET_PATH) == 1
+    assert count_phrase_words_in_path("cabinets", CABINET_PATH) == 1
 
 
 def test_filter_and_rank_path_matches_filters_and_ranks():

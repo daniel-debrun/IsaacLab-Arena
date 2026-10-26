@@ -7,9 +7,12 @@
 from __future__ import annotations
 
 import logging
+from pathlib import PurePosixPath
+from urllib.parse import unquote, urlsplit
 
 import requests
 
+from isaaclab_arena.agentic_environment_generation.simready_name_matching import asset_name_matches_object
 from isaaclab_arena.agentic_environment_generation.simready_search_interface import (
     MIN_INSPECTED_MATCHES_PER_PHRASE,
     SimReadyObjectCandidate,
@@ -17,6 +20,9 @@ from isaaclab_arena.agentic_environment_generation.simready_search_interface imp
 from isaaclab_arena.assets.simready_central_asset_loader import download_and_wrap_central_asset
 
 CENTRAL_SEARCH_URL = "https://nvidia-simready-central.hf.space/search_hybrid"
+CENTRAL_STORAGE_BACKEND = "usdsearch-dev"
+# Backend selector used by the Central endpoint in our validated searches.
+# Its production stability is not confirmed; keep it paired with the endpoint above.
 _logger = logging.getLogger(__name__)
 
 
@@ -42,7 +48,7 @@ def search_central_objects(phrase: str, *, max_results: int) -> list[SimReadyObj
     assert max_results > 0, "max_results must be positive"
     response = requests.post(
         CENTRAL_SEARCH_URL,
-        headers={"x-usdsearch-storage-backend": "usdsearch-dev"},
+        headers={"x-usdsearch-storage-backend": CENTRAL_STORAGE_BACKEND},
         json={
             "hybrid_text_query": phrase,
             "file_extension_include": "usd*",
@@ -57,6 +63,10 @@ def search_central_objects(phrase: str, *, max_results: int) -> list[SimReadyObj
     for hit in response.json()["hits"]:
         try:
             source = hit["source"]
+            asset_name = PurePosixPath(unquote(urlsplit(source["path"]).path)).stem
+            if not asset_name_matches_object(phrase, asset_name):
+                _logger.info("Central rejected %s for %r: asset name does not match the object", source["path"], phrase)
+                continue
             # Fail closed even if a backend ignores the numeric filter.
             counts = [
                 prop.get("value_numeric", prop.get("value"))

@@ -163,3 +163,60 @@ def test_central_url_recognition_and_parsing_share_supported_schemes(scheme):
 )
 def test_central_url_recognition_leaves_other_asset_paths_unchanged(url):
     assert not is_central_asset_url(url)
+
+
+def test_central_rejects_unrelated_hit_before_download_and_tries_next(caplog):
+    import logging
+
+    cabinet = URL.replace("pallet.usd", "sm_cabinet_grey_a01.usd")
+    bin_url = URL.replace("pallet.usd", "sm_bin_grey_a01.usd")
+    response = Mock()
+    response.json.return_value = {"hits": [_hit(1, cabinet), _hit(1, bin_url)]}
+    with (
+        patch(f"{MODULE}.requests.post", return_value=response),
+        patch(f"{MODULE}.download_and_wrap_central_asset", return_value="/cache/bin.usda") as prepare,
+        caplog.at_level(logging.INFO, logger=MODULE),
+    ):
+        candidates = search_central_objects("grey bin", max_results=1)
+    assert [candidate.usd_path for candidate in candidates] == [bin_url.replace("hf://", "https://", 1)]
+    prepare.assert_called_once_with(candidates[0].usd_path)
+    assert "asset name does not match the object" in caplog.text
+
+
+@pytest.mark.parametrize("filename", ["grey_cabinet", "grey_cabin", "binary_box"])
+def test_central_unrelated_hits_leave_phrase_unmatched(filename):
+    # A matching word in the dataset/package path must not qualify the asset itself.
+    path = URL.replace("/pallet/", "/grey_bin/").replace("pallet.usd", filename + ".usd")
+    response = Mock()
+    response.json.return_value = {"hits": [_hit(1, path)]}
+    with (
+        patch(f"{MODULE}.requests.post", return_value=response),
+        patch(f"{MODULE}.download_and_wrap_central_asset") as prepare,
+    ):
+        result = search_simready_objects(["grey bin"], SimReadySearchConfig(sources=[SimReadySourceKind.CENTRAL]))
+    assert result.candidates == []
+    assert result.unmatched_phrases == ["grey bin"]
+    prepare.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("phrase", "filename"),
+    [
+        ("grey bin", "sm_greyBins_a01"),
+        ("grey bins", "sm_bin_grey_a01"),
+        ("spray gun", "sm_paint_supplies_spraygun_b01_01"),
+        ("spray gun stand", "sm_serviceTool_sprayGunStand_benchMount_a01_01"),
+        ("ball bearing", "sm_consumable_bearing_ball_a01_01"),
+    ],
+)
+def test_central_accepts_matching_asset_names(phrase, filename):
+    path = URL.replace("pallet.usd", filename + ".usd")
+    response = Mock()
+    response.json.return_value = {"hits": [_hit(1, path)]}
+    with (
+        patch(f"{MODULE}.requests.post", return_value=response),
+        patch(f"{MODULE}.download_and_wrap_central_asset", return_value="/cache/asset.usda") as prepare,
+    ):
+        candidates = search_central_objects(phrase, max_results=1)
+    assert [candidate.usd_path for candidate in candidates] == [path.replace("hf://", "https://", 1)]
+    prepare.assert_called_once_with(candidates[0].usd_path)
